@@ -4,49 +4,63 @@
 *.pyc
 *.swp
 .DS_Store
+Thumbs.db
 .atom/
 .buildlog/
 .history
 .svn/
 migrate_working_dir/
 
-# IntelliJ related
+# IntelliJ / Android Studio
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VS Code
+.vscode/
 
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Flutter / Dart / Pub
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
+.packages
 /build/
+**/doc/api/
 
-# Symbolication related
+# Flutter iOS generated files
+**/ios/Flutter/.last_build_id
+ios/Flutter/ephemeral/
+ios/Pods/
+ios/.symlinks/
+
+# Flutter build artifacts
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android build artifacts
 /android/app/debug
 /android/app/profile
 /android/app/release
+/android/.gradle/
 
-# Environment variables
+# Android local / signing files
+android/local.properties
+android/key.properties
+
+# Environment variables / secrets
 .env
+.env.*
+!.env.example
 
-# Edge Function secrets (set with `supabase secrets set`, never committed)
+# Supabase secrets / local files
 supabase/functions/.env
 supabase/functions/**/.env
 supabase/.env
 supabase/.temp/
+
+# OS files
+.DS_Store
+Thumbs.db
