@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/theme/app_typography.dart';
 import '../../models/bank_account.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
@@ -10,6 +12,7 @@ import '../../services/schema_capabilities.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_sheet.dart';
+import '../../widgets/common/hero_surface.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
@@ -150,7 +153,8 @@ class _AccountsScreenState extends State<AccountsScreen> {
           ],
           const SizedBox(height: AppSpacing.section),
           const SectionHeader(title: 'Your accounts'),
-          for (final BankAccountBalance balance in provider.balances) ...<Widget>[
+          for (final BankAccountBalance balance
+              in provider.balances) ...<Widget>[
             _AccountCard(
               balance: balance,
               currency: currency,
@@ -222,42 +226,53 @@ class _TotalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Builder so everything inside reads the hero's dark theme.
+    return HeroSurface(
+      child: Builder(builder: _content),
+    );
+  }
+
+  Widget _content(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return SurfaceCard(
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text('Total balance', style: theme.textTheme.labelMedium),
-                const SizedBox(height: AppSpacing.xs),
-                MoneyText(
-                  total,
-                  currency: currency,
-                  fit: true,
-                  tone: total < 0 ? AmountTone.negative : AmountTone.neutral,
-                  style: theme.textTheme.displaySmall,
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                'TOTAL BALANCE',
+                style: AppTypography.eyebrow(
+                  theme.textTheme,
+                  color: AppColors.tan,
                 ),
-                const SizedBox(height: AppSpacing.xxs),
-                Text(
-                  'Across $accountCount '
-                  '${accountCount == 1 ? 'account' : 'accounts'}',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              MoneyText(
+                total,
+                currency: currency,
+                fit: true,
+                tone: total < 0 ? AmountTone.negative : AmountTone.neutral,
+                style: theme.textTheme.displaySmall,
+              ),
+              const SizedBox(height: AppSpacing.xxs),
+              Text(
+                'Across $accountCount '
+                '${accountCount == 1 ? 'account' : 'accounts'}',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
           ),
-          const SizedBox(width: AppSpacing.md),
-          IconWell(
-            icon: Icons.account_balance_rounded,
-            tone: theme.colorScheme.primary,
-            size: 44,
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        const IconWell(
+          icon: Icons.account_balance_rounded,
+          tone: AppColors.tan,
+          size: 44,
+        ),
+      ],
     );
   }
 }

@@ -139,8 +139,9 @@ class ListSkeleton extends StatelessWidget {
 
 /// Zero-data state with an optional primary action.
 ///
-/// The icon is a muted well rather than an illustration: it marks the state
-/// without turning an ordinary empty list into an event.
+/// The icon sits in a small medallion rather than an illustration: it marks
+/// the state warmly, in the brand tone, without turning an ordinary empty list
+/// into an event — and it costs no image asset.
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
@@ -162,7 +163,7 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = theme.colorScheme.onSurfaceVariant;
+    final Color tone = theme.colorScheme.primary;
 
     return Center(
       // An empty state is the one screen a user may worry is a failure, so it
@@ -177,15 +178,7 @@ class EmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Container(
-                width: compact ? 42 : 50,
-                height: compact ? 42 : 50,
-                decoration: BoxDecoration(
-                  color: ToneColors.wash(context, tone),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                ),
-                child: Icon(icon, size: compact ? 20 : 24, color: tone),
-              ),
+              StateMedallion(icon: icon, tone: tone, compact: compact),
               SizedBox(height: compact ? AppSpacing.sm : AppSpacing.md),
               Text(
                 title,
@@ -218,6 +211,46 @@ class EmptyState extends StatelessWidget {
   }
 }
 
+/// The icon badge shared by the empty and error states: a hairline ring
+/// around a tinted disc, both in the state's tone.
+class StateMedallion extends StatelessWidget {
+  const StateMedallion({
+    super.key,
+    required this.icon,
+    required this.tone,
+    this.compact = false,
+  });
+
+  final IconData icon;
+  final Color tone;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final double outer = compact ? 50 : 62;
+    final double inner = compact ? 38 : 46;
+
+    return Container(
+      width: outer,
+      height: outer,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: tone.withOpacity(0.22)),
+      ),
+      child: Container(
+        width: inner,
+        height: inner,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: ToneColors.wash(context, tone),
+        ),
+        child: Icon(icon, size: compact ? 19 : 22, color: tone),
+      ),
+    );
+  }
+}
+
 /// Error state with a retry affordance.
 class ErrorView extends StatelessWidget {
   const ErrorView({
@@ -242,18 +275,10 @@ class ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Container(
-              width: compact ? 44 : 54,
-              height: compact ? 44 : 54,
-              decoration: BoxDecoration(
-                color: ToneColors.wash(context, tone),
-                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-              ),
-              child: Icon(
-                Icons.cloud_off_rounded,
-                size: compact ? 21 : 25,
-                color: tone,
-              ),
+            StateMedallion(
+              icon: Icons.cloud_off_rounded,
+              tone: tone,
+              compact: compact,
             ),
             const SizedBox(height: AppSpacing.lg),
             Text(

@@ -35,9 +35,10 @@ Future<T?> showAppSheet<T>({
 
 /// The glass pane every sheet sits on.
 ///
-/// Deliberately unblurred. The fill is 97% opaque so a form stays legible
-/// over any page, and at that opacity a backdrop blur is invisible while
-/// still costing a full read-back on every frame of the drag.
+/// Deliberately unblurred and opaque. A blur would cost a full read-back on
+/// every frame of the drag, and without one even a 96% glass fill lets the
+/// page's text ghost through the form. The glass tint is flattened onto the
+/// page colour instead: the same tone, no bleed.
 class _GlassSheetSurface extends StatelessWidget {
   const _GlassSheetSurface({required this.child});
 
@@ -59,7 +60,10 @@ class _GlassSheetSurface extends StatelessWidget {
         borderRadius: shape,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: glass.fillStrong,
+            color: Color.alphaBlend(
+              glass.fillStrong,
+              Theme.of(context).scaffoldBackgroundColor,
+            ),
             borderRadius: shape,
             border: Border(
               top: BorderSide(color: glass.borderTop, width: 0.75),

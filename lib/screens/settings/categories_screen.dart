@@ -90,6 +90,9 @@ class CategoriesScreen extends StatelessWidget {
                   tooltip: 'Delete',
                   onPressed: () => _confirmDelete(context, category),
                   visualDensity: VisualDensity.compact,
+                  // Muted: a destructive action repeated on every row must not
+                  // be the loudest thing on the page.
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   icon: const Icon(
                     Icons.delete_outline_rounded,
                     size: AppSpacing.iconMd,

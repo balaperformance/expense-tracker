@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_motion.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/theme/app_typography.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/analytics.dart';
 import '../../models/bank_account.dart';
@@ -107,24 +109,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(
-              Formatters.greeting(),
-              style: theme.textTheme.bodySmall,
+              Formatters.greeting().toUpperCase(),
+              style: AppTypography.eyebrow(theme.textTheme),
             ),
-            Text(settings.displayName, style: theme.textTheme.titleLarge),
+            const SizedBox(height: 1),
+            Text(
+              settings.displayName,
+              style: theme.textTheme.titleLarge,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
         actions: <Widget>[
-          IconButton(
+          _HeaderAction(
             tooltip: 'Ask the assistant',
             onPressed: _openAssistant,
-            icon: const Icon(Icons.auto_awesome_outlined),
+            icon: Icons.auto_awesome_outlined,
           ),
-          IconButton(
+          const SizedBox(width: AppSpacing.sm),
+          _HeaderAction(
             tooltip: 'Bank accounts',
             onPressed: _openAccounts,
-            icon: const Icon(Icons.account_balance_outlined),
+            icon: Icons.account_balance_outlined,
           ),
-          const SizedBox(width: AppSpacing.xs),
+          const SizedBox(width: AppSpacing.page),
         ],
       ),
       body: RefreshIndicator(
@@ -475,6 +484,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
     context.read<DashboardProvider>().invalidate();
     context.read<BudgetProvider>().invalidate();
     _load(force: true);
+  }
+}
+
+/// A round glass button for the dashboard header.
+///
+/// The glass disc is painted only; the IconButton inside keeps the full 48px
+/// hit target and the tooltip.
+class _HeaderAction extends StatelessWidget {
+  const _HeaderAction({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+  });
+
+  final String tooltip;
+  final VoidCallback onPressed;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassSurface(
+      radius: 20,
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          iconSize: AppSpacing.iconMd,
+          padding: EdgeInsets.zero,
+          icon: Icon(icon),
+        ),
+      ),
+    );
   }
 }
 

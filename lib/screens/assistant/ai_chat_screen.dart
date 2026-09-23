@@ -332,9 +332,12 @@ class _UserBubble extends StatelessWidget {
             vertical: AppSpacing.sm + 2,
           ),
           decoration: BoxDecoration(
+            // A solid bubble in the brand tone, so the user's voice and the
+            // assistant's glass bubble separate at a glance. A failed send
+            // drops back to an error wash so it cannot look delivered.
             color: failed
                 ? ToneColors.wash(context, theme.colorScheme.error)
-                : ToneColors.wash(context, theme.colorScheme.primary),
+                : theme.colorScheme.primary,
             borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(AppSpacing.radiusLg),
               topRight: Radius.circular(AppSpacing.radiusLg),
@@ -342,7 +345,12 @@ class _UserBubble extends StatelessWidget {
               bottomRight: Radius.circular(AppSpacing.radiusXs),
             ),
           ),
-          child: Text(message.text, style: theme.textTheme.bodyMedium),
+          child: Text(
+            message.text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: failed ? null : theme.colorScheme.onPrimary,
+            ),
+          ),
         ),
         if (failed) ...<Widget>[
           const SizedBox(height: AppSpacing.xs),

@@ -28,10 +28,11 @@ class GlassNavItem {
 /// small dot under its icon. Icons only — the labels survive as tooltips and
 /// semantics.
 ///
-/// **No blur.** The bar is 97% opaque so its icons stay legible over any
-/// content, and a backdrop blur behind a fill that opaque is invisible while
-/// still costing a full-screen read-back on every scrolled frame. The glass
-/// read comes from the warm fill, the lit top edge and the floating shadow.
+/// **No blur, no see-through.** A blur costs a full-screen read-back on every
+/// scrolled frame, and without one even a 96% fill leaves rows ghosting
+/// through the bar. So the glass tint is flattened onto the page colour: the
+/// same warm tone, fully opaque, with the lit top edge and floating shadow
+/// carrying the glass read.
 class GlassNavBar extends StatelessWidget {
   const GlassNavBar({
     super.key,
@@ -80,6 +81,7 @@ class GlassNavBar extends StatelessWidget {
         ),
         child: GlassSurface(
           strong: true,
+          opaque: true,
           elevated: false,
           radius: _height / 2,
           child: SizedBox(

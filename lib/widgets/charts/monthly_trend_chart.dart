@@ -57,6 +57,12 @@ class MonthlyTrendChart extends StatelessWidget {
     final Color expenseTone = ToneColors.expense(context);
     final Color incomeTone = ToneColors.income(context);
 
+    // With expenses alone there is nothing to tell apart, so the bars take
+    // the brand tone: a wall of red on the home screen reads as an alarm the
+    // data has not raised. Against income, the semantic pair returns.
+    final Color barTone =
+        showIncome ? expenseTone : theme.colorScheme.primary;
+
     // The selected month is the one the user cares about; the others are
     // context, so they are drawn back a little.
     final int lastIndex = points.length - 1;
@@ -140,7 +146,9 @@ class MonthlyTrendChart extends StatelessWidget {
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 42,
+                // Wide enough for "₹88.0K" on one line; the FittedBox below
+                // shrinks anything longer rather than wrapping it.
+                reservedSize: 48,
                 interval: step,
                 getTitlesWidget: (double value, TitleMeta meta) {
                   // The zero line is implied by the baseline; labelling it
@@ -150,14 +158,21 @@ class MonthlyTrendChart extends StatelessWidget {
                   }
                   return Padding(
                     padding: const EdgeInsets.only(right: AppSpacing.sm),
-                    child: Text(
-                      Formatters.currency(
-                        value,
-                        currencyCode: currency,
-                        compact: true,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        Formatters.currency(
+                          value,
+                          currencyCode: currency,
+                          compact: true,
+                        ),
+                        style:
+                            AppTypography.money(theme.textTheme.labelSmall),
+                        textAlign: TextAlign.right,
+                        maxLines: 1,
+                        softWrap: false,
                       ),
-                      style: AppTypography.money(theme.textTheme.labelSmall),
-                      textAlign: TextAlign.right,
                     ),
                   );
                 },
@@ -185,8 +200,7 @@ class MonthlyTrendChart extends StatelessWidget {
                               // A filled pill rather than bold text: at 11px
                               // a weight change is nearly invisible, and the
                               // selected month has to be obvious at a glance.
-                              color: ToneColors.expense(context)
-                                  .withOpacity(0.12),
+                              color: barTone.withOpacity(0.14),
                               borderRadius: BorderRadius.circular(
                                 AppSpacing.radiusPill,
                               ),
@@ -196,7 +210,7 @@ class MonthlyTrendChart extends StatelessWidget {
                         Formatters.shortMonth(points[index].month),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: isSelected
-                              ? ToneColors.expense(context)
+                              ? barTone
                               : theme.colorScheme.onSurfaceVariant,
                           fontWeight:
                               isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -211,7 +225,7 @@ class MonthlyTrendChart extends StatelessWidget {
           barGroups: List<BarChartGroupData>.generate(points.length, (int i) {
             final MonthlyPoint point = points[i];
             final bool isSelected = i == selected;
-            final double fade = isSelected ? 1 : 0.4;
+            final double fade = isSelected ? 1 : 0.34;
 
             return BarChartGroupData(
               x: i,
@@ -219,10 +233,10 @@ class MonthlyTrendChart extends StatelessWidget {
               barRods: <BarChartRodData>[
                 BarChartRodData(
                   toY: point.expense,
-                  color: expenseTone.withOpacity(fade),
+                  color: barTone.withOpacity(fade),
                   width: showIncome ? 7 : (isSelected ? 16 : 12),
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(4),
+                  borderRadius: BorderRadius.vertical(
+                    top: Radius.circular(showIncome ? 4 : 6),
                   ),
                   // No background track. A full-height rod behind the
                   // selected bar reads as a floating dark block above it on a

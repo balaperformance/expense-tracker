@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/theme/app_motion.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../providers/ai_chat_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -19,6 +20,7 @@ import '../../services/dev_auth_bypass.dart';
 import '../../services/schema_capabilities.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/common/app_buttons.dart';
+import '../../widgets/common/brand_mark.dart';
 import '../../widgets/common/state_views.dart';
 import '../shell/home_shell.dart';
 import 'login_screen.dart';
@@ -214,36 +216,32 @@ class _SplashScreen extends StatelessWidget {
 
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              width: 62,
-              height: 62,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        child: AppFadeIn(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const BrandLockup(tagline: 'Spend with intention'),
+              const SizedBox(height: AppSpacing.xxl),
+              // A short line rather than a spinner: quieter, and it reads as
+              // "loading" without drawing the eye away from the mark.
+              SizedBox(
+                width: 72,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                  child: LinearProgressIndicator(
+                    minHeight: 3,
+                    color: theme.colorScheme.primary,
+                    backgroundColor:
+                        theme.colorScheme.primary.withOpacity(0.14),
+                  ),
+                ),
               ),
-              child: Icon(
-                Icons.account_balance_wallet_rounded,
-                color: theme.colorScheme.onPrimary,
-                size: 30,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.2,
-                color: theme.colorScheme.primary,
-              ),
-            ),
-            if (message != null) ...<Widget>[
-              const SizedBox(height: AppSpacing.lg),
-              Text(message!, style: theme.textTheme.bodySmall),
+              if (message != null) ...<Widget>[
+                const SizedBox(height: AppSpacing.lg),
+                Text(message!, style: theme.textTheme.bodySmall),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

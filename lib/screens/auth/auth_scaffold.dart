@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_motion.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../widgets/common/brand_mark.dart';
 import '../../widgets/common/surface_card.dart';
 
 /// Shared chrome for the signed-out screens.
 ///
 /// Keeps the keyboard from covering inputs and gives every auth screen the
-/// same header rhythm, so signing in, signing up and resetting a password
-/// feel like one flow rather than three pages.
+/// same composition — the brand mark, a serif headline, and the form on a
+/// glass pane over a soft tan light — so signing in, signing up and checking
+/// email feel like one flow rather than three pages.
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({
     super.key,
@@ -28,78 +31,92 @@ class AuthScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: showBack
           ? AppBar(
               leading: const BackButton(),
               backgroundColor: Colors.transparent,
             )
           : null,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                AppSpacing.sm,
-                AppSpacing.xl,
-                AppSpacing.xl,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight - AppSpacing.xl * 2,
-                ),
-                child: AppFadeIn(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      if (!showBack) const SizedBox(height: AppSpacing.xl),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.primary,
-                            borderRadius:
-                                BorderRadius.circular(AppSpacing.radiusMd + 2),
-                          ),
-                          child: Icon(
-                            icon,
-                            color: theme.colorScheme.onPrimary,
-                            size: 22,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Text(title, style: theme.textTheme.headlineLarge),
-                      const SizedBox(height: AppSpacing.xxs),
-                      Text(
-                        subtitle,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      // The form sits on a glass pane rather than bare on the
-                      // page, which is what gives the signed-out screens the
-                      // same layered material as everything behind the login.
-                      SurfaceCard(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          mainAxisSize: MainAxisSize.min,
-                          children: children,
-                        ),
-                      ),
+      body: Stack(
+        children: <Widget>[
+          // The one decorative element on the signed-out screens: a warm
+          // light behind the header, painted as a gradient (no image, no
+          // blur), fading into the page before the form begins.
+          Positioned(
+            top: -160,
+            left: -80,
+            right: -80,
+            child: IgnorePointer(
+              child: Container(
+                height: 420,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: <Color>[
+                      AppColors.tan.withOpacity(isDark ? 0.16 : 0.30),
+                      AppColors.tan.withOpacity(0),
                     ],
                   ),
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          ),
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                return SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    showBack ? AppSpacing.appBarHeight : AppSpacing.sm,
+                    AppSpacing.xl,
+                    AppSpacing.xl,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight - AppSpacing.xl * 2,
+                    ),
+                    child: AppFadeIn(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          if (!showBack)
+                            const SizedBox(height: AppSpacing.xxxl),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: BrandMark(size: 52, icon: icon),
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          Text(title, style: theme.textTheme.displaySmall),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            subtitle,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          SurfaceCard(
+                            radius: AppSpacing.radiusXl,
+                            padding: const EdgeInsets.all(AppSpacing.lg + 2),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisSize: MainAxisSize.min,
+                              children: children,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -233,7 +233,16 @@ class AppListRow extends StatelessWidget {
               // takes space from the title instead of overflowing the row.
               if (trailing != null) ...<Widget>[
                 const SizedBox(width: AppSpacing.sm),
-                Flexible(child: trailing!),
+                // Aligned right within its share: a loose Flexible sizes to a
+                // short child — a masked balance — and left it floating in
+                // the middle of the row.
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    heightFactor: 1,
+                    child: trailing!,
+                  ),
+                ),
               ],
               if (showChevron) ...<Widget>[
                 const SizedBox(width: AppSpacing.xs),

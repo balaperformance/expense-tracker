@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_glass.dart';
 import '../core/theme/app_spacing.dart';
-import '../core/theme/app_theme.dart';
 import '../core/theme/app_typography.dart';
 import '../core/utils/formatters.dart';
+import 'common/hero_surface.dart';
 import 'common/money_text.dart';
 
 // ToneColors lives with MoneyText, but is re-exported here because most
@@ -81,21 +81,11 @@ class StatTile extends StatelessWidget {
     );
   }
 }
-/// The dashboard's financial snapshot — the one espresso surface in the app.
+
+/// The dashboard's financial snapshot, on the espresso [HeroSurface].
 ///
-/// A deep espresso gradient with cream figures, so the number the user opens
-/// the app for sits on the only dark-roast pane on a light page (and lifts
-/// off the page in dark mode). One dominant figure, two supporting legs, and
-/// the bank total when accounts exist.
-///
-/// The content is rendered under the dark theme, so every token inside —
-/// the money tones, muted text, the eye — resolves to its light-on-dark
-/// value without this widget restating a single colour.
-///
-/// **No blur.** The card sits on a static page background; a backdrop blur
-/// there would cost a read-back every frame and change nothing on screen.
-/// Depth comes from the gradient, a warm shadow and two soft glows painted
-/// as plain gradients, which are nearly free.
+/// One dominant figure, two supporting legs, and the bank total when
+/// accounts exist.
 class BalanceCard extends StatelessWidget {
   const BalanceCard({
     super.key,
@@ -124,60 +114,12 @@ class BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool pageIsDark = Theme.of(context).brightness == Brightness.dark;
     final double net = income - expense;
-    const BorderRadius shape =
-        BorderRadius.all(Radius.circular(AppSpacing.radiusXl));
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: shape,
-        boxShadow: AppGlass.of(context).shadowStrong,
-      ),
-      child: ClipRRect(
-        borderRadius: shape,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: pageIsDark ? AppColors.heroDark : AppColors.heroLight,
-            ),
-            borderRadius: shape,
-            border: Border.all(
-              color: AppColors.tan.withOpacity(pageIsDark ? 0.22 : 0.16),
-              width: 0.75,
-            ),
-          ),
-          child: Theme(
-            data: AppTheme.dark,
-            child: Builder(
-              builder: (BuildContext context) => Stack(
-                children: <Widget>[
-                  const Positioned(
-                    top: -70,
-                    right: -50,
-                    child: _Glow(size: 190, opacity: 0.20),
-                  ),
-                  const Positioned(
-                    bottom: -90,
-                    left: -40,
-                    child: _Glow(size: 170, opacity: 0.09),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg + 2,
-                      AppSpacing.lg,
-                      AppSpacing.lg + 2,
-                      AppSpacing.lg,
-                    ),
-                    child: _content(context, net),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+    // Builder so the content reads the hero's dark theme, not the page's.
+    return HeroSurface(
+      child: Builder(
+        builder: (BuildContext context) => _content(context, net),
       ),
     );
   }
@@ -275,35 +217,6 @@ class BalanceCard extends StatelessWidget {
   }
 }
 
-/// A soft tan light, painted as a radial gradient rather than blurred.
-class _Glow extends StatelessWidget {
-  const _Glow({required this.size, required this.opacity});
-
-  final double size;
-  final double opacity;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: <Color>[
-                AppColors.tan.withOpacity(opacity),
-                AppColors.tan.withOpacity(0),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// The month pill in the hero's top-right corner.
 class _HeroBadge extends StatelessWidget {
   const _HeroBadge({required this.label});
@@ -358,9 +271,7 @@ class _RevealButton extends StatelessWidget {
       ),
       color: Theme.of(context).colorScheme.onSurfaceVariant,
       icon: Icon(
-        hidden
-            ? Icons.visibility_outlined
-            : Icons.visibility_off_outlined,
+        hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
       ),
     );
   }

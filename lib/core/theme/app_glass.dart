@@ -173,6 +173,7 @@ class GlassSurface extends StatelessWidget {
     this.elevated = true,
     this.borderRadius,
     this.clip = true,
+    this.opaque = false,
   });
 
   final Widget child;
@@ -200,6 +201,12 @@ class GlassSurface extends StatelessWidget {
   /// Clipping is required whenever [blur] is set, and merely tidy otherwise.
   final bool clip;
 
+  /// Flattens the glass tint onto the page colour. Use for a surface that
+  /// content passes *under* without a blur — a floating bar, a sheet — where
+  /// even a 4% see-through leaves legible ghost text behind the glass. The
+  /// tone is identical; only the bleed is gone.
+  final bool opaque;
+
   @override
   Widget build(BuildContext context) {
     final GlassTokens glass = AppGlass.of(context);
@@ -208,7 +215,12 @@ class GlassSurface extends StatelessWidget {
 
     final Color fill = tone != null
         ? tone!.withOpacity(glass.isDark ? 0.16 : 0.09)
-        : (strong ? glass.fillStrong : glass.fill);
+        : opaque
+            ? Color.alphaBlend(
+                strong ? glass.fillStrong : glass.fill,
+                Theme.of(context).scaffoldBackgroundColor,
+              )
+            : (strong ? glass.fillStrong : glass.fill);
 
     final Color outline = tone != null
         ? tone!.withOpacity(glass.isDark ? 0.42 : 0.30)

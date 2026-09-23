@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../providers/ai_chat_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -57,18 +58,11 @@ class SettingsScreen extends StatelessWidget {
           // ---------------------------------------------------------------
           SurfaceCard(
             onTap: () => _editName(context, settings),
+            radius: AppSpacing.radiusXl,
+            padding: const EdgeInsets.all(AppSpacing.lg),
             child: Row(
               children: <Widget>[
-                CircleAvatar(
-                  radius: 23,
-                  backgroundColor: theme.colorScheme.primary,
-                  child: Text(
-                    settings.profile?.initial ?? '?',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      color: theme.colorScheme.onPrimary,
-                    ),
-                  ),
-                ),
+                _ProfileAvatar(initial: settings.profile?.initial ?? '?'),
                 const SizedBox(width: AppSpacing.md),
                 Expanded(
                   child: Column(
@@ -77,7 +71,7 @@ class SettingsScreen extends StatelessWidget {
                     children: <Widget>[
                       Text(
                         settings.profile?.fullName ?? 'Add your name',
-                        style: theme.textTheme.titleMedium,
+                        style: theme.textTheme.headlineSmall,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -91,10 +85,18 @@ class SettingsScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                Icon(
-                  Icons.edit_outlined,
-                  size: AppSpacing.iconMd,
-                  color: theme.colorScheme.onSurfaceVariant,
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: ToneColors.wash(context, theme.colorScheme.primary),
+                  ),
+                  child: Icon(
+                    Icons.edit_outlined,
+                    size: AppSpacing.iconSm,
+                    color: theme.colorScheme.primary,
+                  ),
                 ),
               ],
             ),
@@ -508,5 +510,44 @@ class SettingsScreen extends StatelessWidget {
 
     if (!confirmed || !context.mounted) return;
     await context.read<AuthProvider>().signOut();
+  }
+}
+
+/// The profile initial on an espresso disc with a tan ring — the same
+/// material as the brand mark, so the account reads as part of the app.
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.initial});
+
+  final String initial;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 54,
+      height: 54,
+      padding: const EdgeInsets.all(2.5),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppColors.tan.withOpacity(0.7), width: 1.2),
+      ),
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: AppColors.heroLight,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            initial,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: AppColors.tan,
+                ),
+          ),
+        ),
+      ),
+    );
   }
 }

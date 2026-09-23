@@ -17,8 +17,10 @@ import 'package:expense_tracker/core/theme/app_motion.dart';
 import 'package:expense_tracker/core/theme/app_spacing.dart';
 import 'package:expense_tracker/core/theme/app_theme.dart';
 import 'package:expense_tracker/widgets/common/app_buttons.dart';
-import 'package:expense_tracker/widgets/common/money_text.dart';
+import 'package:expense_tracker/widgets/common/app_sheet.dart';
+import 'package:expense_tracker/widgets/common/glass_nav_bar.dart';
 import 'package:expense_tracker/widgets/common/surface_card.dart';
+import 'package:expense_tracker/widgets/stat_tiles.dart';
 import 'package:expense_tracker/widgets/transaction_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -341,6 +343,93 @@ void main() {
             theme.cardTheme.shape! as RoundedRectangleBorder;
         expect(shape.side.width, lessThan(1.0), reason: 'hairline, not a rule');
       }
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Blur budget
+  // ---------------------------------------------------------------------
+  group('blur budget', () {
+    // The premium redesign removed three BackdropFilters that sat behind
+    // near-opaque fills or a static page. These pin that down, and pin the
+    // consequence: a surface that content passes under without a blur must be
+    // fully opaque, or rows ghost through it — which is exactly what the
+    // first on-device run showed.
+
+    testWidgets('the nav bar neither blurs nor lets content show through',
+        (WidgetTester tester) async {
+      for (final Brightness brightness in Brightness.values) {
+        await _pump(
+          tester,
+          GlassNavBar(
+            items: const <GlassNavItem>[
+              GlassNavItem(label: 'Home', icon: Icons.home_outlined),
+              GlassNavItem(label: 'Settings', icon: Icons.settings_outlined),
+            ],
+            index: 0,
+            onSelected: (_) {},
+          ),
+          brightness: brightness,
+        );
+        expect(find.byType(BackdropFilter), findsNothing);
+        final GlassSurface pane = tester.widget(find.descendant(
+          of: find.byType(GlassNavBar),
+          matching: find.byType(GlassSurface),
+        ));
+        expect(pane.opaque, isTrue, reason: '$brightness');
+      }
+    });
+
+    testWidgets('a sheet neither blurs nor lets the page show through',
+        (WidgetTester tester) async {
+      for (final Brightness brightness in Brightness.values) {
+        await _pump(
+          tester,
+          Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () => showAppSheet<void>(
+                context: context,
+                builder: (_) => const SizedBox(height: 120),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+          brightness: brightness,
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(BackdropFilter), findsNothing);
+        final List<Color> fills = tester
+            .widgetList<DecoratedBox>(find.descendant(
+              of: find.byType(BottomSheet),
+              matching: find.byType(DecoratedBox),
+            ))
+            .map((DecoratedBox box) => box.decoration)
+            .whereType<BoxDecoration>()
+            .map((BoxDecoration d) => d.color)
+            .whereType<Color>()
+            .toList();
+        expect(fills, isNotEmpty);
+        expect(fills.first.alpha, 255, reason: '$brightness sheet fill');
+
+        Navigator.of(tester.element(find.byType(BottomSheet))).pop();
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('the dashboard hero does not blur',
+        (WidgetTester tester) async {
+      await _pump(
+        tester,
+        const BalanceCard(
+          income: 1000,
+          expense: 400,
+          currency: 'INR',
+          monthLabel: 'Sep',
+        ),
+      );
+      expect(find.byType(BackdropFilter), findsNothing);
     });
   });
 }

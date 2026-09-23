@@ -75,6 +75,7 @@ class PaymentMethodsScreen extends StatelessWidget {
                   tooltip: 'Delete',
                   onPressed: () => _confirmDelete(context, method),
                   visualDensity: VisualDensity.compact,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                   icon: const Icon(
                     Icons.delete_outline_rounded,
                     size: AppSpacing.iconMd,
