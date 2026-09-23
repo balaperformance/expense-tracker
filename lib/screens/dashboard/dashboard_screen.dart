@@ -702,7 +702,7 @@ class _AccountDots extends StatelessWidget {
             height: 5,
             decoration: BoxDecoration(
               color: i == index
-                  ? scheme.secondary
+                  ? scheme.primary
                   : scheme.onSurfaceVariant.withOpacity(0.35),
               borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
             ),

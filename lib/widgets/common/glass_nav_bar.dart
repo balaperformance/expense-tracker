@@ -24,14 +24,14 @@ class GlassNavItem {
 
 /// The app's bottom navigation: a floating glass pill.
 ///
-/// A single deep-olive bar inset from the screen edges, in both themes. The
-/// active destination is a cream circle that slides between slots, holding a
-/// deep-olive icon and a small dot (7.5:1). Idle icons are beige (5.4:1).
+/// A single dark-taupe bar inset from the screen edges, in both themes. The
+/// active destination is a taupe circle that slides between slots, holding a
+/// black icon and a small dot (6.1:1). Idle icons are light gray (5.1:1).
 /// Icons only — the labels survive as tooltips and semantics.
 ///
 /// **No blur, no see-through.** A blur costs a full-screen read-back on every
 /// scrolled frame, and without one a translucent bar lets rows ghost through
-/// it. The bar is opaque deep olive, with the lit top edge and floating shadow
+/// it. The bar is opaque dark taupe, with the lit top edge and floating shadow
 /// carrying the glass read.
 class GlassNavBar extends StatelessWidget {
   const GlassNavBar({
@@ -83,7 +83,7 @@ class GlassNavBar extends StatelessWidget {
           opaque: true,
           elevated: false,
           color: AppColors.navBar,
-          borderColor: AppColors.cream.withOpacity(0.10),
+          borderColor: AppColors.lightGray.withOpacity(0.10),
           radius: _height / 2,
           child: SizedBox(
             height: _height,
@@ -106,9 +106,9 @@ class GlassNavBar extends StatelessWidget {
                       child: const DecoratedBox(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          // Cream on deep olive: the one bright spot in the
+                          // The taupe accent, the one lighter spot in the
                           // bar, so the active tab is found at a glance.
-                          color: AppColors.cream,
+                          color: AppColors.accent,
                         ),
                       ),
                     ),
@@ -148,9 +148,9 @@ class _NavSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The bar is deep olive in both themes, so its ink is fixed rather than
+    // The bar is dark taupe in both themes, so its ink is fixed rather than
     // taken from the page's scheme.
-    final Color tone = selected ? AppColors.deepOlive : AppColors.beige;
+    final Color tone = selected ? AppColors.black : AppColors.lightGray;
 
     return Semantics(
       label: item.label,
@@ -163,7 +163,7 @@ class _NavSlot extends StatelessWidget {
           customBorder: const CircleBorder(),
           // Kept subtle: the sliding highlight is the selection feedback, and
           // a bright splash over it reads as a flash.
-          splashColor: AppColors.cream.withOpacity(0.12),
+          splashColor: AppColors.lightGray.withOpacity(0.12),
           highlightColor: Colors.transparent,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -187,7 +187,7 @@ class _NavSlot extends StatelessWidget {
                   width: GlassNavBar._dot,
                   height: GlassNavBar._dot,
                   decoration: const BoxDecoration(
-                    color: AppColors.deepOlive,
+                    color: AppColors.black,
                     shape: BoxShape.circle,
                   ),
                 ),

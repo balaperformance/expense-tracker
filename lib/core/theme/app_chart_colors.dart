@@ -12,11 +12,12 @@ import 'package:flutter/material.dart';
 ///   grayGreen #A2AE9D  income, a mid slice
 ///   deepBrown #54463A  the selected month (light), a high-contrast slice
 ///
-/// Light mode uses the four exactly. Its cards are the theme's beige, on
-/// which blush is 1.2:1 and rose 2.7:1 — so the selected month is deep brown
-/// (6.2:1) and the other months rose, rather than rose over near-invisible
-/// blush. Dark mode uses three of them exactly and lifts only deep brown,
-/// which would be 1.7:1 on the dark card — a slice you could not see.
+/// Light mode's cards are taupe-tinted gray, on which blush is 1.0:1 —
+/// literally invisible — and rose 2.3:1. So the selected month is deep brown
+/// (5.3:1) with rose for the other months, and the blush slice is deepened
+/// to [blushDeep], same hue. Rose, gray-green and deep brown are exact.
+/// Dark mode uses three of them exactly and lifts only deep brown, which
+/// would be 1.9:1 on the dark card — a slice you could not see.
 @immutable
 class ChartColors {
   const ChartColors._({
@@ -37,6 +38,9 @@ class ChartColors {
   static const Color blush = Color(0xFFF0B8B8);
   static const Color grayGreen = Color(0xFFA2AE9D);
   static const Color deepBrown = Color(0xFF54463A);
+
+  /// Blush deepened for the light theme's cards, where exact blush vanishes.
+  static const Color blushDeep = Color(0xFFD2848A);
 
   // ---------------------------------------------------------------------
   // Resolved roles
@@ -70,17 +74,19 @@ class ChartColors {
       rose,
       deepBrown,
       grayGreen,
-      blush,
+      blushDeep,
       Color(0xFF8E5A63), // rose × deep brown
       Color(0xFF7C8472), // gray-green × deep brown
     ],
-    // A mid warm gray: a pale neutral disappears into the beige card.
+    // A mid warm gray: a pale neutral disappears into the tinted card.
     other: Color(0xFF9C958B),
     emphasis: deepBrown,
     idle: rose,
     expense: rose,
     income: grayGreen,
-    labelOnEmphasis: deepBrown,
+    // Deep brown taken darker: on its own wash over the tinted card, exact
+    // deep brown is 4.1:1, under the 4.5:1 an 11px label needs.
+    labelOnEmphasis: Color(0xFF2B231C),
   );
 
   static const ChartColors dark = ChartColors._(

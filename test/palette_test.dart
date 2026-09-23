@@ -1,10 +1,10 @@
-// Palette tests: the Old Photograph app theme and the Pastel Garden chart
+// Palette tests: the Gothic Noir app theme and the Pastel Garden chart
 // palette.
 //
 // The theme tests already measure contrast and hue separation. These pin the
 // palette choices themselves — that the requested colours are the ones in
-// use, that each deliberate shading stays in the palette's family, and that
-// charts and the app theme do not bleed into each other.
+// use, that each deliberate adjustment stays in the palette's family, and
+// that charts and the app theme do not bleed into each other.
 
 import 'dart:math' as math;
 
@@ -49,87 +49,72 @@ Color _opaque(Color c, Color over) => Color.alphaBlend(c, over);
 (int, int, int) _rgb(Color c) => (c.red, c.green, c.blue);
 
 void main() {
-  const Color cream = Color(0xFFFDFBD4);
-  const Color beige = Color(0xFFD9D7B6);
-  const Color oliveGray = Color(0xFF878672);
-  const Color deepOlive = Color(0xFF545333);
+  const Color black = Color(0xFF000000);
+  const Color lightGray = Color(0xFFD1D0D0);
+  const Color taupe = Color(0xFF988686);
+  const Color darkTaupe = Color(0xFF5C4E4E);
 
   const Color rose = Color(0xFFC75F71);
   const Color blush = Color(0xFFF0B8B8);
   const Color grayGreen = Color(0xFFA2AE9D);
   const Color deepBrown = Color(0xFF54463A);
 
-  group('Old Photograph theme', () {
+  group('Gothic Noir theme', () {
     test('the four palette colours are the source tokens, exactly', () {
-      expect(AppColors.cream, cream);
-      expect(AppColors.beige, beige);
-      expect(AppColors.oliveGray, oliveGray);
-      expect(AppColors.deepOlive, deepOlive);
+      expect(AppColors.black, black);
+      expect(AppColors.lightGray, lightGray);
+      expect(AppColors.taupe, taupe);
+      expect(AppColors.darkTaupe, darkTaupe);
     });
 
-    test('light mode: cream page, beige cards, deep-olive primary', () {
+    test('light mode: light-gray page, black ink, dark-taupe primary', () {
       final ThemeData t = AppTheme.light;
-      expect(t.scaffoldBackgroundColor, cream);
-      expect(t.colorScheme.surface, beige);
-      expect(t.colorScheme.primary, deepOlive);
-      expect(t.colorScheme.onPrimary, cream);
+      expect(t.scaffoldBackgroundColor, lightGray);
+      expect(t.colorScheme.onSurface, black);
+      expect(t.textTheme.titleLarge!.color, black);
+      expect(t.colorScheme.primary, darkTaupe);
+      expect(t.colorScheme.onPrimary, lightGray);
     });
 
-    test('deep olive carries the important text: headings and figures', () {
-      final TextTheme text = AppTheme.light.textTheme;
-      expect(text.titleLarge!.color, deepOlive);
-      expect(text.displaySmall!.color, deepOlive);
-      expect(text.headlineSmall!.color, deepOlive);
+    test('cards are taupe washed into light gray, capped for readability', () {
+      const Color card = AppColors.lightSurface;
+      expect(card, _opaque(taupe.withOpacity(0.15), lightGray));
+      // The tint stops where dark-taupe secondary text still reads.
+      expect(_contrast(darkTaupe, card), greaterThanOrEqualTo(4.5));
+      expect(_rgb(AppGlass.light.fill), _rgb(card));
+      expect(card, isNot(lightGray), reason: 'cards must lift off the page');
     });
 
-    test('olive gray is the secondary accent in both themes', () {
+    test('taupe is the accent in both themes, used exactly where it reads',
+        () {
       for (final ThemeData t in <ThemeData>[AppTheme.light, AppTheme.dark]) {
-        expect(t.colorScheme.secondary, oliveGray);
+        expect(t.colorScheme.secondary, taupe);
       }
+      // Too faint as text on the light page — and fine on black, which is
+      // where the hero accents and dark-mode actions use it.
+      expect(_contrast(taupe, lightGray), lessThan(3.0));
+      expect(_contrast(taupe, black), greaterThanOrEqualTo(4.5));
+      expect(AppColors.heroAccent, taupe);
+      expect(AppTheme.dark.colorScheme.primary, taupe);
     });
 
-    test('olive gray is shaded only where it would fail contrast', () {
-      // Exact olive gray is too faint on a beige card for an icon or for
-      // text. If that ever stops being true, the shading should go.
-      expect(_contrast(oliveGray, beige), lessThan(3.0));
-      expect(_contrast(oliveGray, cream), greaterThanOrEqualTo(3.0),
-          reason: 'fine on the page, where the page dots use it');
-
-      // Secondary text is the same hue, deepened to AA on the card.
-      final Color muted = AppTheme.light.colorScheme.onSurfaceVariant;
-      expect(_hueDistance(muted, oliveGray), lessThan(8));
-      expect(_contrast(muted, beige), greaterThanOrEqualTo(4.5));
-    });
-
-    test('focus rings and progress use deep olive, visible on a card', () {
+    test('focus rings and progress use dark taupe, visible on a card', () {
       final ThemeData t = AppTheme.light;
-      expect(t.progressIndicatorTheme.color, deepOlive);
+      expect(t.progressIndicatorTheme.color, darkTaupe);
       final OutlineInputBorder focus =
           t.inputDecorationTheme.focusedBorder! as OutlineInputBorder;
-      expect(focus.borderSide.color, deepOlive);
-      expect(_contrast(deepOlive, beige), greaterThanOrEqualTo(3.0));
+      expect(focus.borderSide.color, darkTaupe);
+      expect(_contrast(darkTaupe, AppColors.lightSurface),
+          greaterThanOrEqualTo(3.0));
     });
 
-    test('body ink sits clearly above the muted text', () {
-      final ColorScheme s = AppTheme.light.colorScheme;
-      expect(
-        _contrast(s.onSurface, beige) - _contrast(s.onSurfaceVariant, beige),
-        greaterThan(3.0),
-        reason: 'otherwise body copy and captions read as one weight',
-      );
+    test('dark mode: black page, light-gray ink', () {
+      final ThemeData t = AppTheme.dark;
+      expect(t.scaffoldBackgroundColor, black);
+      expect(t.colorScheme.onSurface, lightGray);
     });
 
-    test('dark mode inks in cream', () {
-      expect(AppTheme.dark.colorScheme.onSurface, cream);
-    });
-
-    test('glass cards are the palette beige over the cream page', () {
-      expect(_rgb(AppGlass.light.fill), _rgb(beige));
-      final Color card = _opaque(AppGlass.light.fill, cream);
-      expect(card, isNot(cream), reason: 'cards must lift off the page');
-    });
-
-    testWidgets('the navigation bar is deep olive in both themes',
+    testWidgets('the navigation bar is dark taupe in both themes',
         (WidgetTester tester) async {
       for (final ThemeData theme in <ThemeData>[
         AppTheme.light,
@@ -152,26 +137,38 @@ void main() {
           of: find.byType(GlassNavBar),
           matching: find.byType(GlassSurface),
         ));
-        expect(pane.color, deepOlive, reason: '${theme.brightness}');
+        expect(pane.color, darkTaupe, reason: '${theme.brightness}');
       }
     });
 
     test('nav icons clear the 3:1 graphics floor on the bar', () {
-      expect(_contrast(beige, deepOlive), greaterThanOrEqualTo(3.0),
+      expect(_contrast(lightGray, darkTaupe), greaterThanOrEqualTo(3.0),
           reason: 'idle icons');
-      expect(_contrast(deepOlive, cream), greaterThanOrEqualTo(3.0),
-          reason: 'active icon on its cream circle');
+      expect(_contrast(black, taupe), greaterThanOrEqualTo(3.0),
+          reason: 'active icon on its taupe circle');
     });
   });
 
   group('Pastel Garden charts', () {
-    test('light mode charts use only the four palette colours', () {
+    test('light mode charts use the palette, blush deepened only', () {
       const ChartColors c = ChartColors.light;
-      expect(c.segments.take(4), <Color>[rose, deepBrown, grayGreen, blush]);
+      expect(c.segments.take(3), <Color>[rose, deepBrown, grayGreen]);
+      expect(c.segments[3], isNot(blush));
+      expect(_hueDistance(c.segments[3], blush), lessThan(8),
+          reason: 'still recognisably blush');
       expect(c.emphasis, deepBrown);
       expect(c.idle, rose);
       expect(c.expense, rose);
       expect(c.income, grayGreen);
+    });
+
+    test('exact blush would vanish on the light card — hence the deepening',
+        () {
+      expect(_contrast(blush, AppColors.lightSurface), lessThan(1.1));
+      expect(
+        _contrast(ChartColors.light.segments[3], AppColors.lightSurface),
+        greaterThan(_contrast(blush, AppColors.lightSurface)),
+      );
     });
 
     test('dark mode lifts deep brown only', () {
@@ -185,7 +182,6 @@ void main() {
     });
 
     test('no chart colour borrows the app theme accents', () {
-      final List<Color> theme = <Color>[deepOlive, oliveGray];
       for (final ChartColors c in <ChartColors>[
         ChartColors.light,
         ChartColors.dark,
@@ -197,7 +193,7 @@ void main() {
           c.expense,
           c.income,
         ]) {
-          for (final Color t in theme) {
+          for (final Color t in <Color>[darkTaupe, taupe, black, lightGray]) {
             expect(colour, isNot(t), reason: '$colour is a theme colour');
           }
         }

@@ -82,7 +82,7 @@ class StatTile extends StatelessWidget {
   }
 }
 
-/// The dashboard's financial snapshot, on the deep-olive [HeroSurface].
+/// The dashboard's financial snapshot, on the black [HeroSurface].
 ///
 /// One dominant figure, two supporting legs, and the bank total when
 /// accounts exist.

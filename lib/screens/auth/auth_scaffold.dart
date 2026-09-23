@@ -10,7 +10,7 @@ import '../../widgets/common/surface_card.dart';
 ///
 /// Keeps the keyboard from covering inputs and gives every auth screen the
 /// same composition — the brand mark, a serif headline, and the form on a
-/// glass pane over a soft olive-gray light — so signing in, signing up and checking
+/// glass pane over a soft taupe light — so signing in, signing up and checking
 /// email feel like one flow rather than three pages.
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({

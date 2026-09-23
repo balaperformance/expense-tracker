@@ -96,10 +96,10 @@ class AppTypography {
   static TextTheme textTheme(ColorScheme scheme) {
     final Color onSurface = scheme.onSurface;
     final Color muted = scheme.onSurfaceVariant;
-    // The serif tier — headings, titles, figures — is set in the brand
-    // colour: the palette's deep olive is the "important text" ink, and body
-    // copy stays in the darker neutral ink below it.
-    final Color headline = scheme.primary;
+    // Headings and figures share the body ink — black in light mode, the
+    // palette's "primary dark elements" — so the serif tier leads by size
+    // and face, not by a second colour.
+    final Color headline = onSurface;
 
     return TextTheme(
       // The single hero figure on a screen.

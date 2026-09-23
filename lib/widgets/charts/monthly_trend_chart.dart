@@ -57,7 +57,7 @@ class MonthlyTrendChart extends StatelessWidget {
     final double step = ceiling / 3;
     // Bars come from the Pastel Garden chart palette, never the app theme.
     // Expenses alone: the selected month stands out (deep brown on the light
-    // theme's beige cards, rose in dark), the rest recede. Against income:
+    // theme's taupe-tinted cards, rose in dark), the rest recede. Against income:
     // rose for money out, gray-green for money in.
     final ChartColors palette = ChartColors.of(context);
 

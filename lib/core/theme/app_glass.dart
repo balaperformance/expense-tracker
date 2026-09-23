@@ -97,26 +97,26 @@ class AppGlass {
 
   static const GlassTokens light = GlassTokens(
     isDark: false,
-    // The palette's beige with a touch of translucency, laid over the cream
-    // page like a mount card under an old print.
-    fill: Color(0xF0D9D7B6),
-    fillStrong: Color(0xFAD9D7B6),
-    sunken: Color(0x14545333),
-    // A cream highlight along the top; a deep-olive hairline around the rest.
-    borderTop: Color(0xFFFDFBD4),
-    borderBottom: Color(0x2E545333),
+    // The taupe-tinted card colour with a touch of translucency, a shade
+    // below the light gray page.
+    fill: Color(0xF0C8C4C4),
+    fillStrong: Color(0xFAC8C4C4),
+    sunken: Color(0x0F000000),
+    // A pale highlight along the top; a dark-taupe hairline around the rest.
+    borderTop: Color(0xFFE4E3E3),
+    borderBottom: Color(0x405C4E4E),
     blur: blurBar,
-    // Soft olive shadows, kept faint: the beige step does most of the work.
+    // Neutral shadows, kept faint: the tint step does most of the work.
     shadow: <BoxShadow>[
       BoxShadow(
-        color: Color(0x14545333),
+        color: Color(0x14000000),
         blurRadius: 18,
         offset: Offset(0, 6),
       ),
     ],
     shadowStrong: <BoxShadow>[
       BoxShadow(
-        color: Color(0x29545333),
+        color: Color(0x26000000),
         blurRadius: 34,
         offset: Offset(0, 14),
       ),
@@ -125,13 +125,13 @@ class AppGlass {
 
   static const GlassTokens dark = GlassTokens(
     isDark: true,
-    // Lifted olive-black, not a black veil. A translucent black over a
-    // near-black page produces no surface at all.
-    fill: Color(0xD92C2C1F),
-    fillStrong: Color(0xF52A2A1D),
-    sunken: Color(0x1AFDFBD4),
-    borderTop: Color(0x29FDFBD4),
-    borderBottom: Color(0x17FDFBD4),
+    // Lifted taupe-black, not a black veil: over the true-black page a
+    // translucent black would produce no surface at all.
+    fill: Color(0xD91E1A1A),
+    fillStrong: Color(0xF51C1818),
+    sunken: Color(0x1AD1D0D0),
+    borderTop: Color(0x29D1D0D0),
+    borderBottom: Color(0x17D1D0D0),
     blur: blurBar,
     shadow: <BoxShadow>[
       BoxShadow(
@@ -210,7 +210,7 @@ class GlassSurface extends StatelessWidget {
   final bool opaque;
 
   /// An explicit body colour in place of the glass fill — for a pane that
-  /// is its own material, like the deep-olive navigation bar. It still gets
+  /// is its own material, like the dark-taupe navigation bar. It still gets
   /// the lit edge, and [opaque] still applies.
   final Color? color;
 
@@ -254,11 +254,11 @@ class GlassSurface extends StatelessWidget {
               right: radius * 0.5,
               top: 0,
               child: _TopHighlight(
-                // Over an explicit body colour (the deep-olive nav bar) the
+                // Over an explicit body colour (the dark-taupe nav bar) the
                 // glass highlight would be a hard white rule; a faint glint
                 // reads as the same lit edge.
                 colour: color != null
-                    ? const Color(0x29FDFBD4)
+                    ? const Color(0x29D1D0D0)
                     : glass.borderTop,
               ),
             ),

@@ -5,7 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 
-/// The app's mark: a deep-olive tile with a beige wallet glyph.
+/// The app's mark: a black tile with a taupe wallet glyph.
 ///
 /// Drawn in code — a gradient, a hairline and an icon from the bundled
 /// Material font — so the identity costs no image asset and stays crisp at
