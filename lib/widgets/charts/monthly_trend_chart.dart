@@ -55,9 +55,10 @@ class MonthlyTrendChart extends StatelessWidget {
     // A non-zero ceiling keeps the axis stable when every month is empty.
     final double ceiling = maxValue <= 0 ? 100 : maxValue * 1.2;
     final double step = ceiling / 3;
-    // Bars come from the Pastel Garden chart palette, never the Ink Wash
-    // accent. Expenses alone: the selected month in rose, the rest in blush.
-    // Against income: rose for money out, gray-green for money in.
+    // Bars come from the Pastel Garden chart palette, never the app theme.
+    // Expenses alone: the selected month stands out (deep brown on the light
+    // theme's beige cards, rose in dark), the rest recede. Against income:
+    // rose for money out, gray-green for money in.
     final ChartColors palette = ChartColors.of(context);
 
     Color expenseBar(bool isSelected) {

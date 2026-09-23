@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Ink Wash soft ivory: matches the Flutter page background so launch has no flash. -->
-    <color name="splash_background">#FFFEE3</color>
+    <!-- Old Photograph cream: matches the Flutter page background so launch has no flash. -->
+    <color name="splash_background">#FDFBD4</color>
 </resources>

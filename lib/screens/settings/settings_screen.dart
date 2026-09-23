@@ -513,7 +513,7 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-/// The profile initial on a charcoal disc with a blue-gray ring — the same
+/// The profile initial on a deep-olive disc with an olive-gray ring — the same
 /// material as the brand mark, so the account reads as part of the app.
 class _ProfileAvatar extends StatelessWidget {
   const _ProfileAvatar({required this.initial});

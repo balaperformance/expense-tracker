@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Deep charcoal: matches the dark-mode Flutter page background. -->
-    <color name="splash_background">#1A1A1A</color>
+    <!-- Olive-black: matches the dark-mode Flutter page background. -->
+    <color name="splash_background">#1A1A12</color>
 </resources>

@@ -5,10 +5,10 @@ import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_theme.dart';
 
-/// The charcoal hero pane — reserved for the one headline figure on a
+/// The deep-olive hero pane — reserved for the one headline figure on a
 /// screen (the dashboard snapshot, the accounts total).
 ///
-/// A deep charcoal gradient with ivory ink, so the number the user came for
+/// A deep-olive gradient with cream ink, so the number the user came for
 /// sits on the only dark surface on a light page (and lifts off the
 /// page in dark mode). Rationing is the point: two of these on one screen
 /// and neither is the hero.
@@ -86,7 +86,7 @@ class HeroSurface extends StatelessWidget {
   }
 }
 
-/// A soft blue-gray light, painted as a radial gradient rather than blurred.
+/// A soft beige light, painted as a radial gradient rather than blurred.
 class _Glow extends StatelessWidget {
   const _Glow({required this.size, required this.opacity});
 

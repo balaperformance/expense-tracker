@@ -82,7 +82,7 @@ class StatTile extends StatelessWidget {
   }
 }
 
-/// The dashboard's financial snapshot, on the charcoal [HeroSurface].
+/// The dashboard's financial snapshot, on the deep-olive [HeroSurface].
 ///
 /// One dominant figure, two supporting legs, and the bank total when
 /// accounts exist.
@@ -399,7 +399,7 @@ class _QuickActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = action.tone ?? theme.colorScheme.secondary;
+    final Color tone = action.tone ?? theme.colorScheme.primary;
 
     return InkWell(
       onTap: action.onTap,

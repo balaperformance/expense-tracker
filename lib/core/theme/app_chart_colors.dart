@@ -3,18 +3,20 @@ import 'package:flutter/material.dart';
 /// Chart colours — the Pastel Garden palette.
 ///
 /// Used by the category donut (and the ranked list that is its legend) and
-/// by the monthly spending bars, and by nothing else: the rest of the UI is
-/// Ink Wash, and no chart ever uses the Ink Wash blue gray. Read through
+/// by the monthly spending bars, and by nothing else: the rest of the UI uses
+/// the app theme, and no chart uses the app theme's colours. Read through
 /// [ChartColors.of] so a chart never needs to know which mode it is in.
 ///
-///   rose      #C75F71  the emphasised series and the largest slice
-///   blush     #F0B8B8  context bars, a light slice
+///   rose      #C75F71  the largest slice, expenses, context bars (light)
+///   blush     #F0B8B8  context bars (dark), a light slice
 ///   grayGreen #A2AE9D  income, a mid slice
-///   deepBrown #54463A  a high-contrast slice, labels on the rose wash
+///   deepBrown #54463A  the selected month (light), a high-contrast slice
 ///
-/// Light mode uses the four exactly. Dark mode uses three of them exactly
-/// and lifts only Deep Brown, which would be 1.7:1 on the charcoal card —
-/// a slice you could not see.
+/// Light mode uses the four exactly. Its cards are the theme's beige, on
+/// which blush is 1.2:1 and rose 2.7:1 — so the selected month is deep brown
+/// (6.2:1) and the other months rose, rather than rose over near-invisible
+/// blush. Dark mode uses three of them exactly and lifts only deep brown,
+/// which would be 1.7:1 on the dark card — a slice you could not see.
 @immutable
 class ChartColors {
   const ChartColors._({
@@ -72,9 +74,10 @@ class ChartColors {
       Color(0xFF8E5A63), // rose × deep brown
       Color(0xFF7C8472), // gray-green × deep brown
     ],
-    other: Color(0xFFD8D2CC),
-    emphasis: rose,
-    idle: blush,
+    // A mid warm gray: a pale neutral disappears into the beige card.
+    other: Color(0xFF9C958B),
+    emphasis: deepBrown,
+    idle: rose,
     expense: rose,
     income: grayGreen,
     labelOnEmphasis: deepBrown,

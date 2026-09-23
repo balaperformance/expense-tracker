@@ -38,16 +38,17 @@ class AppTheme {
     final Color muted =
         isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
     final Color primary = isDark ? AppColors.brandDark : AppColors.brand;
-    // The exact palette accent, for highlights that carry no text. See the
-    // note in AppColors on why buttons use [primary] instead.
+    // The secondary accent, olive gray, for washes and highlights on the
+    // page. It is too faint on a beige card to mark a control, so focus
+    // rings and progress use [primary]; see the note in AppColors.
     const Color accent = AppColors.accent;
-    final Color onAccentInk = isDark ? AppColors.darkBackground : AppColors.ivory;
+    final Color onAccentInk = isDark ? AppColors.darkBackground : AppColors.cream;
     final Color error = isDark ? AppColors.expenseDark : AppColors.expense;
 
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
       primary: primary,
-      onPrimary: isDark ? AppColors.darkBackground : AppColors.ivory,
+      onPrimary: isDark ? AppColors.darkBackground : AppColors.cream,
       primaryContainer: primary.withOpacity(isDark ? 0.22 : 0.12),
       onPrimaryContainer: primary,
       secondary: accent,
@@ -59,13 +60,13 @@ class AppTheme {
       surfaceContainerHighest: sunken,
       onSurfaceVariant: muted,
       error: error,
-      onError: isDark ? AppColors.darkBackground : AppColors.ivory,
+      onError: isDark ? AppColors.darkBackground : AppColors.cream,
       errorContainer: error.withOpacity(isDark ? 0.20 : 0.10),
       onErrorContainer: error,
       outline: border,
       outlineVariant: border,
-      inverseSurface: isDark ? AppColors.ivory : AppColors.charcoal,
-      onInverseSurface: isDark ? AppColors.charcoal : AppColors.ivory,
+      inverseSurface: isDark ? AppColors.cream : AppColors.oliveInk,
+      onInverseSurface: isDark ? AppColors.oliveInk : AppColors.cream,
       shadow: Colors.black,
       scrim: Colors.black,
     );
@@ -156,8 +157,9 @@ class AppTheme {
         border: _inputBorder(Colors.transparent),
         enabledBorder: _inputBorder(Colors.transparent),
         disabledBorder: _inputBorder(Colors.transparent),
-        // The exact accent: a focus ring is a highlight, not text.
-        focusedBorder: _inputBorder(accent, width: 1.6),
+        // Deep olive, not the olive-gray accent: a focus ring has to clear
+        // 3:1 against a beige card, and olive gray is 2.5:1 there.
+        focusedBorder: _inputBorder(primary, width: 1.6),
         errorBorder: _inputBorder(error, width: 1.2),
         focusedErrorBorder: _inputBorder(error, width: 1.6),
         hintStyle: text.bodyMedium?.copyWith(color: muted),
@@ -440,7 +442,7 @@ class AppTheme {
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: accent,
+        color: primary,
         linearTrackColor: onSurface.withOpacity(0.08),
         linearMinHeight: 6,
       ),

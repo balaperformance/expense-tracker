@@ -96,27 +96,31 @@ class AppTypography {
   static TextTheme textTheme(ColorScheme scheme) {
     final Color onSurface = scheme.onSurface;
     final Color muted = scheme.onSurfaceVariant;
+    // The serif tier — headings, titles, figures — is set in the brand
+    // colour: the palette's deep olive is the "important text" ink, and body
+    // copy stays in the darker neutral ink below it.
+    final Color headline = scheme.primary;
 
     return TextTheme(
       // The single hero figure on a screen.
       displayLarge: _serif(
-          size: 34, height: 1.1, tracking: -0.6, color: onSurface),
+          size: 34, height: 1.1, tracking: -0.6, color: headline),
       displayMedium: _serif(
-          size: 30, height: 1.12, tracking: -0.5, color: onSurface),
+          size: 30, height: 1.12, tracking: -0.5, color: headline),
       displaySmall: _serif(
-          size: 28, height: 1.14, tracking: -0.4, color: onSurface),
+          size: 28, height: 1.14, tracking: -0.4, color: headline),
 
       // Figures and headings inside a card.
       headlineLarge: _serif(
-          size: 25, height: 1.18, tracking: -0.3, color: onSurface),
+          size: 25, height: 1.18, tracking: -0.3, color: headline),
       headlineMedium: _serif(
-          size: 21, height: 1.2, tracking: -0.2, color: onSurface),
+          size: 21, height: 1.2, tracking: -0.2, color: headline),
       headlineSmall: _serif(
-          size: 18.5, height: 1.22, tracking: -0.1, color: onSurface),
+          size: 18.5, height: 1.22, tracking: -0.1, color: headline),
 
       // Page title.
       titleLarge: _serif(
-          size: 21, height: 1.22, tracking: -0.2, color: onSurface),
+          size: 21, height: 1.22, tracking: -0.2, color: headline),
 
       // List-row title and row amount.
       titleMedium: TextStyle(

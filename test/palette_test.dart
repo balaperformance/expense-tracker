@@ -1,8 +1,9 @@
-// Palette tests: the Ink Wash app theme and the Pastel Garden chart palette.
+// Palette tests: the Old Photograph app theme and the Pastel Garden chart
+// palette.
 //
 // The theme tests already measure contrast and hue separation. These pin the
 // palette choices themselves — that the requested colours are the ones in
-// use, that the one deliberate deviation stays a same-hue shade, and that
+// use, that each deliberate shading stays in the palette's family, and that
 // charts and the app theme do not bleed into each other.
 
 import 'dart:math' as math;
@@ -45,78 +46,90 @@ double _hueDistance(Color a, Color b) {
 
 Color _opaque(Color c, Color over) => Color.alphaBlend(c, over);
 
+(int, int, int) _rgb(Color c) => (c.red, c.green, c.blue);
+
 void main() {
-  const Color charcoal = Color(0xFF4A4A4A);
-  const Color coolGray = Color(0xFFCBCBCB);
-  const Color ivory = Color(0xFFFFFEE3);
-  const Color blueGray = Color(0xFF6D8196);
+  const Color cream = Color(0xFFFDFBD4);
+  const Color beige = Color(0xFFD9D7B6);
+  const Color oliveGray = Color(0xFF878672);
+  const Color deepOlive = Color(0xFF545333);
 
   const Color rose = Color(0xFFC75F71);
   const Color blush = Color(0xFFF0B8B8);
   const Color grayGreen = Color(0xFFA2AE9D);
   const Color deepBrown = Color(0xFF54463A);
 
-  group('Ink Wash theme', () {
+  group('Old Photograph theme', () {
     test('the four palette colours are the source tokens, exactly', () {
-      expect(AppColors.charcoal, charcoal);
-      expect(AppColors.coolGray, coolGray);
-      expect(AppColors.ivory, ivory);
-      expect(AppColors.blueGray, blueGray);
+      expect(AppColors.cream, cream);
+      expect(AppColors.beige, beige);
+      expect(AppColors.oliveGray, oliveGray);
+      expect(AppColors.deepOlive, deepOlive);
     });
 
-    test('light mode: ivory page, charcoal ink, cool-gray borders', () {
+    test('light mode: cream page, beige cards, deep-olive primary', () {
       final ThemeData t = AppTheme.light;
-      expect(t.scaffoldBackgroundColor, ivory);
-      expect(t.colorScheme.onSurface, charcoal);
-      // Borders are the cool gray, applied as a hairline.
-      final Color border = t.colorScheme.outline;
+      expect(t.scaffoldBackgroundColor, cream);
+      expect(t.colorScheme.surface, beige);
+      expect(t.colorScheme.primary, deepOlive);
+      expect(t.colorScheme.onPrimary, cream);
+    });
+
+    test('deep olive carries the important text: headings and figures', () {
+      final TextTheme text = AppTheme.light.textTheme;
+      expect(text.titleLarge!.color, deepOlive);
+      expect(text.displaySmall!.color, deepOlive);
+      expect(text.headlineSmall!.color, deepOlive);
+    });
+
+    test('olive gray is the secondary accent in both themes', () {
+      for (final ThemeData t in <ThemeData>[AppTheme.light, AppTheme.dark]) {
+        expect(t.colorScheme.secondary, oliveGray);
+      }
+    });
+
+    test('olive gray is shaded only where it would fail contrast', () {
+      // Exact olive gray is too faint on a beige card for an icon or for
+      // text. If that ever stops being true, the shading should go.
+      expect(_contrast(oliveGray, beige), lessThan(3.0));
+      expect(_contrast(oliveGray, cream), greaterThanOrEqualTo(3.0),
+          reason: 'fine on the page, where the page dots use it');
+
+      // Secondary text is the same hue, deepened to AA on the card.
+      final Color muted = AppTheme.light.colorScheme.onSurfaceVariant;
+      expect(_hueDistance(muted, oliveGray), lessThan(8));
+      expect(_contrast(muted, beige), greaterThanOrEqualTo(4.5));
+    });
+
+    test('focus rings and progress use deep olive, visible on a card', () {
+      final ThemeData t = AppTheme.light;
+      expect(t.progressIndicatorTheme.color, deepOlive);
+      final OutlineInputBorder focus =
+          t.inputDecorationTheme.focusedBorder! as OutlineInputBorder;
+      expect(focus.borderSide.color, deepOlive);
+      expect(_contrast(deepOlive, beige), greaterThanOrEqualTo(3.0));
+    });
+
+    test('body ink sits clearly above the muted text', () {
+      final ColorScheme s = AppTheme.light.colorScheme;
       expect(
-        (border.red, border.green, border.blue),
-        (coolGray.red, coolGray.green, coolGray.blue),
+        _contrast(s.onSurface, beige) - _contrast(s.onSurfaceVariant, beige),
+        greaterThan(3.0),
+        reason: 'otherwise body copy and captions read as one weight',
       );
     });
 
-    test('dark mode inks in ivory', () {
-      expect(AppTheme.dark.colorScheme.onSurface, ivory);
+    test('dark mode inks in cream', () {
+      expect(AppTheme.dark.colorScheme.onSurface, cream);
     });
 
-    test('the exact blue gray is the accent in both themes', () {
-      for (final ThemeData t in <ThemeData>[AppTheme.light, AppTheme.dark]) {
-        expect(t.colorScheme.secondary, blueGray);
-        expect(t.progressIndicatorTheme.color, blueGray);
-      }
+    test('glass cards are the palette beige over the cream page', () {
+      expect(_rgb(AppGlass.light.fill), _rgb(beige));
+      final Color card = _opaque(AppGlass.light.fill, cream);
+      expect(card, isNot(cream), reason: 'cards must lift off the page');
     });
 
-    test('the accent clears the 3:1 floor for graphics in both themes', () {
-      for (final ThemeData t in <ThemeData>[AppTheme.light, AppTheme.dark]) {
-        expect(
-          _contrast(blueGray, t.colorScheme.surface),
-          greaterThanOrEqualTo(3.0),
-          reason: '${t.brightness}',
-        );
-      }
-    });
-
-    test('the button shade is the same hue as the accent, just deeper', () {
-      // Exact #6D8196 cannot carry an ivory label at AA, so buttons use a
-      // deeper shade. It must stay recognisably the same colour.
-      expect(_contrast(AppColors.ivory, blueGray), lessThan(4.5),
-          reason: 'if this ever passes, drop the deep shade');
-      expect(_hueDistance(AppTheme.light.colorScheme.primary, blueGray),
-          lessThan(3));
-      expect(_hueDistance(AppTheme.dark.colorScheme.primary, blueGray),
-          lessThan(8));
-    });
-
-    test('glass cards read as ivory paper with a cool-gray hairline', () {
-      final Color card = _opaque(AppGlass.light.fill, ivory);
-      expect(card, isNot(ivory), reason: 'cards must lift off the page');
-      final Color edge = AppGlass.light.borderBottom;
-      expect((edge.red, edge.green, edge.blue),
-          (coolGray.red, coolGray.green, coolGray.blue));
-    });
-
-    testWidgets('the navigation bar is charcoal in both themes',
+    testWidgets('the navigation bar is deep olive in both themes',
         (WidgetTester tester) async {
       for (final ThemeData theme in <ThemeData>[
         AppTheme.light,
@@ -139,17 +152,24 @@ void main() {
           of: find.byType(GlassNavBar),
           matching: find.byType(GlassSurface),
         ));
-        expect(pane.color, charcoal, reason: '${theme.brightness}');
+        expect(pane.color, deepOlive, reason: '${theme.brightness}');
       }
+    });
+
+    test('nav icons clear the 3:1 graphics floor on the bar', () {
+      expect(_contrast(beige, deepOlive), greaterThanOrEqualTo(3.0),
+          reason: 'idle icons');
+      expect(_contrast(deepOlive, cream), greaterThanOrEqualTo(3.0),
+          reason: 'active icon on its cream circle');
     });
   });
 
   group('Pastel Garden charts', () {
-    test('light mode charts use the four palette colours exactly', () {
+    test('light mode charts use only the four palette colours', () {
       const ChartColors c = ChartColors.light;
       expect(c.segments.take(4), <Color>[rose, deepBrown, grayGreen, blush]);
-      expect(c.emphasis, rose);
-      expect(c.idle, blush);
+      expect(c.emphasis, deepBrown);
+      expect(c.idle, rose);
       expect(c.expense, rose);
       expect(c.income, grayGreen);
     });
@@ -164,21 +184,22 @@ void main() {
           reason: 'still recognisably the brown');
     });
 
-    test('no chart colour borrows the Ink Wash blue gray', () {
+    test('no chart colour borrows the app theme accents', () {
+      final List<Color> theme = <Color>[deepOlive, oliveGray];
       for (final ChartColors c in <ChartColors>[
         ChartColors.light,
         ChartColors.dark,
       ]) {
         for (final Color colour in <Color>[
           ...c.segments,
-          c.other,
           c.emphasis,
           c.idle,
           c.expense,
           c.income,
         ]) {
-          expect(_hueDistance(colour, blueGray), greaterThan(40),
-              reason: '$colour is too close to the app accent');
+          for (final Color t in theme) {
+            expect(colour, isNot(t), reason: '$colour is a theme colour');
+          }
         }
       }
     });
@@ -191,6 +212,13 @@ void main() {
           reason: '$colour',
         );
       }
+    });
+
+    test('"Other" does not vanish into the card', () {
+      expect(
+        _contrast(ChartColors.light.other, AppColors.lightSurface),
+        greaterThan(1.5),
+      );
     });
 
     test('the selected bar stands out and its label is readable', () {
