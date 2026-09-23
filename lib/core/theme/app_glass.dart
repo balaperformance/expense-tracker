@@ -8,22 +8,19 @@
 ///      bottom, which is what reads as a lit pane rather than a flat panel,
 ///   4. a soft shadow that separates the pane from the page.
 ///
-/// **Blur is rationed.** `BackdropFilter` forces the compositor to read back
-/// everything painted underneath, and the cost scales with the blurred area,
-/// not with the sigma. A screen with twelve blurred cards on it will drop
-/// frames on the mid-range Android hardware this app targets. So blur is
-/// spent only where something genuinely moves behind the surface and the
-/// effect is doing real work:
+/// **Blur is rationed, hard.** `BackdropFilter` forces the compositor to read
+/// back everything painted underneath, every frame, and it is the single most
+/// expensive thing a Flutter screen can do on the mid-range Android hardware
+/// this app targets. A blur is only visible through a fill translucent enough
+/// to show it: behind a 95%-opaque bar or sheet, or over a static page
+/// background, it costs the full price and shows nothing.
 ///
-///   * the app bar and the bottom navigation, which content scrolls under,
-///   * modal sheets and dialogs, which sit over the page,
-///   * the one hero card on the dashboard.
-///
-/// Every other surface — cards, rows, wells, chips — uses layers 2 to 4
-/// only. Translucency, tint, lit edge and depth all survive; only the
-/// (invisible, because nothing is moving behind them) blur is dropped. That
-/// is the difference between a design that looks like glass and one that
-/// merely costs like it.
+/// So the app blurs in exactly one place by default — the full-screen layer
+/// behind a dialog, which is transient and sits over a lightly scrimmed page
+/// where the effect is plainly visible. The navigation bar, sheets and the
+/// dashboard hero carry the look with layers 2 to 4: translucency, tint, the
+/// lit edge and depth. [GlassSurface.blur] still exists for a surface that
+/// genuinely has moving content behind a translucent fill.
 library;
 
 import 'dart:ui';
@@ -90,64 +87,64 @@ class AppGlass {
 
   /// Bars and navigation. Enough to abstract the content behind without
   /// smearing it into mush.
-  static const double blurBar = 24;
+  static const double blurBar = 14;
 
   /// Sheets, dialogs and anything over a dimmed page.
-  static const double blurOverlay = 32;
+  static const double blurOverlay = 18;
 
   /// The dashboard hero card.
-  static const double blurCard = 18;
+  static const double blurCard = 12;
 
   static const GlassTokens light = GlassTokens(
     isDark: false,
-    // White with body, not transparent white: over a near-white page a fill
-    // below about 0.6 stops reading as a surface at all and the card edge
-    // does the entire job.
-    fill: Color(0xCCFFFFFF),
-    fillStrong: Color(0xF2FFFFFF),
-    sunken: Color(0x0F101828),
-    // The top highlight is pure white; the outline is a very soft ink.
-    borderTop: Color(0xE6FFFFFF),
-    borderBottom: Color(0x14101828),
+    // Warm ivory with body. Over the ivory page a fill much below 0.8 stops
+    // reading as a surface and the edge does the entire job.
+    fill: Color(0xDEFFFCF7),
+    fillStrong: Color(0xF7FFFCF7),
+    sunken: Color(0x10422701),
+    // A cream highlight along the top, a soft espresso ink around the rest.
+    borderTop: Color(0xF2FFFFFF),
+    borderBottom: Color(0x17422701),
     blur: blurBar,
+    // Warm-tinted shadows: a neutral grey shadow on ivory reads as dirt.
     shadow: <BoxShadow>[
       BoxShadow(
-        color: Color(0x0D101828),
-        blurRadius: 16,
-        offset: Offset(0, 4),
-      ),
-    ],
-    shadowStrong: <BoxShadow>[
-      BoxShadow(
-        color: Color(0x1A101828),
-        blurRadius: 32,
-        offset: Offset(0, 12),
-      ),
-    ],
-  );
-
-  static const GlassTokens dark = GlassTokens(
-    isDark: true,
-    // Dark glass is a lifted grey, not a black veil: a translucent black over
-    // a near-black page produces no surface at all.
-    fill: Color(0xB81B2028),
-    fillStrong: Color(0xF01A1F27),
-    sunken: Color(0x1FFFFFFF),
-    borderTop: Color(0x26FFFFFF),
-    borderBottom: Color(0x1AFFFFFF),
-    blur: blurBar,
-    shadow: <BoxShadow>[
-      BoxShadow(
-        color: Color(0x40000000),
+        color: Color(0x0F422701),
         blurRadius: 18,
         offset: Offset(0, 6),
       ),
     ],
     shadowStrong: <BoxShadow>[
       BoxShadow(
-        color: Color(0x66000000),
-        blurRadius: 36,
+        color: Color(0x1F422701),
+        blurRadius: 34,
         offset: Offset(0, 14),
+      ),
+    ],
+  );
+
+  static const GlassTokens dark = GlassTokens(
+    isDark: true,
+    // Roasted glass: a lifted warm grey, not a black veil. A translucent
+    // black over a near-black page produces no surface at all.
+    fill: Color(0xD1241E19),
+    fillStrong: Color(0xF5221C17),
+    sunken: Color(0x1AF4EDE4),
+    borderTop: Color(0x29FFF3E3),
+    borderBottom: Color(0x17FFF3E3),
+    blur: blurBar,
+    shadow: <BoxShadow>[
+      BoxShadow(
+        color: Color(0x47000000),
+        blurRadius: 20,
+        offset: Offset(0, 8),
+      ),
+    ],
+    shadowStrong: <BoxShadow>[
+      BoxShadow(
+        color: Color(0x6B000000),
+        blurRadius: 38,
+        offset: Offset(0, 16),
       ),
     ],
   );

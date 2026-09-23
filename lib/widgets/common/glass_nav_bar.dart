@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_glass.dart';
@@ -25,15 +23,15 @@ class GlassNavItem {
 
 /// The app's bottom navigation: a floating glass pill.
 ///
-/// A single rounded bar inset from the screen edges, blurred so the page
-/// shows through it, with the active destination marked by a lighter pill
-/// that slides between slots. Icons only — the labels survive as tooltips
-/// and semantics.
+/// A single rounded bar inset from the screen edges. The active destination
+/// is marked by a soft circular highlight that slides between slots, with a
+/// small dot under its icon. Icons only — the labels survive as tooltips and
+/// semantics.
 ///
-/// The surface is the app's own glass, so the bar reads as the same material
-/// as every card behind it rather than as a coloured object dropped on top.
-/// Selection is the same primary tint a selected chip uses, which keeps the
-/// accent to the one active icon instead of the whole bar.
+/// **No blur.** The bar is 97% opaque so its icons stay legible over any
+/// content, and a backdrop blur behind a fill that opaque is invisible while
+/// still costing a full-screen read-back on every scrolled frame. The glass
+/// read comes from the warm fill, the lit top edge and the floating shadow.
 class GlassNavBar extends StatelessWidget {
   const GlassNavBar({
     super.key,
@@ -54,11 +52,11 @@ class GlassNavBar extends StatelessWidget {
   /// rather than as a docked bar.
   static const double _sideInset = AppSpacing.xxl;
 
-  /// The moving highlight behind the active icon.
-  static const double _pillMaxWidth = 50;
-  static const double _pillHeight = 38;
+  /// The moving highlight behind the active icon: a circle, not a pill.
+  static const double _highlight = 42;
 
-  static const double _iconSize = 22;
+  static const double _iconSize = 21;
+  static const double _dot = 4;
 
   @override
   Widget build(BuildContext context) {
@@ -78,74 +76,56 @@ class GlassNavBar extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(_height / 2),
-          boxShadow: glass.shadow,
+          boxShadow: glass.shadowStrong,
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(_height / 2),
-          child: BackdropFilter(
-            // One blurred surface for the whole bar. Content scrolls under it
-            // on every tab, so this is blur that visibly earns its cost.
-            filter: ImageFilter.blur(
-              sigmaX: AppGlass.blurBar,
-              sigmaY: AppGlass.blurBar,
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                // The app's own glass, not a colour of its own: the bar now
-                // belongs to the page it floats over instead of importing a
-                // purple that appeared nowhere else on the screen.
-                color: glass.fillStrong,
-                borderRadius: BorderRadius.circular(_height / 2),
-                border: Border.all(color: glass.borderBottom, width: 0.75),
-              ),
-              child: SizedBox(
-                height: _height,
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final double slot = constraints.maxWidth / items.length;
-                    final double pillWidth =
-                        slot - AppSpacing.sm < _pillMaxWidth
-                            ? slot - AppSpacing.sm
-                            : _pillMaxWidth;
+        child: GlassSurface(
+          strong: true,
+          elevated: false,
+          radius: _height / 2,
+          child: SizedBox(
+            height: _height,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double slot = constraints.maxWidth / items.length;
+                final double size = slot - AppSpacing.xs < _highlight
+                    ? slot - AppSpacing.xs
+                    : _highlight;
 
-                    return Stack(
-                      children: <Widget>[
-                        AnimatedPositioned(
-                          duration: AppMotion.normal,
-                          curve: AppMotion.standard,
-                          left: slot * index + (slot - pillWidth) / 2,
-                          top: (_height - _pillHeight) / 2,
-                          width: pillWidth,
-                          height: _pillHeight,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              // The same tint a selected chip uses, so
-                              // selection reads the same everywhere.
-                              color: scheme.primary.withOpacity(
-                                glass.isDark ? 0.20 : 0.11,
-                              ),
-                              borderRadius:
-                                  BorderRadius.circular(_pillHeight / 2.2),
-                            ),
+                return Stack(
+                  children: <Widget>[
+                    AnimatedPositioned(
+                      duration: AppMotion.normal,
+                      curve: AppMotion.standard,
+                      left: slot * index + (slot - size) / 2,
+                      top: (_height - size) / 2,
+                      width: size,
+                      height: size,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          // The same wash a selected chip uses, so selection
+                          // reads the same everywhere in the app.
+                          color: scheme.primary.withOpacity(
+                            glass.isDark ? 0.18 : 0.12,
                           ),
                         ),
-                        Row(
-                          children: <Widget>[
-                            for (int i = 0; i < items.length; i++)
-                              Expanded(
-                                child: _NavSlot(
-                                  item: items[i],
-                                  selected: i == index,
-                                  onTap: () => onSelected(i),
-                                ),
-                              ),
-                          ],
-                        ),
+                      ),
+                    ),
+                    Row(
+                      children: <Widget>[
+                        for (int i = 0; i < items.length; i++)
+                          Expanded(
+                            child: _NavSlot(
+                              item: items[i],
+                              selected: i == index,
+                              onTap: () => onSelected(i),
+                            ),
+                          ),
                       ],
-                    );
-                  },
-                ),
-              ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -168,6 +148,7 @@ class _NavSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color tone = selected ? scheme.primary : scheme.onSurfaceVariant;
 
     return Semantics(
       label: item.label,
@@ -177,28 +158,39 @@ class _NavSlot extends StatelessWidget {
         message: item.label,
         child: InkWell(
           onTap: onTap,
-          customBorder: const StadiumBorder(),
-          // Kept subtle: the sliding pill is the selection feedback, and a
-          // bright splash over it reads as a flash.
+          customBorder: const CircleBorder(),
+          // Kept subtle: the sliding highlight is the selection feedback, and
+          // a bright splash over it reads as a flash.
           splashColor: scheme.primary.withOpacity(0.10),
           highlightColor: Colors.transparent,
-          child: Center(
-            child: AnimatedScale(
-              duration: AppMotion.fast,
-              curve: AppMotion.standard,
-              scale: selected ? 1.0 : 0.92,
-              child: AnimatedSwitcher(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              AnimatedSwitcher(
                 duration: AppMotion.fast,
                 child: Icon(
                   selected ? item.activeIcon : item.icon,
                   key: ValueKey<bool>(selected),
                   size: GlassNavBar._iconSize,
-                  color: selected
-                      ? scheme.primary
-                      : scheme.onSurfaceVariant,
+                  color: tone,
                 ),
               ),
-            ),
+              const SizedBox(height: 3),
+              // Space is reserved for the dot on every slot, so the icons do
+              // not jump vertically as the selection moves.
+              AnimatedOpacity(
+                duration: AppMotion.fast,
+                opacity: selected ? 1 : 0,
+                child: Container(
+                  width: GlassNavBar._dot,
+                  height: GlassNavBar._dot,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

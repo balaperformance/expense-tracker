@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_spacing.dart';
 import 'app_buttons.dart';
@@ -38,7 +39,7 @@ Future<T?> showAppDialog<T>({
               sigmaX: AppGlass.blurOverlay,
               sigmaY: AppGlass.blurOverlay,
             ),
-            child: ColoredBox(color: Colors.black.withOpacity(0.24)),
+            child: ColoredBox(color: AppColors.espresso.withOpacity(0.26)),
           ),
         ),
         builder(dialogContext),

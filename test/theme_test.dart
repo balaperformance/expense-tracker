@@ -244,8 +244,25 @@ void main() {
           t.labelSmall,
         ]) {
           expect(style, isNotNull);
-          expect(style!.fontFamily, AppTypography.fontFamily);
+          // Every style names its family explicitly — the working sans or
+          // the display serif — so nothing falls back to a platform default.
+          expect(
+            style!.fontFamily,
+            anyOf(AppTypography.fontFamily, AppTypography.displayFamily),
+          );
+          // `serif` is an Android alias only. Without the fallback chain iOS
+          // would silently render every headline in the system sans.
+          if (style.fontFamily == AppTypography.displayFamily) {
+            expect(style.fontFamilyFallback, AppTypography.displayFallback);
+          }
         }
+
+        // The voice/work split: headlines and page titles are serif, anything
+        // scanned in a list is sans.
+        expect(t.displaySmall!.fontFamily, AppTypography.displayFamily);
+        expect(t.titleLarge!.fontFamily, AppTypography.displayFamily);
+        expect(t.titleMedium!.fontFamily, AppTypography.fontFamily);
+        expect(t.bodySmall!.fontFamily, AppTypography.fontFamily);
 
         // Hierarchy has to actually descend, or "compact" just means "small".
         expect(t.displaySmall!.fontSize!, greaterThan(t.headlineSmall!.fontSize!));

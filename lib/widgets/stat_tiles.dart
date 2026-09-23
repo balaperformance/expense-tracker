@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../core/theme/app_colors.dart';
 import '../core/theme/app_glass.dart';
 import '../core/theme/app_spacing.dart';
+import '../core/theme/app_theme.dart';
 import '../core/theme/app_typography.dart';
 import '../core/utils/formatters.dart';
 import 'common/money_text.dart';
-import 'common/surface_card.dart';
 
 // ToneColors lives with MoneyText, but is re-exported here because most
 // callers need both together.
@@ -80,12 +81,21 @@ class StatTile extends StatelessWidget {
     );
   }
 }
-
-/// The dashboard's financial snapshot.
+/// The dashboard's financial snapshot — the one espresso surface in the app.
 ///
-/// Flat and tonal rather than a gradient panel: a gradient reads as marketing,
-/// and it forces every figure on top of it to fight a shifting background.
-/// One dominant number, two supporting figures, nothing else.
+/// A deep espresso gradient with cream figures, so the number the user opens
+/// the app for sits on the only dark-roast pane on a light page (and lifts
+/// off the page in dark mode). One dominant figure, two supporting legs, and
+/// the bank total when accounts exist.
+///
+/// The content is rendered under the dark theme, so every token inside —
+/// the money tones, muted text, the eye — resolves to its light-on-dark
+/// value without this widget restating a single colour.
+///
+/// **No blur.** The card sits on a static page background; a backdrop blur
+/// there would cost a read-back every frame and change nothing on screen.
+/// Depth comes from the gradient, a warm shadow and two soft glows painted
+/// as plain gradients, which are nearly free.
 class BalanceCard extends StatelessWidget {
   const BalanceCard({
     super.key,
@@ -114,108 +124,210 @@ class BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme scheme = theme.colorScheme;
+    final bool pageIsDark = Theme.of(context).brightness == Brightness.dark;
     final double net = income - expense;
+    const BorderRadius shape =
+        BorderRadius.all(Radius.circular(AppSpacing.radiusXl));
 
-    return SurfaceCard(
-      // The one card in the app that blurs. Content scrolls behind it on the
-      // dashboard, so the effect is visibly doing work rather than being an
-      // expensive tint.
-      blur: AppGlass.blurCard,
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  'Net this month',
-                  style: theme.textTheme.labelMedium,
-                ),
-              ),
-              AppBadge(label: monthLabel),
-            ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: shape,
+        boxShadow: AppGlass.of(context).shadowStrong,
+      ),
+      child: ClipRRect(
+        borderRadius: shape,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: pageIsDark ? AppColors.heroDark : AppColors.heroLight,
+            ),
+            borderRadius: shape,
+            border: Border.all(
+              color: AppColors.tan.withOpacity(pageIsDark ? 0.22 : 0.16),
+              width: 0.75,
+            ),
           ),
-          const SizedBox(height: AppSpacing.xxs),
-          MoneyText(
-            net,
-            currency: currency,
-            signed: net != 0,
-            tone: AmountTone.auto,
-            fit: true,
-            // The hero figure on the whole app, and the one place a counting
-            // transition is worth its frames.
-            animate: true,
-            style: theme.textTheme.displaySmall,
-          ),
-          const SizedBox(height: AppSpacing.md),
-          // A plain row with a hairline rather than a sunken well inside a
-          // card: one less nested surface, and about 16px of height back.
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: _Leg(
-                  label: 'Income',
-                  amount: income,
-                  currency: currency,
-                  tone: ToneColors.income(context),
-                  icon: Icons.south_west_rounded,
-                ),
-              ),
-              Container(
-                width: 1,
-                height: 24,
-                color: scheme.outline,
-                margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-              ),
-              Expanded(
-                child: _Leg(
-                  label: 'Expenses',
-                  amount: expense,
-                  currency: currency,
-                  tone: ToneColors.expense(context),
-                  icon: Icons.north_east_rounded,
-                ),
-              ),
-            ],
-          ),
-          if (bankTotal != null) ...<Widget>[
-            const SizedBox(height: AppSpacing.sm),
-            Divider(height: 1, color: scheme.outline),
-            const SizedBox(height: AppSpacing.sm),
-            Row(
-              children: <Widget>[
-                Icon(
-                  Icons.account_balance_rounded,
-                  size: AppSpacing.iconSm,
-                  color: scheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    'In bank accounts',
-                    style: theme.textTheme.bodySmall,
+          child: Theme(
+            data: AppTheme.dark,
+            child: Builder(
+              builder: (BuildContext context) => Stack(
+                children: <Widget>[
+                  const Positioned(
+                    top: -70,
+                    right: -50,
+                    child: _Glow(size: 190, opacity: 0.20),
                   ),
-                ),
-                MoneyText(
-                  bankTotal!,
-                  currency: currency,
-                  obscured: bankTotalHidden,
-                  style: theme.textTheme.titleSmall,
-                ),
-                if (onToggleBankTotal != null) ...<Widget>[
-                  const SizedBox(width: AppSpacing.xs),
-                  _RevealButton(
-                    hidden: bankTotalHidden,
-                    onPressed: onToggleBankTotal!,
+                  const Positioned(
+                    bottom: -90,
+                    left: -40,
+                    child: _Glow(size: 170, opacity: 0.09),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.lg + 2,
+                      AppSpacing.lg,
+                      AppSpacing.lg + 2,
+                      AppSpacing.lg,
+                    ),
+                    child: _content(context, net),
                   ),
                 ],
-              ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _content(BuildContext context, double net) {
+    final ThemeData theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                'NET THIS MONTH',
+                style: AppTypography.eyebrow(
+                  theme.textTheme,
+                  color: AppColors.tan,
+                ),
+              ),
+            ),
+            _HeroBadge(label: monthLabel),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        MoneyText(
+          net,
+          currency: currency,
+          signed: net != 0,
+          tone: AmountTone.auto,
+          fit: true,
+          // The hero figure on the whole app, and the one place a counting
+          // transition is worth its frames.
+          animate: true,
+          style: theme.textTheme.displaySmall?.copyWith(fontSize: 31),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _Leg(
+                label: 'Income',
+                amount: income,
+                currency: currency,
+                tone: ToneColors.income(context),
+                icon: Icons.south_west_rounded,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: _Leg(
+                label: 'Expenses',
+                amount: expense,
+                currency: currency,
+                tone: ToneColors.expense(context),
+                icon: Icons.north_east_rounded,
+              ),
             ),
           ],
+        ),
+        if (bankTotal != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm + 2),
+          Row(
+            children: <Widget>[
+              const Icon(
+                Icons.account_balance_rounded,
+                size: AppSpacing.iconSm,
+                color: AppColors.tan,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'In bank accounts',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              MoneyText(
+                bankTotal!,
+                currency: currency,
+                obscured: bankTotalHidden,
+                style: theme.textTheme.titleSmall,
+              ),
+              if (onToggleBankTotal != null) ...<Widget>[
+                const SizedBox(width: AppSpacing.xs),
+                _RevealButton(
+                  hidden: bankTotalHidden,
+                  onPressed: onToggleBankTotal!,
+                ),
+              ],
+            ],
+          ),
         ],
+      ],
+    );
+  }
+}
+
+/// A soft tan light, painted as a radial gradient rather than blurred.
+class _Glow extends StatelessWidget {
+  const _Glow({required this.size, required this.opacity});
+
+  final double size;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(
+              colors: <Color>[
+                AppColors.tan.withOpacity(opacity),
+                AppColors.tan.withOpacity(0),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The month pill in the hero's top-right corner.
+class _HeroBadge extends StatelessWidget {
+  const _HeroBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm + 2,
+        vertical: 3,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.tan.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        border: Border.all(color: AppColors.tan.withOpacity(0.30), width: 0.75),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: AppTypography.eyebrow(
+          Theme.of(context).textTheme,
+          color: AppColors.tan,
+        ),
       ),
     );
   }
@@ -254,6 +366,7 @@ class _RevealButton extends StatelessWidget {
   }
 }
 
+/// Income or expenses on the hero: a quiet inset tile carrying its tone.
 class _Leg extends StatelessWidget {
   const _Leg({
     required this.label,
@@ -273,41 +386,65 @@ class _Leg extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Row(
-          children: <Widget>[
-            Icon(icon, size: 12, color: tone),
-            const SizedBox(width: AppSpacing.xs),
-            Flexible(
-              child: Text(
-                label,
-                style: theme.textTheme.bodySmall,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm + 2,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.cream.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        border:
+            Border.all(color: AppColors.cream.withOpacity(0.08), width: 0.75),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: tone.withOpacity(0.18),
+              shape: BoxShape.circle,
             ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xxs),
-        MoneyText(
-          amount,
-          currency: currency,
-          compact: true,
-          fit: true,
-          style: AppTypography.money(
-            theme.textTheme.titleMedium?.copyWith(color: tone),
-            emphasis: true,
+            child: Icon(icon, size: 13, color: tone),
           ),
-        ),
-      ],
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: theme.textTheme.labelSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 1),
+                MoneyText(
+                  amount,
+                  currency: currency,
+                  compact: true,
+                  fit: true,
+                  style: AppTypography.money(
+                    theme.textTheme.titleSmall?.copyWith(color: tone),
+                    emphasis: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// Row of shortcut buttons under the dashboard snapshot.
+/// Row of shortcut tiles under the dashboard snapshot.
+///
+/// Each action is a small glass tile with its label underneath — the premium
+/// shortcut idiom — rather than a bordered button, so the row reads as a
+/// palette of destinations instead of four competing calls to action.
 class QuickActions extends StatelessWidget {
   const QuickActions({super.key, required this.actions});
 
@@ -316,6 +453,7 @@ class QuickActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         for (int i = 0; i < actions.length; i++) ...<Widget>[
           if (i != 0) const SizedBox(width: AppSpacing.sm),
@@ -343,42 +481,42 @@ class QuickAction {
 class _QuickActionButton extends StatelessWidget {
   const _QuickActionButton({required this.action});
 
+  static const double _tile = 48;
+
   final QuickAction action;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = action.tone ?? theme.colorScheme.onSurface;
+    final Color tone = action.tone ?? theme.colorScheme.primary;
 
-    return Material(
-      color: theme.colorScheme.surface,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-      child: InkWell(
-        onTap: action.onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-        child: Container(
-          height: 54,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppSpacing.radiusButton),
-            border: Border.all(color: theme.colorScheme.outline),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Icon(action.icon, size: AppSpacing.buttonIcon, color: tone),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                action.label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: action.onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            GlassSurface(
+              radius: AppSpacing.radiusMd + 2,
+              child: SizedBox(
+                width: _tile,
+                height: _tile,
+                child: Icon(action.icon, size: 21, color: tone),
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: AppSpacing.xs + 2),
+            Text(
+              action.label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );

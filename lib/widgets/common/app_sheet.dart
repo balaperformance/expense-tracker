@@ -1,7 +1,6 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_spacing.dart';
 
@@ -13,7 +12,7 @@ import '../../core/theme/app_spacing.dart';
 /// settled once, and a screen only supplies its content.
 ///
 /// The theme deliberately leaves `bottomSheetTheme` transparent — a surface
-/// there would paint *behind* this glass and cancel the blur.
+/// there would paint a second, square-cornered pane behind this one.
 Future<T?> showAppSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -26,16 +25,19 @@ Future<T?> showAppSheet<T>({
     isDismissible: isDismissible,
     enableDrag: enableDrag,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withOpacity(0.32),
+    // A warm espresso scrim rather than neutral black, which on the ivory
+    // page read as a grey film.
+    barrierColor: AppColors.espresso.withOpacity(0.38),
     builder: (BuildContext sheetContext) =>
         _GlassSheetSurface(child: builder(sheetContext)),
   );
 }
 
-/// The blurred pane every sheet sits on.
+/// The glass pane every sheet sits on.
 ///
-/// This is one of the few places a `BackdropFilter` earns its cost: the page
-/// is visibly behind the sheet and the user can drag the sheet over it.
+/// Deliberately unblurred. The fill is 97% opaque so a form stays legible
+/// over any page, and at that opacity a backdrop blur is invisible while
+/// still costing a full read-back on every frame of the drag.
 class _GlassSheetSurface extends StatelessWidget {
   const _GlassSheetSurface({required this.child});
 
@@ -48,13 +50,13 @@ class _GlassSheetSurface extends StatelessWidget {
       top: Radius.circular(AppSpacing.radiusXxl),
     );
 
-    return ClipRRect(
-      borderRadius: shape,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(
-          sigmaX: AppGlass.blurOverlay,
-          sigmaY: AppGlass.blurOverlay,
-        ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: shape,
+        boxShadow: glass.shadowStrong,
+      ),
+      child: ClipRRect(
+        borderRadius: shape,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: glass.fillStrong,

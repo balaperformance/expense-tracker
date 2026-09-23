@@ -19,8 +19,11 @@ import 'app_typography.dart';
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData get light => _build(Brightness.light);
-  static ThemeData get dark => _build(Brightness.dark);
+  /// Built once and reused. The getters these replace rebuilt the whole
+  /// ThemeData — every component theme, every text style — on each access,
+  /// which the app did on every settings change and every themed rebuild.
+  static final ThemeData light = _build(Brightness.light);
+  static final ThemeData dark = _build(Brightness.dark);
 
   static ThemeData _build(Brightness brightness) {
     final bool isDark = brightness == Brightness.dark;
@@ -40,23 +43,25 @@ class AppTheme {
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
       primary: primary,
-      onPrimary: isDark ? const Color(0xFF13162B) : Colors.white,
+      onPrimary: isDark ? AppColors.lightText : const Color(0xFFFFF9F0),
       primaryContainer: primary.withOpacity(isDark ? 0.22 : 0.12),
       onPrimaryContainer: primary,
       secondary: primary,
-      onSecondary: isDark ? const Color(0xFF13162B) : Colors.white,
+      onSecondary: isDark ? AppColors.lightText : const Color(0xFFFFF9F0),
+      tertiary: AppColors.tan,
+      onTertiary: AppColors.lightText,
       surface: surface,
       onSurface: onSurface,
       surfaceContainerHighest: sunken,
       onSurfaceVariant: muted,
       error: error,
-      onError: isDark ? const Color(0xFF2A0B0B) : Colors.white,
+      onError: isDark ? const Color(0xFF2A0F0A) : const Color(0xFFFFF9F0),
       errorContainer: error.withOpacity(isDark ? 0.20 : 0.10),
       onErrorContainer: error,
       outline: border,
       outlineVariant: border,
-      inverseSurface: isDark ? const Color(0xFFE7EAF0) : const Color(0xFF1F2430),
-      onInverseSurface: isDark ? const Color(0xFF12151B) : Colors.white,
+      inverseSurface: isDark ? const Color(0xFFF1E8DC) : AppColors.lightText,
+      onInverseSurface: isDark ? AppColors.darkSurface : AppColors.cream,
       shadow: Colors.black,
       scrim: Colors.black,
     );
@@ -263,7 +268,7 @@ class AppTheme {
           ),
           shape: WidgetStatePropertyAll<OutlinedBorder>(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
             ),
           ),
           visualDensity: VisualDensity.compact,
@@ -328,7 +333,7 @@ class AppTheme {
         // takes precedence over `extendedSizeConstraints`, which silently
         // pinned the height back to Material's 48px default.
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd + 2),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
         ),
       ),
 
@@ -401,7 +406,7 @@ class AppTheme {
         elevation: 2,
         insetPadding: const EdgeInsets.all(AppSpacing.md),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
         ),
       ),
       listTileTheme: ListTileThemeData(
@@ -458,6 +463,24 @@ class AppTheme {
         headerForegroundColor: scheme.onPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+        ),
+      ),
+      textSelectionTheme: TextSelectionThemeData(
+        cursorColor: primary,
+        selectionColor: primary.withOpacity(0.24),
+        selectionHandleColor: primary,
+      ),
+      tabBarTheme: TabBarTheme(
+        labelColor: onSurface,
+        unselectedLabelColor: muted,
+        labelStyle: text.labelLarge,
+        unselectedLabelStyle: text.labelLarge,
+        dividerColor: Colors.transparent,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: BoxDecoration(
+          color: glass.fillStrong,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+          boxShadow: glass.shadow,
         ),
       ),
       splashColor: primary.withOpacity(0.08),

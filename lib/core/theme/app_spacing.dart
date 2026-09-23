@@ -55,25 +55,27 @@ class AppSpacing {
   // Radii
   // ---------------------------------------------------------------------
 
+  static const double radiusPill = 999;
+
   /// Chips, small tags, chart tooltips.
   static const double radiusXs = 8;
-  static const double radiusSm = 10;
+  static const double radiusSm = 12;
 
   /// Inputs.
-  static const double radiusMd = 12;
+  static const double radiusMd = 14;
 
-  /// Buttons. One notch tighter than an input so a button reads as a solid
-  /// object rather than as another field.
-  static const double radiusButton = 11;
+  /// Buttons and the FAB are pills. The shape alone separates an action from
+  /// a field (inputs are rounded rectangles), which is the premium idiom and
+  /// needs no extra weight or colour to read as tappable.
+  static const double radiusButton = radiusPill;
 
   /// Cards and sheets. Generous enough to read as a glass pane, restrained
   /// enough not to read as a toy.
-  static const double radiusLg = 18;
-  static const double radiusXl = 24;
+  static const double radiusLg = 20;
+  static const double radiusXl = 26;
 
   /// Sheets and the floating navigation bar — the largest panes in the app.
-  static const double radiusXxl = 28;
-  static const double radiusPill = 999;
+  static const double radiusXxl = 30;
 
   // ---------------------------------------------------------------------
   // Component sizing
@@ -100,8 +102,8 @@ class AppSpacing {
   static const double fabHeight = 42;
 
   /// Horizontal padding inside a button, by size.
-  static const double buttonPadX = 15;
-  static const double buttonPadXSm = 10;
+  static const double buttonPadX = 18;
+  static const double buttonPadXSm = 12;
 
   /// Gap between a button's icon and its label.
   static const double buttonIconGap = 6;

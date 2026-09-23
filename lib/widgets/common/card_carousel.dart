@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_motion.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/theme/app_typography.dart';
 import 'surface_card.dart';
 
 /// One page of a [CardCarousel].
@@ -163,10 +164,7 @@ class _CardCarouselState extends State<CardCarousel> {
                   child: Text(
                     current.title,
                     key: ValueKey<String>(current.title),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          letterSpacing: 0.5,
-                          fontWeight: FontWeight.w700,
-                        ),
+                    style: AppTypography.section(Theme.of(context).textTheme),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/theme/app_typography.dart';
 import 'money_text.dart';
 
 /// The single card surface used across the app.
@@ -97,8 +98,8 @@ class CardList extends StatelessWidget {
 
 /// Heading above a group, with an optional trailing action or caption.
 ///
-/// Uses the label scale rather than a title so the section name stays quieter
-/// than the data underneath it — the figures are what the user is scanning.
+/// Set in the display serif at a modest size: it structures the page without
+/// competing with the figures underneath, which are what the user scans.
 class SectionHeader extends StatelessWidget {
   const SectionHeader({
     super.key,
@@ -133,13 +134,10 @@ class SectionHeader extends StatelessWidget {
           Expanded(
             child: Text(
               title,
-              // Slight tracking and a heavier weight let the header read as a
-              // divider between groups without needing a rule or extra space
-              // above it, which is where the old layout lost its height.
-              style: theme.textTheme.labelMedium?.copyWith(
-                letterSpacing: 0.5,
-                fontWeight: FontWeight.w700,
-              ),
+              // Serif, like a chapter heading: the section reads as part of
+              // the page's composition rather than as one more label, and
+              // the figures underneath stay the loudest thing on screen.
+              style: AppTypography.section(theme.textTheme),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
