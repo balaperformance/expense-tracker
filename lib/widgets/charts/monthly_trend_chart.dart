@@ -56,8 +56,8 @@ class MonthlyTrendChart extends StatelessWidget {
     final double ceiling = maxValue <= 0 ? 100 : maxValue * 1.2;
     final double step = ceiling / 3;
     // Bars come from the chart palette, never the app theme. Expenses alone:
-    // the selected month is a rose gradient and the rest a washed rose.
-    // Against income: rose for money out, emerald for money in.
+    // the selected month is a garnet gradient and the rest a washed garnet.
+    // Against income: garnet for money out, jade for money in.
     final ChartColors palette = ChartColors.of(context);
 
     Color expenseBar(bool isSelected) {
@@ -214,8 +214,8 @@ class MonthlyTrendChart extends StatelessWidget {
                       child: Text(
                         Formatters.shortMonth(points[index].month),
                         style: theme.textTheme.labelSmall?.copyWith(
-                          // A deep rose on the rose wash (6:1), not rose on
-                          // rose: an 11px label needs 4.5:1.
+                          // A deep garnet on the garnet wash (7.6:1), not
+                          // garnet on garnet: an 11px label needs 4.5:1.
                           color: isSelected
                               ? palette.labelOnEmphasis
                               : theme.colorScheme.onSurfaceVariant,

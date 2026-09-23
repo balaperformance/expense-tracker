@@ -1,4 +1,4 @@
-// Palette tests: Gothic Noir, lit — and the vivid chart palette.
+// Palette tests: Gothic Noir, lit — and the rich chart palette.
 //
 // The theme tests already measure contrast and hue separation. These pin the
 // redesign's intent: black reserved for the hero, a light and clean page with
@@ -168,15 +168,28 @@ void main() {
     });
   });
 
-  group('vivid charts', () {
+  group('rich charts', () {
     for (final (String name, ChartColors c, Color card)
         in <(String, ChartColors, Color)>[
       ('light', ChartColors.light, AppColors.lightSurface),
       ('dark', ChartColors.dark, AppColors.darkSurface),
     ]) {
-      test('$name: every slice is saturated — no monochrome ring', () {
+      test('$name: every slice is rich but not neon', () {
+        for (final Color colour in <Color>[
+          ...c.segments,
+          c.emphasis,
+          c.expense,
+          c.income,
+        ]) {
+          final double s = HSLColor.fromColor(colour).saturation;
+          expect(s, greaterThan(0.3), reason: '$colour: a colour, not a gray');
+          expect(s, lessThan(0.7), reason: '$colour: muted, not neon');
+        }
+      });
+
+      test('$name: every slice is visible on its card', () {
         for (final Color colour in c.segments) {
-          expect(HSLColor.fromColor(colour).saturation, greaterThan(0.7),
+          expect(_contrast(colour, card), greaterThanOrEqualTo(3.0),
               reason: '$colour');
         }
       });
