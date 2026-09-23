@@ -114,6 +114,11 @@ class AppColors {
   /// Ink on the hero.
   static const Color heroInk = Color(0xFFF7F5F5);
 
+  /// Quiet accent on the hero — the spend bar's track: [heroInk] at 18%.
+  /// A soft white rather than a money tone, so the card reads as a
+  /// personal ledger, not a banking app.
+  static const Color heroTrack = Color(0x2EF7F5F5);
+
   /// Eyebrows and badges on the hero: taupe, exact — 5.2:1 on the hero.
   static const Color heroAccent = taupe;
 

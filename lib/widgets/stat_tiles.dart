@@ -163,7 +163,7 @@ class BalanceCard extends StatelessWidget {
           _SpendBar(
             share: expense / income,
             spent: ToneColors.expense(context),
-            kept: ToneColors.income(context),
+            track: AppColors.heroTrack,
           ),
         ],
         const SizedBox(height: AppSpacing.md),
@@ -288,18 +288,18 @@ class _RevealButton extends StatelessWidget {
 }
 
 /// How much of the month's income has gone: a thin two-tone bar under the
-/// hero figure. Rose for spent, emerald for what is left — the card's
-/// clearest income/expense contrast, at 5px of height.
+/// hero figure. Rose for spent over a soft white track for what is left,
+/// at 5px of height.
 class _SpendBar extends StatelessWidget {
   const _SpendBar({
     required this.share,
     required this.spent,
-    required this.kept,
+    required this.track,
   });
 
   final double share;
   final Color spent;
-  final Color kept;
+  final Color track;
 
   @override
   Widget build(BuildContext context) {
@@ -314,7 +314,7 @@ class _SpendBar extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
-              ColoredBox(color: kept.withOpacity(0.35)),
+              ColoredBox(color: track),
               FractionallySizedBox(
                 alignment: Alignment.centerLeft,
                 widthFactor: clamped,

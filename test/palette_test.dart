@@ -105,6 +105,15 @@ void main() {
           reason: 'body ink is a warm near-black, not the hero black');
     });
 
+    test('the hero spend bar track is a soft white, not a money tone', () {
+      const Color track = AppColors.heroTrack;
+      expect((track.red, track.green, track.blue),
+          (AppColors.heroInk.red, AppColors.heroInk.green, AppColors.heroInk.blue));
+      expect(track.alpha, lessThan(80), reason: 'subtle, not a second bar');
+      expect(track, isNot(AppColors.income));
+      expect(track, isNot(AppColors.incomeDark));
+    });
+
     test('money tones are brighter but still readable on a white card', () {
       for (final Color tone in <Color>[
         AppColors.income,
