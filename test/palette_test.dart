@@ -14,6 +14,8 @@ import 'package:expense_tracker/core/theme/app_theme.dart';
 import 'package:expense_tracker/models/analytics.dart';
 import 'package:expense_tracker/widgets/charts/category_breakdown.dart';
 import 'package:expense_tracker/widgets/common/glass_nav_bar.dart';
+import 'package:expense_tracker/widgets/common/hero_surface.dart';
+import 'package:expense_tracker/widgets/stat_tiles.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,6 +115,50 @@ void main() {
       expect(track, isNot(AppColors.income));
       expect(track, isNot(AppColors.incomeDark));
     });
+
+    test('the Net card glow is a cool neutral, not a money tone', () {
+      final HSLColor glow = HSLColor.fromColor(AppColors.heroGlow);
+      expect(glow.saturation, lessThan(0.25), reason: 'a blue-gray');
+      expect(glow.hue, inInclusiveRange(200, 230), reason: 'cool, not green');
+    });
+
+    for (final (String name, double income, double expense)
+        in <(String, double, double)>[
+      ('ahead', 110000, 9600),
+      ('behind', 1000, 9600),
+    ]) {
+      testWidgets('Net card ($name): green only on Income',
+          (WidgetTester tester) async {
+        await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.light,
+          home: Scaffold(
+            body: BalanceCard(
+              income: income,
+              expense: expense,
+              currency: 'INR',
+              monthLabel: 'Sep',
+            ),
+          ),
+        ));
+        await tester.pumpAndSettle();
+
+        final HeroSurface hero = tester.widget(find.byType(HeroSurface));
+        expect(hero.glow, AppColors.heroGlow);
+
+        final List<Color?> inks = tester
+            .widgetList<Text>(find.descendant(
+              of: find.byType(BalanceCard),
+              matching: find.byType(Text),
+            ))
+            .map((Text t) => t.style?.color)
+            .toList();
+        expect(inks.where((Color? c) => c == AppColors.incomeDark),
+            hasLength(1),
+            reason: 'only the Income figure is green');
+        expect(inks, contains(AppColors.heroInk),
+            reason: 'the net figure is neutral ink');
+      });
+    }
 
     test('money tones are brighter but still readable on a white card', () {
       for (final Color tone in <Color>[

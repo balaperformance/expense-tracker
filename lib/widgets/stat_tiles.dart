@@ -119,7 +119,7 @@ class BalanceCard extends StatelessWidget {
 
     // Builder so the content reads the hero's dark theme, not the page's.
     return HeroSurface(
-      glow: net >= 0 ? AppColors.incomeDark : AppColors.expenseDark,
+      glow: AppColors.heroGlow,
       child: Builder(
         builder: (BuildContext context) => _content(context, net),
       ),
@@ -151,12 +151,16 @@ class BalanceCard extends StatelessWidget {
           net,
           currency: currency,
           signed: net != 0,
-          tone: AmountTone.auto,
+          // Neutral ink, not a money tone: the sign says which way the
+          // month went, and green stays reserved for Income.
           fit: true,
           // The hero figure on the whole app, and the one place a counting
           // transition is worth its frames.
           animate: true,
-          style: theme.textTheme.displaySmall?.copyWith(fontSize: 36),
+          style: theme.textTheme.displaySmall?.copyWith(
+            fontSize: 36,
+            color: AppColors.heroInk,
+          ),
         ),
         if (income > 0) ...<Widget>[
           const SizedBox(height: AppSpacing.sm),

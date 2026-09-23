@@ -119,6 +119,11 @@ class AppColors {
   /// personal ledger, not a banking app.
   static const Color heroTrack = Color(0x2EF7F5F5);
 
+  /// The Net card's corner glow: a cool blue-gray, whichever way the month
+  /// went. The figure's sign carries the direction; the card itself stays
+  /// neutral, so green belongs to Income alone.
+  static const Color heroGlow = Color(0xFF9AA8BA);
+
   /// Eyebrows and badges on the hero: taupe, exact — 5.2:1 on the hero.
   static const Color heroAccent = taupe;
 
