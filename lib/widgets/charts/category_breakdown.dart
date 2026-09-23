@@ -13,7 +13,7 @@ import '../common/money_text.dart';
 /// Only the largest slices are drawn individually; the rest collapse into a
 /// neutral "Other" so the ring stays readable instead of becoming a barcode.
 ///
-/// Slices are coloured by rank from the Pastel Garden chart palette
+/// Slices are coloured by rank from the vivid chart palette
 /// ([ChartColors]), not by each category's stored colour: a ring of six
 /// arbitrary user colours has no palette at all. [CategoryBreakdownList]
 /// resolves the same colours, so it works as the legend.
@@ -50,14 +50,15 @@ class CategoryDonut extends StatelessWidget {
         children: <Widget>[
           PieChart(
             PieChartData(
-              sectionsSpace: 2,
-              centerSpaceRadius: size * 0.33,
+              sectionsSpace: 3,
+              centerSpaceRadius: size * 0.31,
               startDegreeOffset: -90,
               sections: slices.map((_Slice slice) {
                 return PieChartSectionData(
                   value: slice.value,
                   color: slice.color,
-                  radius: size * 0.15,
+                  // A thicker ring than before: the colour is the point.
+                  radius: size * 0.17,
                   showTitle: false,
                 );
               }).toList(),
@@ -189,22 +190,22 @@ class _CategoryRow extends StatelessWidget {
 
     return Row(
       children: <Widget>[
-        // A legend swatch rather than the usual category avatar: a strong
-        // wash of the slice colour with the icon in neutral ink. The avatar's
-        // tinted-icon-on-faint-wash would put a blush icon at 1.7:1.
+        // A legend swatch: the category icon in its slice colour on a tint of
+        // the same colour, so each row is coded at a glance and matches its
+        // slice in the ring above.
         Container(
           width: AppSpacing.avatarSm,
           height: AppSpacing.avatarSm,
           decoration: BoxDecoration(
             color: tone.withOpacity(
-              theme.brightness == Brightness.dark ? 0.34 : 0.32,
+              theme.brightness == Brightness.dark ? 0.24 : 0.14,
             ),
             borderRadius: BorderRadius.circular(AppSpacing.avatarSm * 0.29),
           ),
           child: Icon(
             CategoryIcons.resolve(spend.icon),
-            size: AppSpacing.avatarSm * 0.46,
-            color: theme.colorScheme.onSurface,
+            size: AppSpacing.avatarSm * 0.5,
+            color: tone,
           ),
         ),
         const SizedBox(width: AppSpacing.md),
@@ -250,7 +251,7 @@ class _CategoryRow extends StatelessWidget {
                             (BuildContext context, double value, Widget? _) {
                           return LinearProgressIndicator(
                             value: value,
-                            minHeight: 5,
+                            minHeight: 6,
                             backgroundColor: ToneColors.wash(context, tone),
                             valueColor: AlwaysStoppedAnimation<Color>(tone),
                           );

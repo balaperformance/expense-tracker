@@ -38,17 +38,16 @@ class AppTheme {
     final Color muted =
         isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
     final Color primary = isDark ? AppColors.brandDark : AppColors.brand;
-    // The secondary accent, taupe, for washes and selection. It is too
-    // faint on the light surfaces to mark a control, so focus rings and
-    // progress use [primary]; see the note in AppColors.
+    // The secondary accent, taupe, for idle icons and quiet highlights.
+    // Focus rings and progress use [primary], the brand.
     const Color accent = AppColors.accent;
-    const Color onAccentInk = AppColors.black;
+    final Color onAccentInk = isDark ? AppColors.black : Colors.white;
     final Color error = isDark ? AppColors.expenseDark : AppColors.expense;
 
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
       primary: primary,
-      onPrimary: isDark ? AppColors.black : AppColors.lightGray,
+      onPrimary: isDark ? AppColors.black : Colors.white,
       primaryContainer: primary.withOpacity(isDark ? 0.22 : 0.12),
       onPrimaryContainer: primary,
       secondary: accent,
@@ -60,13 +59,13 @@ class AppTheme {
       surfaceContainerHighest: sunken,
       onSurfaceVariant: muted,
       error: error,
-      onError: isDark ? AppColors.black : AppColors.lightGray,
+      onError: isDark ? AppColors.black : Colors.white,
       errorContainer: error.withOpacity(isDark ? 0.20 : 0.10),
       onErrorContainer: error,
       outline: border,
       outlineVariant: border,
-      inverseSurface: isDark ? AppColors.lightGray : AppColors.black,
-      onInverseSurface: isDark ? AppColors.black : AppColors.lightGray,
+      inverseSurface: isDark ? AppColors.darkText : AppColors.lightText,
+      onInverseSurface: isDark ? AppColors.lightText : Colors.white,
       shadow: Colors.black,
       scrim: Colors.black,
     );
@@ -157,8 +156,7 @@ class AppTheme {
         border: _inputBorder(Colors.transparent),
         enabledBorder: _inputBorder(Colors.transparent),
         disabledBorder: _inputBorder(Colors.transparent),
-        // Dark taupe, not the taupe accent: a focus ring has to clear 3:1
-        // against a card, and taupe is about 2:1 there.
+        // The brand, not the taupe accent: a focus ring is a primary signal.
         focusedBorder: _inputBorder(primary, width: 1.6),
         errorBorder: _inputBorder(error, width: 1.2),
         focusedErrorBorder: _inputBorder(error, width: 1.6),

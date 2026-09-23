@@ -1,10 +1,9 @@
-// Palette tests: the Gothic Noir app theme and the Pastel Garden chart
-// palette.
+// Palette tests: Gothic Noir, lit — and the vivid chart palette.
 //
 // The theme tests already measure contrast and hue separation. These pin the
-// palette choices themselves — that the requested colours are the ones in
-// use, that each deliberate adjustment stays in the palette's family, and
-// that charts and the app theme do not bleed into each other.
+// redesign's intent: black reserved for the hero, a light and clean page with
+// white cards rather than gray on gray, dark taupe as the brand, and charts
+// that are genuinely colourful rather than another shade of taupe.
 
 import 'dart:math' as math;
 
@@ -46,20 +45,13 @@ double _hueDistance(Color a, Color b) {
 
 Color _opaque(Color c, Color over) => Color.alphaBlend(c, over);
 
-(int, int, int) _rgb(Color c) => (c.red, c.green, c.blue);
-
 void main() {
   const Color black = Color(0xFF000000);
   const Color lightGray = Color(0xFFD1D0D0);
   const Color taupe = Color(0xFF988686);
   const Color darkTaupe = Color(0xFF5C4E4E);
 
-  const Color rose = Color(0xFFC75F71);
-  const Color blush = Color(0xFFF0B8B8);
-  const Color grayGreen = Color(0xFFA2AE9D);
-  const Color deepBrown = Color(0xFF54463A);
-
-  group('Gothic Noir theme', () {
+  group('Gothic Noir, lit', () {
     test('the four palette colours are the source tokens, exactly', () {
       expect(AppColors.black, black);
       expect(AppColors.lightGray, lightGray);
@@ -67,54 +59,66 @@ void main() {
       expect(AppColors.darkTaupe, darkTaupe);
     });
 
-    test('light mode: light-gray page, black ink, dark-taupe primary', () {
+    test('the page is light and clean; cards are white, not gray', () {
       final ThemeData t = AppTheme.light;
-      expect(t.scaffoldBackgroundColor, lightGray);
-      expect(t.colorScheme.onSurface, black);
-      expect(t.textTheme.titleLarge!.color, black);
-      expect(t.colorScheme.primary, darkTaupe);
-      expect(t.colorScheme.onPrimary, lightGray);
+      expect(
+        HSLColor.fromColor(t.scaffoldBackgroundColor).lightness,
+        greaterThan(0.94),
+        reason: 'a light, clean page — not the palette gray',
+      );
+      expect(t.colorScheme.surface, Colors.white);
+      expect(t.scaffoldBackgroundColor, isNot(t.colorScheme.surface));
     });
 
-    test('cards are taupe washed into light gray, capped for readability', () {
-      const Color card = AppColors.lightSurface;
-      expect(card, _opaque(taupe.withOpacity(0.15), lightGray));
-      // The tint stops where dark-taupe secondary text still reads.
-      expect(_contrast(darkTaupe, card), greaterThanOrEqualTo(4.5));
-      expect(_rgb(AppGlass.light.fill), _rgb(card));
-      expect(card, isNot(lightGray), reason: 'cards must lift off the page');
+    test('depth comes from shadow, not outlines', () {
+      // The hairline is nearly invisible against a white card …
+      final Color edge = _opaque(AppGlass.light.borderBottom, Colors.white);
+      expect(_contrast(edge, Colors.white), lessThan(1.2));
+      // … and every card carries a layered shadow.
+      expect(AppGlass.light.shadow.length, greaterThanOrEqualTo(2));
     });
 
-    test('taupe is the accent in both themes, used exactly where it reads',
-        () {
+    test('light gray is kept to subtle fills', () {
+      const Color sunken = AppColors.lightSunken;
+      expect((sunken.red, sunken.green, sunken.blue),
+          (lightGray.red, lightGray.green, lightGray.blue));
+      expect(sunken.alpha, lessThan(255), reason: 'a wash, not a surface');
+    });
+
+    test('dark taupe is the brand; taupe is secondary', () {
+      final ColorScheme light = AppTheme.light.colorScheme;
+      expect(light.primary, darkTaupe);
+      expect(light.onPrimary, Colors.white);
+      expect(_contrast(light.onPrimary, light.primary),
+          greaterThanOrEqualTo(7.0));
       for (final ThemeData t in <ThemeData>[AppTheme.light, AppTheme.dark]) {
         expect(t.colorScheme.secondary, taupe);
       }
-      // Too faint as text on the light page — and fine on black, which is
-      // where the hero accents and dark-mode actions use it.
-      expect(_contrast(taupe, lightGray), lessThan(3.0));
-      expect(_contrast(taupe, black), greaterThanOrEqualTo(4.5));
-      expect(AppColors.heroAccent, taupe);
-      expect(AppTheme.dark.colorScheme.primary, taupe);
     });
 
-    test('focus rings and progress use dark taupe, visible on a card', () {
+    test('black is reserved for the hero', () {
+      expect(AppColors.heroLight.first, black);
       final ThemeData t = AppTheme.light;
-      expect(t.progressIndicatorTheme.color, darkTaupe);
-      final OutlineInputBorder focus =
-          t.inputDecorationTheme.focusedBorder! as OutlineInputBorder;
-      expect(focus.borderSide.color, darkTaupe);
-      expect(_contrast(darkTaupe, AppColors.lightSurface),
-          greaterThanOrEqualTo(3.0));
+      expect(t.scaffoldBackgroundColor, isNot(black));
+      expect(t.colorScheme.surface, isNot(black));
+      expect(t.colorScheme.onSurface, isNot(black),
+          reason: 'body ink is a warm near-black, not the hero black');
     });
 
-    test('dark mode: black page, light-gray ink', () {
-      final ThemeData t = AppTheme.dark;
-      expect(t.scaffoldBackgroundColor, black);
-      expect(t.colorScheme.onSurface, lightGray);
+    test('money tones are brighter but still readable on a white card', () {
+      for (final Color tone in <Color>[
+        AppColors.income,
+        AppColors.expense,
+        AppColors.warning,
+      ]) {
+        expect(HSLColor.fromColor(tone).saturation, greaterThan(0.75),
+            reason: '$tone should be lively, not muted');
+        expect(_contrast(tone, Colors.white), greaterThanOrEqualTo(4.5),
+            reason: '$tone must still read as text');
+      }
     });
 
-    testWidgets('the navigation bar is dark taupe in both themes',
+    testWidgets('the nav bar is a light pill with a brand-filled selection',
         (WidgetTester tester) async {
       for (final ThemeData theme in <ThemeData>[
         AppTheme.light,
@@ -133,72 +137,80 @@ void main() {
             ),
           ),
         ));
+        // MaterialApp animates between themes; let it land first.
+        await tester.pumpAndSettle();
+
         final GlassSurface pane = tester.widget(find.descendant(
           of: find.byType(GlassNavBar),
           matching: find.byType(GlassSurface),
         ));
-        expect(pane.color, darkTaupe, reason: '${theme.brightness}');
-      }
-    });
+        expect(pane.color, isNull, reason: 'the bar takes the theme glass');
+        expect(pane.opaque, isTrue);
 
-    test('nav icons clear the 3:1 graphics floor on the bar', () {
-      expect(_contrast(lightGray, darkTaupe), greaterThanOrEqualTo(3.0),
-          reason: 'idle icons');
-      expect(_contrast(black, taupe), greaterThanOrEqualTo(3.0),
-          reason: 'active icon on its taupe circle');
+        final Iterable<Color?> fills = tester
+            .widgetList<DecoratedBox>(find.descendant(
+              of: find.byType(AnimatedPositioned),
+              matching: find.byType(DecoratedBox),
+            ))
+            .map((DecoratedBox b) => (b.decoration as BoxDecoration).color);
+        expect(fills, contains(theme.colorScheme.primary),
+            reason: '${theme.brightness}: selection is the brand');
+      }
     });
   });
 
-  group('Pastel Garden charts', () {
-    test('light mode charts use the palette, blush deepened only', () {
-      const ChartColors c = ChartColors.light;
-      expect(c.segments.take(3), <Color>[rose, deepBrown, grayGreen]);
-      expect(c.segments[3], isNot(blush));
-      expect(_hueDistance(c.segments[3], blush), lessThan(8),
-          reason: 'still recognisably blush');
-      expect(c.emphasis, deepBrown);
-      expect(c.idle, rose);
-      expect(c.expense, rose);
-      expect(c.income, grayGreen);
-    });
+  group('vivid charts', () {
+    for (final (String name, ChartColors c, Color card)
+        in <(String, ChartColors, Color)>[
+      ('light', ChartColors.light, AppColors.lightSurface),
+      ('dark', ChartColors.dark, AppColors.darkSurface),
+    ]) {
+      test('$name: every slice is saturated — no monochrome ring', () {
+        for (final Color colour in c.segments) {
+          expect(HSLColor.fromColor(colour).saturation, greaterThan(0.7),
+              reason: '$colour');
+        }
+      });
 
-    test('exact blush would vanish on the light card — hence the deepening',
-        () {
-      expect(_contrast(blush, AppColors.lightSurface), lessThan(1.1));
-      expect(
-        _contrast(ChartColors.light.segments[3], AppColors.lightSurface),
-        greaterThan(_contrast(blush, AppColors.lightSurface)),
-      );
-    });
+      test('$name: neighbouring slices sit far apart in hue', () {
+        final List<Color> s = c.segments;
+        for (int i = 0; i < s.length; i++) {
+          final Color next = s[(i + 1) % s.length];
+          expect(_hueDistance(s[i], next), greaterThanOrEqualTo(90),
+              reason: '${s[i]} next to $next');
+        }
+      });
 
-    test('dark mode lifts deep brown only', () {
-      const ChartColors c = ChartColors.dark;
-      expect(c.segments[0], rose);
-      expect(c.segments[2], grayGreen);
-      expect(c.segments[3], blush);
-      expect(c.segments[1], isNot(deepBrown));
-      expect(_hueDistance(c.segments[1], deepBrown), lessThan(10),
-          reason: 'still recognisably the brown');
-    });
+      test('$name: six named slices never repeat a colour', () {
+        final Set<Color> used = <Color>{
+          for (int i = 0; i < 6; i++) c.segment(i, 6),
+        };
+        expect(used, hasLength(6));
+      });
 
-    test('no chart colour borrows the app theme accents', () {
-      for (final ChartColors c in <ChartColors>[
-        ChartColors.light,
-        ChartColors.dark,
-      ]) {
+      test('$name: no chart colour is a theme colour', () {
         for (final Color colour in <Color>[
           ...c.segments,
           c.emphasis,
-          c.idle,
           c.expense,
-          c.income,
         ]) {
           for (final Color t in <Color>[darkTaupe, taupe, black, lightGray]) {
-            expect(colour, isNot(t), reason: '$colour is a theme colour');
+            expect(colour, isNot(t));
           }
         }
-      }
-    });
+      });
+
+      test('$name: the selected bar stands out and its label reads', () {
+        expect(_contrast(c.emphasis, card), greaterThanOrEqualTo(3.0));
+        final Color pill = _opaque(c.emphasis.withOpacity(0.18), card);
+        expect(_contrast(c.labelOnEmphasis, pill), greaterThanOrEqualTo(4.5));
+      });
+
+      test('$name: "Other" stays visible but quiet', () {
+        expect(_contrast(c.other, card), greaterThan(1.5));
+        expect(HSLColor.fromColor(c.other).saturation, lessThan(0.2));
+      });
+    }
 
     test('every dark-mode slice is visible on the dark card', () {
       for (final Color colour in ChartColors.dark.segments) {
@@ -208,32 +220,6 @@ void main() {
           reason: '$colour',
         );
       }
-    });
-
-    test('"Other" does not vanish into the card', () {
-      expect(
-        _contrast(ChartColors.light.other, AppColors.lightSurface),
-        greaterThan(1.5),
-      );
-    });
-
-    test('the selected bar stands out and its label is readable', () {
-      for (final (ChartColors c, Color card) in <(ChartColors, Color)>[
-        (ChartColors.light, AppColors.lightSurface),
-        (ChartColors.dark, AppColors.darkSurface),
-      ]) {
-        expect(_contrast(c.emphasis, card), greaterThanOrEqualTo(3.0));
-        final Color pill = _opaque(c.emphasis.withOpacity(0.18), card);
-        expect(_contrast(c.labelOnEmphasis, pill), greaterThanOrEqualTo(4.5));
-      }
-    });
-
-    test('six named slices never repeat a colour', () {
-      const ChartColors c = ChartColors.light;
-      final Set<Color> used = <Color>{
-        for (int i = 0; i < 6; i++) c.segment(i, 6),
-      };
-      expect(used, hasLength(6));
     });
 
     test('folded categories take the Other colour in ring and legend', () {
@@ -268,7 +254,7 @@ void main() {
       final PieChart chart = tester.widget(find.byType(PieChart));
       expect(
         chart.data.sections.map((PieChartSectionData s) => s.color),
-        <Color>[rose, deepBrown, grayGreen],
+        ChartColors.light.segments.take(3),
       );
     });
   });

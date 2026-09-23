@@ -1,68 +1,47 @@
 import 'package:flutter/material.dart';
 
-/// Chart colours — the Pastel Garden palette.
+/// Chart colours — a vivid jewel-tone palette.
 ///
 /// Used by the category donut (and the ranked list that is its legend) and
-/// by the monthly spending bars, and by nothing else: the rest of the UI uses
-/// the app theme, and no chart uses the app theme's colours. Read through
-/// [ChartColors.of] so a chart never needs to know which mode it is in.
+/// by the monthly bars, and by nothing else. The app theme is deliberately
+/// restrained — black, gray, taupe — so the charts are where the colour
+/// lives: the one place a burst of saturation is information rather than
+/// decoration. Read through [ChartColors.of] so a chart never needs to know
+/// which mode it is in.
 ///
-///   rose      #C75F71  the largest slice, expenses, context bars (light)
-///   blush     #F0B8B8  context bars (dark), a light slice
-///   grayGreen #A2AE9D  income, a mid slice
-///   deepBrown #54463A  the selected month (light), a high-contrast slice
-///
-/// Light mode's cards are taupe-tinted gray, on which blush is 1.0:1 —
-/// literally invisible — and rose 2.3:1. So the selected month is deep brown
-/// (5.3:1) with rose for the other months, and the blush slice is deepened
-/// to [blushDeep], same hue. Rose, gray-green and deep brown are exact.
-/// Dark mode uses three of them exactly and lifts only deep brown, which
-/// would be 1.9:1 on the dark card — a slice you could not see.
+/// Slices are ordered so neighbours in the ring sit at least 99° apart in
+/// hue — rose, violet, amber, teal, pink, blue — and the last named slice is
+/// still far from the first where the ring closes.
 @immutable
 class ChartColors {
   const ChartColors._({
     required this.segments,
     required this.other,
     required this.emphasis,
+    required this.emphasisHighlight,
     required this.idle,
     required this.expense,
     required this.income,
     required this.labelOnEmphasis,
   });
 
-  // ---------------------------------------------------------------------
-  // Palette sources
-  // ---------------------------------------------------------------------
-
-  static const Color rose = Color(0xFFC75F71);
-  static const Color blush = Color(0xFFF0B8B8);
-  static const Color grayGreen = Color(0xFFA2AE9D);
-  static const Color deepBrown = Color(0xFF54463A);
-
-  /// Blush deepened for the light theme's cards, where exact blush vanishes.
-  static const Color blushDeep = Color(0xFFD2848A);
-
-  // ---------------------------------------------------------------------
-  // Resolved roles
-  // ---------------------------------------------------------------------
-
-  /// Slice colours in rank order: slice 0 is the largest category. The four
-  /// palette colours come first, strongest contrast first, so the biggest
-  /// slices are the clearest. The fifth and sixth are blends of two palette
-  /// colours rather than strangers, for a donut with six named slices.
+  /// Slice colours in rank order: slice 0 is the largest category.
   final List<Color> segments;
 
-  /// The aggregated "Other" slice: a quiet neutral from the same family.
+  /// The aggregated "Other" slice: a quiet warm neutral, so the named
+  /// categories carry all the colour.
   final Color other;
 
-  /// The selected month's bar.
+  /// The selected month's bar, drawn as a gradient from [emphasis] at the
+  /// base to [emphasisHighlight] at the top.
   final Color emphasis;
+  final Color emphasisHighlight;
 
-  /// Every other month's bar — present, but receding behind [emphasis].
+  /// Every other month's bar: the same hue, washed back.
   final Color idle;
 
-  /// Expense and income series, where both are drawn. Rose and gray-green
-  /// keep the app's rule that red is money out and green is money in.
+  /// Expense and income series, where both are drawn — rose out, emerald in,
+  /// matching the app's money tones.
   final Color expense;
   final Color income;
 
@@ -71,41 +50,38 @@ class ChartColors {
 
   static const ChartColors light = ChartColors._(
     segments: <Color>[
-      rose,
-      deepBrown,
-      grayGreen,
-      blushDeep,
-      Color(0xFF8E5A63), // rose × deep brown
-      Color(0xFF7C8472), // gray-green × deep brown
+      Color(0xFFE8475F), // rose
+      Color(0xFF7C5CFA), // violet
+      Color(0xFFE08A00), // amber
+      Color(0xFF0EA5A0), // teal
+      Color(0xFFEC4899), // pink
+      Color(0xFF3B82F6), // blue
     ],
-    // A mid warm gray: a pale neutral disappears into the tinted card.
-    other: Color(0xFF9C958B),
-    emphasis: deepBrown,
-    idle: rose,
-    expense: rose,
-    income: grayGreen,
-    // Deep brown taken darker: on its own wash over the tinted card, exact
-    // deep brown is 4.1:1, under the 4.5:1 an 11px label needs.
-    labelOnEmphasis: Color(0xFF2B231C),
+    other: Color(0xFFB8AEAE),
+    emphasis: Color(0xFFE8475F),
+    emphasisHighlight: Color(0xFFF7849A),
+    idle: Color(0x38E8475F),
+    expense: Color(0xFFE8475F),
+    income: Color(0xFF0B875E),
+    labelOnEmphasis: Color(0xFF9F1239),
   );
 
   static const ChartColors dark = ChartColors._(
     segments: <Color>[
-      rose,
-      Color(0xFFA89484), // deep brown, lifted to 5.2:1 on the dark card
-      grayGreen,
-      blush,
-      Color(0xFFC08C95), // rose × deep brown, lifted
-      Color(0xFF8F9A80), // gray-green × deep brown, lifted
+      Color(0xFFE8475F), // rose
+      Color(0xFF7C5CFA), // violet
+      Color(0xFFF59E0B), // amber, brighter on the dark card
+      Color(0xFF14B8A6), // teal, brighter on the dark card
+      Color(0xFFEC4899), // pink
+      Color(0xFF3B82F6), // blue
     ],
-    other: Color(0xFF5C5752),
-    emphasis: rose,
-    // Blush at full strength is brighter than rose on charcoal, which would
-    // make every *unselected* month look selected. Dimmed, it recedes.
-    idle: Color(0x73F0B8B8),
-    expense: rose,
-    income: grayGreen,
-    labelOnEmphasis: blush,
+    other: Color(0xFF5A5050),
+    emphasis: Color(0xFFFB7185),
+    emphasisHighlight: Color(0xFFFDA4AF),
+    idle: Color(0x4DFB7185),
+    expense: Color(0xFFFB7185),
+    income: Color(0xFF34D399),
+    labelOnEmphasis: Color(0xFFFDA4AF),
   );
 
   static ChartColors of(BuildContext context) =>

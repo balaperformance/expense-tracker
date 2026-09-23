@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Gothic Noir light gray: matches the Flutter page background so launch has no flash. -->
-    <color name="splash_background">#D1D0D0</color>
+    <!-- Near-white page: matches the Flutter page background so launch has no flash. -->
+    <color name="splash_background">#F5F4F4</color>
 </resources>

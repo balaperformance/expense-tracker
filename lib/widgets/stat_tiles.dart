@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_glass.dart';
+import '../core/theme/app_motion.dart';
 import '../core/theme/app_spacing.dart';
 import '../core/theme/app_typography.dart';
 import '../core/utils/formatters.dart';
@@ -118,6 +119,7 @@ class BalanceCard extends StatelessWidget {
 
     // Builder so the content reads the hero's dark theme, not the page's.
     return HeroSurface(
+      glow: net >= 0 ? AppColors.incomeDark : AppColors.expenseDark,
       child: Builder(
         builder: (BuildContext context) => _content(context, net),
       ),
@@ -154,8 +156,16 @@ class BalanceCard extends StatelessWidget {
           // The hero figure on the whole app, and the one place a counting
           // transition is worth its frames.
           animate: true,
-          style: theme.textTheme.displaySmall?.copyWith(fontSize: 31),
+          style: theme.textTheme.displaySmall?.copyWith(fontSize: 36),
         ),
+        if (income > 0) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm),
+          _SpendBar(
+            share: expense / income,
+            spent: ToneColors.expense(context),
+            kept: ToneColors.income(context),
+          ),
+        ],
         const SizedBox(height: AppSpacing.md),
         Row(
           children: <Widget>[
@@ -277,7 +287,48 @@ class _RevealButton extends StatelessWidget {
   }
 }
 
-/// Income or expenses on the hero: a quiet inset tile carrying its tone.
+/// How much of the month's income has gone: a thin two-tone bar under the
+/// hero figure. Rose for spent, emerald for what is left — the card's
+/// clearest income/expense contrast, at 5px of height.
+class _SpendBar extends StatelessWidget {
+  const _SpendBar({
+    required this.share,
+    required this.spent,
+    required this.kept,
+  });
+
+  final double share;
+  final Color spent;
+  final Color kept;
+
+  @override
+  Widget build(BuildContext context) {
+    final double clamped = share.clamp(0.0, 1.0);
+
+    return Semantics(
+      label: 'Spent ${(share * 100).round()} percent of income',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+        child: SizedBox(
+          height: 5,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              ColoredBox(color: kept.withOpacity(0.35)),
+              FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: clamped,
+                child: ColoredBox(color: spent),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Income or expenses on the hero: an inset tile carrying its tone.
 class _Leg extends StatelessWidget {
   const _Leg({
     required this.label,
@@ -303,21 +354,19 @@ class _Leg extends StatelessWidget {
         vertical: AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: AppColors.heroInk.withOpacity(0.06),
+        color: Colors.white.withOpacity(0.06),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border:
-            Border.all(color: AppColors.heroInk.withOpacity(0.08), width: 0.75),
       ),
       child: Row(
         children: <Widget>[
           Container(
-            width: 26,
-            height: 26,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
-              color: tone.withOpacity(0.18),
+              color: tone.withOpacity(0.22),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 13, color: tone),
+            child: Icon(icon, size: 14, color: tone),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -338,7 +387,7 @@ class _Leg extends StatelessWidget {
                   compact: true,
                   fit: true,
                   style: AppTypography.money(
-                    theme.textTheme.titleSmall?.copyWith(color: tone),
+                    theme.textTheme.titleMedium?.copyWith(color: tone),
                     emphasis: true,
                   ),
                 ),
@@ -351,11 +400,11 @@ class _Leg extends StatelessWidget {
   }
 }
 
-/// Row of shortcut tiles under the dashboard snapshot.
+/// Row of shortcut controls under the dashboard snapshot.
 ///
-/// Each action is a small glass tile with its label underneath — the premium
-/// shortcut idiom — rather than a bordered button, so the row reads as a
-/// palette of destinations instead of four competing calls to action.
+/// Each action is a raised white tile holding a colour-washed icon circle,
+/// with its label beneath — it looks pressable, and scales on press, rather
+/// than sitting flat and gray on the page.
 class QuickActions extends StatelessWidget {
   const QuickActions({super.key, required this.actions});
 
@@ -392,7 +441,8 @@ class QuickAction {
 class _QuickActionButton extends StatelessWidget {
   const _QuickActionButton({required this.action});
 
-  static const double _tile = 48;
+  static const double _tile = 52;
+  static const double _well = 36;
 
   final QuickAction action;
 
@@ -400,34 +450,54 @@ class _QuickActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color tone = action.tone ?? theme.colorScheme.primary;
+    final BorderRadius shape =
+        BorderRadius.circular(AppSpacing.radiusMd + 4);
 
-    return InkWell(
-      onTap: action.onTap,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            GlassSurface(
-              radius: AppSpacing.radiusMd + 2,
-              child: SizedBox(
-                width: _tile,
-                height: _tile,
-                child: Icon(action.icon, size: 21, color: tone),
+    // The scale observes pointer events without recognising them, so the
+    // InkWell keeps sole ownership of the tap.
+    return AppPressEffect(
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: shape,
+                  boxShadow: AppGlass.of(context).shadow,
+                ),
+                child: SizedBox(
+                  width: _tile,
+                  height: _tile,
+                  child: Center(
+                    child: Container(
+                      width: _well,
+                      height: _well,
+                      decoration: BoxDecoration(
+                        color: ToneColors.wash(context, tone),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(action.icon, size: 20, color: tone),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.xs + 2),
-            Text(
-              action.label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
+              const SizedBox(height: AppSpacing.xs + 2),
+              Text(
+                action.label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -662,7 +662,8 @@ class _AccountCarouselState extends State<_AccountCarousel> {
                     tone: balance.isOverdrawn
                         ? AmountTone.negative
                         : AmountTone.neutral,
-                    style: Theme.of(ctx).textTheme.titleMedium,
+                    // The balance leads the card, in the figure face.
+                    style: Theme.of(ctx).textTheme.headlineSmall,
                   ),
                   onTap: widget.onTap,
                 ),

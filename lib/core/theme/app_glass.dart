@@ -97,41 +97,52 @@ class AppGlass {
 
   static const GlassTokens light = GlassTokens(
     isDark: false,
-    // The taupe-tinted card colour with a touch of translucency, a shade
-    // below the light gray page.
-    fill: Color(0xF0C8C4C4),
-    fillStrong: Color(0xFAC8C4C4),
-    sunken: Color(0x0F000000),
-    // A pale highlight along the top; a dark-taupe hairline around the rest.
-    borderTop: Color(0xFFE4E3E3),
-    borderBottom: Color(0x405C4E4E),
+    // White cards on the near-white page. The depth is the shadow, not an
+    // outline: the hairline is nearly invisible and only defines the edge
+    // where two white panes meet.
+    fill: Color(0xF7FFFFFF),
+    fillStrong: Color(0xFCFFFFFF),
+    sunken: Color(0x59D1D0D0),
+    borderTop: Color(0xFFFFFFFF),
+    borderBottom: Color(0x12000000),
     blur: blurBar,
-    // Neutral shadows, kept faint: the tint step does most of the work.
+    // Two layers, warm-tinted: a tight contact shadow that seats the card
+    // and a wide ambient one that lifts it. One flat shadow reads as a smudge.
     shadow: <BoxShadow>[
       BoxShadow(
-        color: Color(0x14000000),
-        blurRadius: 18,
-        offset: Offset(0, 6),
+        color: Color(0x0F2A1F1F),
+        blurRadius: 4,
+        offset: Offset(0, 1),
+      ),
+      BoxShadow(
+        color: Color(0x142A1F1F),
+        blurRadius: 22,
+        offset: Offset(0, 8),
       ),
     ],
     shadowStrong: <BoxShadow>[
       BoxShadow(
-        color: Color(0x26000000),
+        color: Color(0x142A1F1F),
+        blurRadius: 6,
+        offset: Offset(0, 2),
+      ),
+      BoxShadow(
+        color: Color(0x2E2A1F1F),
         blurRadius: 34,
-        offset: Offset(0, 14),
+        offset: Offset(0, 16),
       ),
     ],
   );
 
   static const GlassTokens dark = GlassTokens(
     isDark: true,
-    // Lifted taupe-black, not a black veil: over the true-black page a
+    // Lifted taupe-black, not a black veil: over the near-black page a
     // translucent black would produce no surface at all.
-    fill: Color(0xD91E1A1A),
-    fillStrong: Color(0xF51C1818),
+    fill: Color(0xE61C1818),
+    fillStrong: Color(0xF51A1616),
     sunken: Color(0x1AD1D0D0),
-    borderTop: Color(0x29D1D0D0),
-    borderBottom: Color(0x17D1D0D0),
+    borderTop: Color(0x24FFFFFF),
+    borderBottom: Color(0x14FFFFFF),
     blur: blurBar,
     shadow: <BoxShadow>[
       BoxShadow(
@@ -258,7 +269,7 @@ class GlassSurface extends StatelessWidget {
                 // glass highlight would be a hard white rule; a faint glint
                 // reads as the same lit edge.
                 colour: color != null
-                    ? const Color(0x29D1D0D0)
+                    ? const Color(0x29FFFFFF)
                     : glass.borderTop,
               ),
             ),

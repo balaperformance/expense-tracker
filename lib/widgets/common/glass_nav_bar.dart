@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_motion.dart';
 import '../../core/theme/app_spacing.dart';
@@ -24,15 +23,16 @@ class GlassNavItem {
 
 /// The app's bottom navigation: a floating glass pill.
 ///
-/// A single dark-taupe bar inset from the screen edges, in both themes. The
-/// active destination is a taupe circle that slides between slots, holding a
-/// black icon and a small dot (6.1:1). Idle icons are light gray (5.1:1).
+/// A white pill (dark glass in dark mode) floating on a strong soft shadow.
+/// The active destination is a solid brand-coloured circle with a soft glow
+/// of the same colour, sliding between slots; idle icons sit quietly in the
+/// muted ink. One filled shape carries the selection — no dot, no outline.
 /// Icons only — the labels survive as tooltips and semantics.
 ///
 /// **No blur, no see-through.** A blur costs a full-screen read-back on every
 /// scrolled frame, and without one a translucent bar lets rows ghost through
-/// it. The bar is opaque dark taupe, with the lit top edge and floating shadow
-/// carrying the glass read.
+/// it. The bar is opaque, with the lit top edge and floating shadow carrying
+/// the glass read.
 class GlassNavBar extends StatelessWidget {
   const GlassNavBar({
     super.key,
@@ -53,15 +53,15 @@ class GlassNavBar extends StatelessWidget {
   /// rather than as a docked bar.
   static const double _sideInset = AppSpacing.xxl;
 
-  /// The moving highlight behind the active icon: a circle, not a pill.
-  static const double _highlight = 42;
+  /// The moving highlight behind the active icon.
+  static const double _highlight = 40;
 
   static const double _iconSize = 21;
-  static const double _dot = 4;
 
   @override
   Widget build(BuildContext context) {
     final GlassTokens glass = AppGlass.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
     final double safeBottom = MediaQuery.paddingOf(context).bottom;
 
     return Padding(
@@ -82,8 +82,6 @@ class GlassNavBar extends StatelessWidget {
           strong: true,
           opaque: true,
           elevated: false,
-          color: AppColors.navBar,
-          borderColor: AppColors.lightGray.withOpacity(0.10),
           radius: _height / 2,
           child: SizedBox(
             height: _height,
@@ -103,12 +101,19 @@ class GlassNavBar extends StatelessWidget {
                       top: (_height - size) / 2,
                       width: size,
                       height: size,
-                      child: const DecoratedBox(
+                      child: DecoratedBox(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          // The taupe accent, the one lighter spot in the
-                          // bar, so the active tab is found at a glance.
-                          color: AppColors.accent,
+                          color: scheme.primary,
+                          // A soft glow in the brand colour: the selection
+                          // reads as lit, not merely filled.
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: scheme.primary.withOpacity(0.35),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -148,9 +153,8 @@ class _NavSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // The bar is dark taupe in both themes, so its ink is fixed rather than
-    // taken from the page's scheme.
-    final Color tone = selected ? AppColors.black : AppColors.lightGray;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final Color tone = selected ? scheme.onPrimary : scheme.onSurfaceVariant;
 
     return Semantics(
       label: item.label,
@@ -163,36 +167,18 @@ class _NavSlot extends StatelessWidget {
           customBorder: const CircleBorder(),
           // Kept subtle: the sliding highlight is the selection feedback, and
           // a bright splash over it reads as a flash.
-          splashColor: AppColors.lightGray.withOpacity(0.12),
+          splashColor: scheme.primary.withOpacity(0.10),
           highlightColor: Colors.transparent,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              AnimatedSwitcher(
-                duration: AppMotion.fast,
-                child: Icon(
-                  selected ? item.activeIcon : item.icon,
-                  key: ValueKey<bool>(selected),
-                  size: GlassNavBar._iconSize,
-                  color: tone,
-                ),
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: AppMotion.fast,
+              child: Icon(
+                selected ? item.activeIcon : item.icon,
+                key: ValueKey<bool>(selected),
+                size: GlassNavBar._iconSize,
+                color: tone,
               ),
-              const SizedBox(height: 3),
-              // Space is reserved for the dot on every slot, so the icons do
-              // not jump vertically as the selection moves.
-              AnimatedOpacity(
-                duration: AppMotion.fast,
-                opacity: selected ? 1 : 0,
-                child: Container(
-                  width: GlassNavBar._dot,
-                  height: GlassNavBar._dot,
-                  decoration: const BoxDecoration(
-                    color: AppColors.black,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

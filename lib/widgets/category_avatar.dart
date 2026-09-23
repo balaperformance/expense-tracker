@@ -122,7 +122,8 @@ class _ToneAvatar extends StatelessWidget {
   }
 }
 
-/// Circular monogram for a bank account.
+/// Monogram tile for a bank account: a brand gradient with the initial in
+/// the on-brand ink, so each account reads as an identity, not a gray well.
 class BankAvatar extends StatelessWidget {
   const BankAvatar({
     super.key,
@@ -142,13 +143,17 @@ class BankAvatar extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: ToneColors.wash(context, scheme.primary),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[scheme.primary, scheme.secondary],
+        ),
         borderRadius: BorderRadius.circular(size * 0.29),
       ),
       child: Text(
         initial,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.primary,
+              color: scheme.onPrimary,
               fontWeight: FontWeight.w700,
             ),
       ),

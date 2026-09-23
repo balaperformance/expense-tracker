@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Black: matches the dark-mode Flutter page background. -->
-    <color name="splash_background">#000000</color>
+    <!-- Near-black: matches the dark-mode Flutter page background. -->
+    <color name="splash_background">#0B0909</color>
 </resources>

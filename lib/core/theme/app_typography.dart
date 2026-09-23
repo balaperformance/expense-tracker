@@ -62,7 +62,7 @@ class AppTypography {
   /// Heading above a group of cards — "Recent", "Accounts". Serif, so a
   /// section reads as a chapter of the page rather than as another label.
   static TextStyle section(TextTheme text) =>
-      text.titleLarge!.copyWith(fontSize: 17, height: 1.25);
+      text.titleLarge!.copyWith(fontSize: 18, height: 1.25);
 
   /// Small tracked caps above a figure — "NET THIS MONTH". Callers pass the
   /// text already upper-cased; the style only adds the tracking.

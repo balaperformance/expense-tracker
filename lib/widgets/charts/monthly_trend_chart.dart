@@ -55,10 +55,9 @@ class MonthlyTrendChart extends StatelessWidget {
     // A non-zero ceiling keeps the axis stable when every month is empty.
     final double ceiling = maxValue <= 0 ? 100 : maxValue * 1.2;
     final double step = ceiling / 3;
-    // Bars come from the Pastel Garden chart palette, never the app theme.
-    // Expenses alone: the selected month stands out (deep brown on the light
-    // theme's taupe-tinted cards, rose in dark), the rest recede. Against income:
-    // rose for money out, gray-green for money in.
+    // Bars come from the chart palette, never the app theme. Expenses alone:
+    // the selected month is a rose gradient and the rest a washed rose.
+    // Against income: rose for money out, emerald for money in.
     final ChartColors palette = ChartColors.of(context);
 
     Color expenseBar(bool isSelected) {
@@ -215,7 +214,7 @@ class MonthlyTrendChart extends StatelessWidget {
                       child: Text(
                         Formatters.shortMonth(points[index].month),
                         style: theme.textTheme.labelSmall?.copyWith(
-                          // Deep brown on the rose wash (7:1), not rose on
+                          // A deep rose on the rose wash (6:1), not rose on
                           // rose: an 11px label needs 4.5:1.
                           color: isSelected
                               ? palette.labelOnEmphasis
@@ -240,7 +239,21 @@ class MonthlyTrendChart extends StatelessWidget {
               barRods: <BarChartRodData>[
                 BarChartRodData(
                   toY: point.expense,
-                  color: expenseBar(isSelected),
+                  color: !showIncome && isSelected
+                      ? null
+                      : expenseBar(isSelected),
+                  // The selected month rises from the base colour into a
+                  // lighter tint: a little depth on the one bar that matters.
+                  gradient: !showIncome && isSelected
+                      ? LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: <Color>[
+                            palette.emphasis,
+                            palette.emphasisHighlight,
+                          ],
+                        )
+                      : null,
                   width: showIncome ? 7 : (isSelected ? 16 : 12),
                   borderRadius: BorderRadius.vertical(
                     top: Radius.circular(showIncome ? 4 : 6),

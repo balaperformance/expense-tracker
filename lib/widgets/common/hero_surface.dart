@@ -31,10 +31,16 @@ class HeroSurface extends StatelessWidget {
       AppSpacing.lg + 2,
       AppSpacing.lg,
     ),
+    this.glow = AppColors.heroAccent,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
+
+  /// Colour of the light in the top corner. The dashboard tints it with the
+  /// month's outcome — emerald ahead, rose behind — so the card's mood
+  /// carries meaning, not just decoration.
+  final Color glow;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +64,7 @@ class HeroSurface extends StatelessWidget {
             ),
             borderRadius: shape,
             border: Border.all(
-              color: AppColors.heroAccent.withOpacity(pageIsDark ? 0.22 : 0.16),
+              color: Colors.white.withOpacity(pageIsDark ? 0.10 : 0.07),
               width: 0.75,
             ),
           ),
@@ -66,15 +72,19 @@ class HeroSurface extends StatelessWidget {
             data: AppTheme.dark,
             child: Stack(
               children: <Widget>[
-                const Positioned(
-                  top: -70,
-                  right: -50,
-                  child: _Glow(size: 190, opacity: 0.20),
+                Positioned(
+                  top: -80,
+                  right: -60,
+                  child: _Glow(colour: glow, size: 210, opacity: 0.26),
                 ),
                 const Positioned(
                   bottom: -90,
                   left: -40,
-                  child: _Glow(size: 170, opacity: 0.09),
+                  child: _Glow(
+                    colour: AppColors.heroAccent,
+                    size: 170,
+                    opacity: 0.12,
+                  ),
                 ),
                 Padding(padding: padding, child: child),
               ],
@@ -86,10 +96,15 @@ class HeroSurface extends StatelessWidget {
   }
 }
 
-/// A soft taupe light, painted as a radial gradient rather than blurred.
+/// A soft light, painted as a radial gradient rather than blurred.
 class _Glow extends StatelessWidget {
-  const _Glow({required this.size, required this.opacity});
+  const _Glow({
+    required this.colour,
+    required this.size,
+    required this.opacity,
+  });
 
+  final Color colour;
   final double size;
   final double opacity;
 
@@ -104,8 +119,8 @@ class _Glow extends StatelessWidget {
             shape: BoxShape.circle,
             gradient: RadialGradient(
               colors: <Color>[
-                AppColors.heroAccent.withOpacity(opacity),
-                AppColors.heroAccent.withOpacity(0),
+                colour.withOpacity(opacity),
+                colour.withOpacity(0),
               ],
             ),
           ),
