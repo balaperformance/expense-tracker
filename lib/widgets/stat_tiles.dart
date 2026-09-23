@@ -82,7 +82,7 @@ class StatTile extends StatelessWidget {
   }
 }
 
-/// The dashboard's financial snapshot, on the espresso [HeroSurface].
+/// The dashboard's financial snapshot, on the charcoal [HeroSurface].
 ///
 /// One dominant figure, two supporting legs, and the bank total when
 /// accounts exist.
@@ -137,7 +137,7 @@ class BalanceCard extends StatelessWidget {
                 'NET THIS MONTH',
                 style: AppTypography.eyebrow(
                   theme.textTheme,
-                  color: AppColors.tan,
+                  color: AppColors.heroAccent,
                 ),
               ),
             ),
@@ -187,7 +187,7 @@ class BalanceCard extends StatelessWidget {
               const Icon(
                 Icons.account_balance_rounded,
                 size: AppSpacing.iconSm,
-                color: AppColors.tan,
+                color: AppColors.heroAccent,
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -231,15 +231,15 @@ class _HeroBadge extends StatelessWidget {
         vertical: 3,
       ),
       decoration: BoxDecoration(
-        color: AppColors.tan.withOpacity(0.14),
+        color: AppColors.heroAccent.withOpacity(0.14),
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        border: Border.all(color: AppColors.tan.withOpacity(0.30), width: 0.75),
+        border: Border.all(color: AppColors.heroAccent.withOpacity(0.30), width: 0.75),
       ),
       child: Text(
         label.toUpperCase(),
         style: AppTypography.eyebrow(
           Theme.of(context).textTheme,
-          color: AppColors.tan,
+          color: AppColors.heroAccent,
         ),
       ),
     );
@@ -303,10 +303,10 @@ class _Leg extends StatelessWidget {
         vertical: AppSpacing.sm,
       ),
       decoration: BoxDecoration(
-        color: AppColors.cream.withOpacity(0.06),
+        color: AppColors.heroInk.withOpacity(0.06),
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         border:
-            Border.all(color: AppColors.cream.withOpacity(0.08), width: 0.75),
+            Border.all(color: AppColors.heroInk.withOpacity(0.08), width: 0.75),
       ),
       child: Row(
         children: <Widget>[
@@ -399,7 +399,7 @@ class _QuickActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = action.tone ?? theme.colorScheme.primary;
+    final Color tone = action.tone ?? theme.colorScheme.secondary;
 
     return InkWell(
       onTap: action.onTap,

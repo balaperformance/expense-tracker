@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/app_chart_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/analytics.dart';
@@ -180,8 +181,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
               const SizedBox(height: AppSpacing.md),
               ChartLegend(
                 entries: <({Color color, String label})>[
-                  (label: 'Expenses', color: ToneColors.expense(context)),
-                  (label: 'Income', color: ToneColors.income(context)),
+                  (label: 'Expenses', color: ChartColors.of(context).expense),
+                  (label: 'Income', color: ChartColors.of(context).income),
                 ],
               ),
             ],

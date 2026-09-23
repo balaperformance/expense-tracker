@@ -39,7 +39,7 @@ Future<T?> showAppDialog<T>({
               sigmaX: AppGlass.blurOverlay,
               sigmaY: AppGlass.blurOverlay,
             ),
-            child: ColoredBox(color: AppColors.espresso.withOpacity(0.26)),
+            child: ColoredBox(color: AppColors.scrim.withOpacity(0.26)),
           ),
         ),
         builder(dialogContext),

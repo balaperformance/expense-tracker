@@ -246,7 +246,7 @@ class _TotalCard extends StatelessWidget {
                 'TOTAL BALANCE',
                 style: AppTypography.eyebrow(
                   theme.textTheme,
-                  color: AppColors.tan,
+                  color: AppColors.heroAccent,
                 ),
               ),
               const SizedBox(height: AppSpacing.xs),
@@ -269,7 +269,7 @@ class _TotalCard extends StatelessWidget {
         const SizedBox(width: AppSpacing.md),
         const IconWell(
           icon: Icons.account_balance_rounded,
-          tone: AppColors.tan,
+          tone: AppColors.heroAccent,
           size: 44,
         ),
       ],

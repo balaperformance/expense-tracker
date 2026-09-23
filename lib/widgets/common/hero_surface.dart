@@ -5,11 +5,11 @@ import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_theme.dart';
 
-/// The espresso hero pane — reserved for the one headline figure on a
+/// The charcoal hero pane — reserved for the one headline figure on a
 /// screen (the dashboard snapshot, the accounts total).
 ///
-/// A deep espresso gradient with cream ink, so the number the user came for
-/// sits on the only dark-roast surface on a light page (and lifts off the
+/// A deep charcoal gradient with ivory ink, so the number the user came for
+/// sits on the only dark surface on a light page (and lifts off the
 /// page in dark mode). Rationing is the point: two of these on one screen
 /// and neither is the hero.
 ///
@@ -58,7 +58,7 @@ class HeroSurface extends StatelessWidget {
             ),
             borderRadius: shape,
             border: Border.all(
-              color: AppColors.tan.withOpacity(pageIsDark ? 0.22 : 0.16),
+              color: AppColors.heroAccent.withOpacity(pageIsDark ? 0.22 : 0.16),
               width: 0.75,
             ),
           ),
@@ -86,7 +86,7 @@ class HeroSurface extends StatelessWidget {
   }
 }
 
-/// A soft tan light, painted as a radial gradient rather than blurred.
+/// A soft blue-gray light, painted as a radial gradient rather than blurred.
 class _Glow extends StatelessWidget {
   const _Glow({required this.size, required this.opacity});
 
@@ -104,8 +104,8 @@ class _Glow extends StatelessWidget {
             shape: BoxShape.circle,
             gradient: RadialGradient(
               colors: <Color>[
-                AppColors.tan.withOpacity(opacity),
-                AppColors.tan.withOpacity(0),
+                AppColors.heroAccent.withOpacity(opacity),
+                AppColors.heroAccent.withOpacity(0),
               ],
             ),
           ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_motion.dart';
 import '../../core/theme/app_spacing.dart';
@@ -23,15 +24,15 @@ class GlassNavItem {
 
 /// The app's bottom navigation: a floating glass pill.
 ///
-/// A single rounded bar inset from the screen edges. The active destination
-/// is marked by a soft circular highlight that slides between slots, with a
-/// small dot under its icon. Icons only — the labels survive as tooltips and
+/// A single charcoal bar inset from the screen edges — the palette's ink, in
+/// both themes. The active destination is a solid blue-gray circle that
+/// slides between slots, holding an ivory icon and a small ivory dot. Idle
+/// icons are cool gray. Icons only — the labels survive as tooltips and
 /// semantics.
 ///
 /// **No blur, no see-through.** A blur costs a full-screen read-back on every
-/// scrolled frame, and without one even a 96% fill leaves rows ghosting
-/// through the bar. So the glass tint is flattened onto the page colour: the
-/// same warm tone, fully opaque, with the lit top edge and floating shadow
+/// scrolled frame, and without one a translucent bar lets rows ghost through
+/// it. The bar is opaque charcoal, with the lit top edge and floating shadow
 /// carrying the glass read.
 class GlassNavBar extends StatelessWidget {
   const GlassNavBar({
@@ -62,7 +63,6 @@ class GlassNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final GlassTokens glass = AppGlass.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final double safeBottom = MediaQuery.paddingOf(context).bottom;
 
     return Padding(
@@ -83,6 +83,8 @@ class GlassNavBar extends StatelessWidget {
           strong: true,
           opaque: true,
           elevated: false,
+          color: AppColors.navBar,
+          borderColor: AppColors.ivory.withOpacity(0.08),
           radius: _height / 2,
           child: SizedBox(
             height: _height,
@@ -102,14 +104,13 @@ class GlassNavBar extends StatelessWidget {
                       top: (_height - size) / 2,
                       width: size,
                       height: size,
-                      child: DecoratedBox(
+                      child: const DecoratedBox(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          // The same wash a selected chip uses, so selection
-                          // reads the same everywhere in the app.
-                          color: scheme.primary.withOpacity(
-                            glass.isDark ? 0.18 : 0.12,
-                          ),
+                          // The exact palette accent: nothing on it is text,
+                          // and the ivory icon on it clears the 3:1 floor
+                          // for a graphic.
+                          color: AppColors.accent,
                         ),
                       ),
                     ),
@@ -149,8 +150,9 @@ class _NavSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color tone = selected ? scheme.primary : scheme.onSurfaceVariant;
+    // The bar is charcoal in both themes, so its ink is fixed rather than
+    // taken from the page's scheme.
+    final Color tone = selected ? AppColors.ivory : AppColors.coolGray;
 
     return Semantics(
       label: item.label,
@@ -163,7 +165,7 @@ class _NavSlot extends StatelessWidget {
           customBorder: const CircleBorder(),
           // Kept subtle: the sliding highlight is the selection feedback, and
           // a bright splash over it reads as a flash.
-          splashColor: scheme.primary.withOpacity(0.10),
+          splashColor: AppColors.ivory.withOpacity(0.10),
           highlightColor: Colors.transparent,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -186,8 +188,8 @@ class _NavSlot extends StatelessWidget {
                 child: Container(
                   width: GlassNavBar._dot,
                   height: GlassNavBar._dot,
-                  decoration: BoxDecoration(
-                    color: scheme.primary,
+                  decoration: const BoxDecoration(
+                    color: AppColors.ivory,
                     shape: BoxShape.circle,
                   ),
                 ),

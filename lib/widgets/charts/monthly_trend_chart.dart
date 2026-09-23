@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/theme/app_chart_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/formatters.dart';
@@ -54,14 +55,18 @@ class MonthlyTrendChart extends StatelessWidget {
     // A non-zero ceiling keeps the axis stable when every month is empty.
     final double ceiling = maxValue <= 0 ? 100 : maxValue * 1.2;
     final double step = ceiling / 3;
-    final Color expenseTone = ToneColors.expense(context);
-    final Color incomeTone = ToneColors.income(context);
+    // Bars come from the Pastel Garden chart palette, never the Ink Wash
+    // accent. Expenses alone: the selected month in rose, the rest in blush.
+    // Against income: rose for money out, gray-green for money in.
+    final ChartColors palette = ChartColors.of(context);
 
-    // With expenses alone there is nothing to tell apart, so the bars take
-    // the brand tone: a wall of red on the home screen reads as an alarm the
-    // data has not raised. Against income, the semantic pair returns.
-    final Color barTone =
-        showIncome ? expenseTone : theme.colorScheme.primary;
+    Color expenseBar(bool isSelected) {
+      if (!showIncome) return isSelected ? palette.emphasis : palette.idle;
+      return isSelected ? palette.expense : palette.expense.withOpacity(0.5);
+    }
+
+    Color incomeBar(bool isSelected) =>
+        isSelected ? palette.income : palette.income.withOpacity(0.5);
 
     // The selected month is the one the user cares about; the others are
     // context, so they are drawn back a little.
@@ -200,7 +205,7 @@ class MonthlyTrendChart extends StatelessWidget {
                               // A filled pill rather than bold text: at 11px
                               // a weight change is nearly invisible, and the
                               // selected month has to be obvious at a glance.
-                              color: barTone.withOpacity(0.14),
+                              color: palette.emphasis.withOpacity(0.18),
                               borderRadius: BorderRadius.circular(
                                 AppSpacing.radiusPill,
                               ),
@@ -209,8 +214,10 @@ class MonthlyTrendChart extends StatelessWidget {
                       child: Text(
                         Formatters.shortMonth(points[index].month),
                         style: theme.textTheme.labelSmall?.copyWith(
+                          // Deep brown on the rose wash (7:1), not rose on
+                          // rose: an 11px label needs 4.5:1.
                           color: isSelected
-                              ? barTone
+                              ? palette.labelOnEmphasis
                               : theme.colorScheme.onSurfaceVariant,
                           fontWeight:
                               isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -225,7 +232,6 @@ class MonthlyTrendChart extends StatelessWidget {
           barGroups: List<BarChartGroupData>.generate(points.length, (int i) {
             final MonthlyPoint point = points[i];
             final bool isSelected = i == selected;
-            final double fade = isSelected ? 1 : 0.34;
 
             return BarChartGroupData(
               x: i,
@@ -233,7 +239,7 @@ class MonthlyTrendChart extends StatelessWidget {
               barRods: <BarChartRodData>[
                 BarChartRodData(
                   toY: point.expense,
-                  color: barTone.withOpacity(fade),
+                  color: expenseBar(isSelected),
                   width: showIncome ? 7 : (isSelected ? 16 : 12),
                   borderRadius: BorderRadius.vertical(
                     top: Radius.circular(showIncome ? 4 : 6),
@@ -241,13 +247,13 @@ class MonthlyTrendChart extends StatelessWidget {
                   // No background track. A full-height rod behind the
                   // selected bar reads as a floating dark block above it on a
                   // dark background rather than as a track — the width, the
-                  // opacity and the pill under the month label already say
+                  // colour and the pill under the month label already say
                   // which bar is selected.
                 ),
                 if (showIncome)
                   BarChartRodData(
                     toY: point.income,
-                    color: incomeTone.withOpacity(fade),
+                    color: incomeBar(isSelected),
                     width: 7,
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(3),

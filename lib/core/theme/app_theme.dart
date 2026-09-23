@@ -38,30 +38,34 @@ class AppTheme {
     final Color muted =
         isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
     final Color primary = isDark ? AppColors.brandDark : AppColors.brand;
+    // The exact palette accent, for highlights that carry no text. See the
+    // note in AppColors on why buttons use [primary] instead.
+    const Color accent = AppColors.accent;
+    final Color onAccentInk = isDark ? AppColors.darkBackground : AppColors.ivory;
     final Color error = isDark ? AppColors.expenseDark : AppColors.expense;
 
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
       primary: primary,
-      onPrimary: isDark ? AppColors.lightText : const Color(0xFFFFF9F0),
+      onPrimary: isDark ? AppColors.darkBackground : AppColors.ivory,
       primaryContainer: primary.withOpacity(isDark ? 0.22 : 0.12),
       onPrimaryContainer: primary,
-      secondary: primary,
-      onSecondary: isDark ? AppColors.lightText : const Color(0xFFFFF9F0),
-      tertiary: AppColors.tan,
-      onTertiary: AppColors.lightText,
+      secondary: accent,
+      onSecondary: onAccentInk,
+      tertiary: accent,
+      onTertiary: onAccentInk,
       surface: surface,
       onSurface: onSurface,
       surfaceContainerHighest: sunken,
       onSurfaceVariant: muted,
       error: error,
-      onError: isDark ? const Color(0xFF2A0F0A) : const Color(0xFFFFF9F0),
+      onError: isDark ? AppColors.darkBackground : AppColors.ivory,
       errorContainer: error.withOpacity(isDark ? 0.20 : 0.10),
       onErrorContainer: error,
       outline: border,
       outlineVariant: border,
-      inverseSurface: isDark ? const Color(0xFFF1E8DC) : AppColors.lightText,
-      onInverseSurface: isDark ? AppColors.darkSurface : AppColors.cream,
+      inverseSurface: isDark ? AppColors.ivory : AppColors.charcoal,
+      onInverseSurface: isDark ? AppColors.charcoal : AppColors.ivory,
       shadow: Colors.black,
       scrim: Colors.black,
     );
@@ -104,12 +108,12 @@ class AppTheme {
         systemOverlayStyle: isDark
             ? SystemUiOverlayStyle.light.copyWith(
                 statusBarColor: Colors.transparent,
-                systemNavigationBarColor: surface,
+                systemNavigationBarColor: background,
                 systemNavigationBarIconBrightness: Brightness.light,
               )
             : SystemUiOverlayStyle.dark.copyWith(
                 statusBarColor: Colors.transparent,
-                systemNavigationBarColor: surface,
+                systemNavigationBarColor: background,
                 systemNavigationBarIconBrightness: Brightness.dark,
               ),
       ),
@@ -152,7 +156,8 @@ class AppTheme {
         border: _inputBorder(Colors.transparent),
         enabledBorder: _inputBorder(Colors.transparent),
         disabledBorder: _inputBorder(Colors.transparent),
-        focusedBorder: _inputBorder(primary, width: 1.6),
+        // The exact accent: a focus ring is a highlight, not text.
+        focusedBorder: _inputBorder(accent, width: 1.6),
         errorBorder: _inputBorder(error, width: 1.2),
         focusedErrorBorder: _inputBorder(error, width: 1.6),
         hintStyle: text.bodyMedium?.copyWith(color: muted),
@@ -342,7 +347,7 @@ class AppTheme {
       // -------------------------------------------------------------------
       chipTheme: ChipThemeData(
         backgroundColor: sunken,
-        selectedColor: primary.withOpacity(isDark ? 0.24 : 0.12),
+        selectedColor: accent.withOpacity(isDark ? 0.28 : 0.16),
         disabledColor: sunken.withOpacity(0.5),
         checkmarkColor: primary,
         side: BorderSide(color: border),
@@ -435,7 +440,7 @@ class AppTheme {
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: primary,
+        color: accent,
         linearTrackColor: onSurface.withOpacity(0.08),
         linearMinHeight: 6,
       ),

@@ -513,7 +513,7 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-/// The profile initial on an espresso disc with a tan ring — the same
+/// The profile initial on a charcoal disc with a blue-gray ring — the same
 /// material as the brand mark, so the account reads as part of the app.
 class _ProfileAvatar extends StatelessWidget {
   const _ProfileAvatar({required this.initial});
@@ -528,7 +528,7 @@ class _ProfileAvatar extends StatelessWidget {
       padding: const EdgeInsets.all(2.5),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: AppColors.tan.withOpacity(0.7), width: 1.2),
+        border: Border.all(color: AppColors.accent, width: 1.2),
       ),
       child: DecoratedBox(
         decoration: const BoxDecoration(
@@ -543,7 +543,7 @@ class _ProfileAvatar extends StatelessWidget {
           child: Text(
             initial,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: AppColors.tan,
+                  color: AppColors.heroAccent,
                 ),
           ),
         ),

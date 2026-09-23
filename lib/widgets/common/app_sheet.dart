@@ -25,9 +25,9 @@ Future<T?> showAppSheet<T>({
     isDismissible: isDismissible,
     enableDrag: enableDrag,
     backgroundColor: Colors.transparent,
-    // A warm espresso scrim rather than neutral black, which on the ivory
-    // page read as a grey film.
-    barrierColor: AppColors.espresso.withOpacity(0.38),
+    // A charcoal scrim rather than pure black, which on the ivory page read
+    // as a dirty film.
+    barrierColor: AppColors.scrim.withOpacity(0.38),
     builder: (BuildContext sheetContext) =>
         _GlassSheetSurface(child: builder(sheetContext)),
   );

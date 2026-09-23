@@ -5,7 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 
-/// The app's mark: an espresso tile with a tan wallet glyph.
+/// The app's mark: a charcoal tile with a blue-gray wallet glyph.
 ///
 /// Drawn in code — a gradient, a hairline and an icon from the bundled
 /// Material font — so the identity costs no image asset and stays crisp at
@@ -38,12 +38,12 @@ class BrandMark extends StatelessWidget {
           colors: AppColors.heroLight,
         ),
         border: Border.all(
-          color: AppColors.tan.withOpacity(0.35),
+          color: AppColors.heroAccent.withOpacity(0.35),
           width: 0.75,
         ),
         boxShadow: <BoxShadow>[
           BoxShadow(
-            color: AppColors.espresso.withOpacity(0.28),
+            color: AppColors.scrim.withOpacity(0.28),
             blurRadius: size * 0.4,
             offset: Offset(0, size * 0.14),
           ),
@@ -52,7 +52,7 @@ class BrandMark extends StatelessWidget {
       child: Icon(
         icon,
         size: size * 0.48,
-        color: AppColors.tan,
+        color: AppColors.heroAccent,
       ),
     );
   }

@@ -1,17 +1,22 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_chart_colors.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/theme/category_icons.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/analytics.dart';
-import '../category_avatar.dart';
 import '../common/money_text.dart';
 
 /// Donut of spend by category with the period total in the middle.
 ///
 /// Only the largest slices are drawn individually; the rest collapse into a
 /// neutral "Other" so the ring stays readable instead of becoming a barcode.
+///
+/// Slices are coloured by rank from the Pastel Garden chart palette
+/// ([ChartColors]), not by each category's stored colour: a ring of six
+/// arbitrary user colours has no palette at all. [CategoryBreakdownList]
+/// resolves the same colours, so it works as the legend.
 class CategoryDonut extends StatelessWidget {
   const CategoryDonut({
     super.key,
@@ -36,7 +41,7 @@ class CategoryDonut extends StatelessWidget {
       (double sum, CategorySpend c) => sum + c.total,
     );
 
-    final List<_Slice> slices = _buildSlices(theme.brightness);
+    final List<_Slice> slices = _buildSlices(ChartColors.of(context));
 
     return SizedBox(
       height: size,
@@ -81,26 +86,26 @@ class CategoryDonut extends StatelessWidget {
     );
   }
 
-  List<_Slice> _buildSlices(Brightness brightness) {
-    Color tint(CategorySpend c) =>
-        AppColors.readableOn(AppColors.fromHex(c.color), brightness);
+  List<_Slice> _buildSlices(ChartColors palette) {
+    final int count = breakdown.length;
+    _Slice slice(int rank) => _Slice(
+          breakdown[rank].total,
+          palette.segment(rank, count, maxSlices: maxSlices),
+        );
 
-    if (breakdown.length <= maxSlices) {
-      return breakdown
-          .map((CategorySpend c) => _Slice(c.total, tint(c)))
-          .toList();
+    if (count <= maxSlices) {
+      return <_Slice>[for (int i = 0; i < count; i++) slice(i)];
     }
 
-    final List<_Slice> slices = breakdown
-        .take(maxSlices - 1)
-        .map((CategorySpend c) => _Slice(c.total, tint(c)))
-        .toList();
+    final List<_Slice> slices = <_Slice>[
+      for (int i = 0; i < maxSlices - 1; i++) slice(i),
+    ];
 
     final double rest = breakdown
         .skip(maxSlices - 1)
         .fold<double>(0, (double sum, CategorySpend c) => sum + c.total);
 
-    if (rest > 0) slices.add(_Slice(rest, AppColors.chartOther));
+    if (rest > 0) slices.add(_Slice(rest, palette.other));
     return slices;
   }
 }
@@ -119,6 +124,7 @@ class CategoryBreakdownList extends StatelessWidget {
     required this.breakdown,
     required this.currency,
     this.limit,
+    this.maxSlices = 6,
   });
 
   final List<CategorySpend> breakdown;
@@ -127,6 +133,10 @@ class CategoryBreakdownList extends StatelessWidget {
   /// Caps how many rows are shown — the dashboard shows the top few, Reports
   /// shows them all.
   final int? limit;
+
+  /// Must match the donut this list sits under, so each row takes its
+  /// slice's colour — "Other" included.
+  final int maxSlices;
 
   @override
   Widget build(BuildContext context) {
@@ -139,6 +149,7 @@ class CategoryBreakdownList extends StatelessWidget {
 
     final List<CategorySpend> visible =
         limit == null ? breakdown : breakdown.take(limit!).toList();
+    final ChartColors palette = ChartColors.of(context);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -149,6 +160,7 @@ class CategoryBreakdownList extends StatelessWidget {
             spend: visible[i],
             share: visible[i].shareOf(total),
             currency: currency,
+            tone: palette.segment(i, breakdown.length, maxSlices: maxSlices),
           ),
         ],
       ],
@@ -161,26 +173,39 @@ class _CategoryRow extends StatelessWidget {
     required this.spend,
     required this.share,
     required this.currency,
+    required this.tone,
   });
 
   final CategorySpend spend;
   final double share;
   final String currency;
 
+  /// The row's slice colour in the donut above it.
+  final Color tone;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color tone = AppColors.readableOn(
-      AppColors.fromHex(spend.color),
-      theme.brightness,
-    );
 
     return Row(
       children: <Widget>[
-        CategoryAvatar(
-          icon: spend.icon,
-          color: spend.color,
-          size: AppSpacing.avatarSm,
+        // A legend swatch rather than the usual category avatar: a strong
+        // wash of the slice colour with the icon in neutral ink. The avatar's
+        // tinted-icon-on-faint-wash would put a blush icon at 1.7:1.
+        Container(
+          width: AppSpacing.avatarSm,
+          height: AppSpacing.avatarSm,
+          decoration: BoxDecoration(
+            color: tone.withOpacity(
+              theme.brightness == Brightness.dark ? 0.34 : 0.32,
+            ),
+            borderRadius: BorderRadius.circular(AppSpacing.avatarSm * 0.29),
+          ),
+          child: Icon(
+            CategoryIcons.resolve(spend.icon),
+            size: AppSpacing.avatarSm * 0.46,
+            color: theme.colorScheme.onSurface,
+          ),
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(

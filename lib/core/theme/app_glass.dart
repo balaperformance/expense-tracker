@@ -97,26 +97,27 @@ class AppGlass {
 
   static const GlassTokens light = GlassTokens(
     isDark: false,
-    // Warm ivory with body. Over the ivory page a fill much below 0.8 stops
-    // reading as a surface and the edge does the entire job.
-    fill: Color(0xDEFFFCF7),
-    fillStrong: Color(0xF7FFFCF7),
-    sunken: Color(0x10422701),
-    // A cream highlight along the top, a soft espresso ink around the rest.
-    borderTop: Color(0xF2FFFFFF),
-    borderBottom: Color(0x17422701),
+    // A whiter ivory with body, laid over the ivory page like a sheet of
+    // paper. Much below 0.8 it stops reading as a surface at all.
+    fill: Color(0xEBFFFFF7),
+    fillStrong: Color(0xF7FFFFF7),
+    sunken: Color(0x4DCBCBCB),
+    // A white highlight along the top; the palette's cool gray around the
+    // rest, which is the hairline that defines the card on ivory.
+    borderTop: Color(0xFFFFFFFF),
+    borderBottom: Color(0xB3CBCBCB),
     blur: blurBar,
-    // Warm-tinted shadows: a neutral grey shadow on ivory reads as dirt.
+    // Soft charcoal shadows, kept faint: the hairline does most of the work.
     shadow: <BoxShadow>[
       BoxShadow(
-        color: Color(0x0F422701),
+        color: Color(0x0F4A4A4A),
         blurRadius: 18,
         offset: Offset(0, 6),
       ),
     ],
     shadowStrong: <BoxShadow>[
       BoxShadow(
-        color: Color(0x1F422701),
+        color: Color(0x244A4A4A),
         blurRadius: 34,
         offset: Offset(0, 14),
       ),
@@ -125,13 +126,13 @@ class AppGlass {
 
   static const GlassTokens dark = GlassTokens(
     isDark: true,
-    // Roasted glass: a lifted warm grey, not a black veil. A translucent
-    // black over a near-black page produces no surface at all.
-    fill: Color(0xD1241E19),
-    fillStrong: Color(0xF5221C17),
-    sunken: Color(0x1AF4EDE4),
-    borderTop: Color(0x29FFF3E3),
-    borderBottom: Color(0x17FFF3E3),
+    // Lifted charcoal, not a black veil. A translucent black over a
+    // near-black page produces no surface at all.
+    fill: Color(0xD92A2A2A),
+    fillStrong: Color(0xF5282828),
+    sunken: Color(0x1AFFFEE3),
+    borderTop: Color(0x29FFFEE3),
+    borderBottom: Color(0x17FFFEE3),
     blur: blurBar,
     shadow: <BoxShadow>[
       BoxShadow(
@@ -174,6 +175,8 @@ class GlassSurface extends StatelessWidget {
     this.borderRadius,
     this.clip = true,
     this.opaque = false,
+    this.color,
+    this.borderColor,
   });
 
   final Widget child;
@@ -207,24 +210,33 @@ class GlassSurface extends StatelessWidget {
   /// tone is identical; only the bleed is gone.
   final bool opaque;
 
+  /// An explicit body colour in place of the glass fill — for a pane that
+  /// is its own material, like the charcoal navigation bar. It still gets
+  /// the lit edge, and [opaque] still applies.
+  final Color? color;
+
+  /// Replaces the hairline when [color] would clash with the glass one.
+  final Color? borderColor;
+
   @override
   Widget build(BuildContext context) {
     final GlassTokens glass = AppGlass.of(context);
     final BorderRadius shape =
         borderRadius ?? BorderRadius.circular(radius);
 
+    final Color body = color ?? (strong ? glass.fillStrong : glass.fill);
     final Color fill = tone != null
         ? tone!.withOpacity(glass.isDark ? 0.16 : 0.09)
         : opaque
             ? Color.alphaBlend(
-                strong ? glass.fillStrong : glass.fill,
+                body,
                 Theme.of(context).scaffoldBackgroundColor,
               )
-            : (strong ? glass.fillStrong : glass.fill);
+            : body;
 
     final Color outline = tone != null
         ? tone!.withOpacity(glass.isDark ? 0.42 : 0.30)
-        : glass.borderBottom;
+        : borderColor ?? glass.borderBottom;
 
     Widget pane = DecoratedBox(
       decoration: BoxDecoration(
@@ -242,7 +254,14 @@ class GlassSurface extends StatelessWidget {
               left: radius * 0.5,
               right: radius * 0.5,
               top: 0,
-              child: _TopHighlight(colour: glass.borderTop),
+              child: _TopHighlight(
+                // Over an explicit body colour (the charcoal nav bar) the
+                // glass highlight would be a hard white rule; a faint glint
+                // reads as the same lit edge.
+                colour: color != null
+                    ? const Color(0x29FFFEE3)
+                    : glass.borderTop,
+              ),
             ),
           Padding(padding: padding, child: child),
         ],

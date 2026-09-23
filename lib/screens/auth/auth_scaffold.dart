@@ -10,7 +10,7 @@ import '../../widgets/common/surface_card.dart';
 ///
 /// Keeps the keyboard from covering inputs and gives every auth screen the
 /// same composition — the brand mark, a serif headline, and the form on a
-/// glass pane over a soft tan light — so signing in, signing up and checking
+/// glass pane over a soft blue-gray light — so signing in, signing up and checking
 /// email feel like one flow rather than three pages.
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({
@@ -43,8 +43,8 @@ class AuthScaffold extends StatelessWidget {
           : null,
       body: Stack(
         children: <Widget>[
-          // The one decorative element on the signed-out screens: a warm
-          // light behind the header, painted as a gradient (no image, no
+          // The one decorative element on the signed-out screens: a soft
+          // accent light behind the header, painted as a gradient (no image, no
           // blur), fading into the page before the form begins.
           Positioned(
             top: -160,
@@ -57,8 +57,8 @@ class AuthScaffold extends StatelessWidget {
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: <Color>[
-                      AppColors.tan.withOpacity(isDark ? 0.16 : 0.30),
-                      AppColors.tan.withOpacity(0),
+                      AppColors.accent.withOpacity(isDark ? 0.18 : 0.22),
+                      AppColors.accent.withOpacity(0),
                     ],
                   ),
                 ),
