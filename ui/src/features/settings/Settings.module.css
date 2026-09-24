@@ -1,0 +1,60 @@
+.profile {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.avatar {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  padding: 2.5px;
+  border-radius: 50%;
+  border: 1.2px solid var(--accent);
+  display: grid;
+}
+
+.avatar > span {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #000, #1c1616);
+  color: var(--hero-accent);
+  font-family: var(--font-serif);
+  font-size: 18.5px;
+}
+
+.editBadge {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) var(--wash), transparent);
+}
+
+.columns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section);
+}
+
+@media (min-width: 900px) {
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--sp-xl);
+    align-items: start;
+  }
+}
+
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  color: var(--text);
+}

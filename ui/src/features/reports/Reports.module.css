@@ -1,0 +1,180 @@
+/*
+ * Reports layout — one CSS grid, sized by the width the page actually has
+ * (a container query, so the desktop rail is accounted for):
+ *
+ *   phone    one column: saved · trend · spending · biggest
+ *   tablet   saved | trend      the trend chart spans the two summary cards,
+ *            biggest | trend    spending takes the full width beneath
+ *            spending
+ *   desktop  saved    | trend   both columns end on the same line: the
+ *            spending | trend   flexible middle row absorbs the difference and
+ *            spending | biggest the trend chart grows into it
+ */
+
+.frame {
+  container-type: inline-size;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'saved' 'trend' 'spend' 'top';
+  gap: var(--sp-lg);
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+.grid[data-layout='summary'] {
+  grid-template-areas: 'saved' 'trend';
+}
+
+/* Every cell stretches to its grid area, so edges line up across columns. */
+.cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.saved {
+  grid-area: saved;
+  overflow: hidden;
+  padding: var(--sp-lg);
+}
+
+.trend {
+  grid-area: trend;
+  padding: var(--sp-lg);
+}
+
+.spend {
+  grid-area: spend;
+  padding: var(--sp-lg);
+}
+
+.top {
+  grid-area: top;
+  justify-content: center;
+}
+
+/* ---- Saved this month --------------------------------------------------- */
+
+/* A soft pool of the result's colour in the corner — green saved, rose overspent. */
+.saved::after {
+  content: '';
+  position: absolute;
+  top: -70px;
+  right: -50px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--tone) 16%, transparent), transparent 70%);
+  pointer-events: none;
+}
+
+.savedHead {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-md);
+}
+
+.net {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  line-height: 1.12;
+  letter-spacing: -0.6px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stats {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-sm);
+  margin-top: auto;
+  padding-top: var(--sp-lg);
+}
+
+/* Each figure on a faint wash of its own tone. */
+.statTile {
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--tone) 6%, var(--surface));
+  border: 0.75px solid color-mix(in srgb, var(--tone) 14%, transparent);
+}
+
+/* ---- Spending by category ------------------------------------------------ */
+
+.spendBody {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--sp-xl);
+}
+
+.donut {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.breakdown {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+}
+
+.breakdown > :first-child {
+  align-self: stretch;
+}
+
+/* ---- Biggest category ---------------------------------------------------- */
+
+.topAmount {
+  font-family: var(--font-serif);
+  font-size: 18.5px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* ---- Wider layouts (kept last: container queries add no specificity) ---- */
+
+@container (min-width: 620px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: 1fr auto auto;
+    grid-template-areas:
+      'saved trend'
+      'top   trend'
+      'spend spend';
+  }
+
+  .grid[data-layout='summary'] {
+    grid-template-rows: auto;
+    grid-template-areas: 'saved trend';
+  }
+
+  .spendBody {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+@container (min-width: 940px) {
+  .grid {
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'saved trend'
+      'spend trend'
+      'spend top';
+    gap: var(--sp-xl);
+  }
+}

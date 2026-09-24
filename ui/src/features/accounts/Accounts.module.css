@@ -1,0 +1,172 @@
+.totalRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.total {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  line-height: 1.14;
+  letter-spacing: -0.4px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accountHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  width: 100%;
+  padding: var(--sp-md);
+  text-align: left;
+}
+
+.accountBalance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.accountActions {
+  display: flex;
+  align-items: center;
+  border-top: 0.75px solid var(--border);
+}
+
+.accountAction {
+  flex: 1 1 0;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.accountAction:active {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.accountAction + .accountAction {
+  border-left: 0.75px solid var(--border);
+}
+
+@media (max-width: 380px) {
+  .accountActionLabel {
+    display: none;
+  }
+}
+
+.grid {
+  display: grid;
+  gap: var(--card-gap);
+}
+
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- Transfer route --------------------------------------------------- */
+
+.route {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  cursor: pointer;
+}
+
+.routeSelect {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.routeSelect select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  padding: 2px 22px 2px 0;
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.routeSelect svg {
+  position: absolute;
+  right: 0;
+  pointer-events: none;
+  color: var(--muted);
+}
+
+.routeDivider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 14px;
+}
+
+.routeLine {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  background: var(--sunken);
+}
+
+.preview[data-short] {
+  border: 1px solid color-mix(in srgb, var(--expense) 40%, transparent);
+}
+
+/* ---- Statement -------------------------------------------------------- */
+
+.statementTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  min-width: 0;
+}
+
+.periodBar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.summaryLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.divider {
+  height: 0.75px;
+  background: var(--border);
+  margin: var(--sp-md) 0;
+}
+
+.closing {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 500;
+}

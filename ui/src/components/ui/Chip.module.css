@@ -1,0 +1,103 @@
+.chip {
+  --tone: var(--primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  background: var(--glass-fill);
+  border: 0.75px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 100%;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard),
+    transform var(--dur-instant) ease-out;
+}
+
+.chip:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.chip:disabled {
+  opacity: 0.5;
+}
+
+.withAvatar {
+  padding-left: 5px;
+}
+
+.selected {
+  background: color-mix(in srgb, var(--tone) calc(var(--wash) + 7%), var(--surface));
+  border-color: color-mix(in srgb, var(--tone) 72%, transparent);
+  box-shadow: inset 0 0 0 0.75px color-mix(in srgb, var(--tone) 72%, transparent);
+  color: var(--tone);
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+
+.pickerError {
+  padding: var(--sp-sm);
+  border-radius: var(--r-md);
+  border: 1px solid var(--error);
+}
+
+/* ---- Segmented -------------------------------------------------------- */
+
+.segmented {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: var(--sunken);
+  isolation: isolate;
+}
+
+.segment {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.segmentOn {
+  color: var(--text);
+}
+
+.thumb {
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.1), 0 2px 8px rgb(0 0 0 / 0.06);
+  transition: transform var(--dur-normal) var(--ease-standard);
+}

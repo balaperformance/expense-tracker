@@ -1,0 +1,281 @@
+.label {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 0 2px 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+}
+
+.required {
+  color: var(--error);
+}
+
+.hint {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.hintError {
+  color: var(--error);
+}
+
+/* ---- Text inputs ------------------------------------------------------ */
+
+.field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: var(--field-h);
+  border-radius: var(--r-md);
+  background: var(--sunken);
+  border: 1.5px solid transparent;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+
+.field:focus-within {
+  border-color: var(--primary);
+}
+
+.fieldError {
+  border-color: var(--error) !important;
+}
+
+.fieldDisabled {
+  opacity: 0.6;
+}
+
+.fieldIcon {
+  flex: none;
+  margin-left: 12px;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--field-h);
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  /* 16px stops iOS Safari zooming the page when a field gains focus. */
+  font-size: 16px;
+  color: var(--text);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 12px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  resize: none;
+  font-size: 16px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.textareaWithIcon {
+  align-items: flex-start;
+}
+
+.textareaWithIcon .fieldIcon {
+  margin-top: 13px;
+}
+
+.trailing {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
+}
+
+.error {
+  padding: 6px 4px 0;
+  font-size: 12.5px;
+  color: var(--error);
+}
+
+.helper {
+  padding: 6px 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.prefix {
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+/* ---- Amount ----------------------------------------------------------- */
+
+.amount {
+  --tone: var(--text);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 84px;
+  padding: 0 16px;
+  border-radius: var(--r-lg);
+  background: var(--sunken);
+  border: 1.5px solid transparent;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.amount:focus-within {
+  border-color: color-mix(in srgb, var(--tone) 70%, transparent);
+}
+
+.amountSymbol {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  color: var(--muted);
+  flex: none;
+}
+
+.amountInput {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  text-align: center;
+  font-family: var(--font-serif);
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.5px;
+  font-variant-numeric: lining-nums tabular-nums;
+  color: var(--tone);
+  caret-color: var(--tone);
+  padding: 16px 0;
+}
+
+.amountInput::placeholder {
+  color: color-mix(in srgb, var(--muted) 38%, transparent);
+}
+
+/* The symbol sits outside the flow so the figure stays optically centred. */
+.amountSymbolPinned {
+  position: absolute;
+  left: 18px;
+}
+
+/* ---- Select / date ---------------------------------------------------- */
+
+.select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: var(--field-h);
+  padding: 0 14px;
+  border-radius: var(--r-md);
+  background: var(--sunken);
+  color: var(--text);
+  text-align: left;
+  font-size: 15px;
+  border: 1.5px solid transparent;
+}
+
+.select:focus-within {
+  border-color: var(--primary);
+}
+
+.selectValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder {
+  color: var(--muted);
+}
+
+/* The native date input covers the field, so a tap opens the platform picker. */
+.nativeDate {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.nativeDate::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dateRow {
+  display: flex;
+  gap: var(--sp-sm);
+  align-items: center;
+}
+
+.quickDate {
+  flex: none;
+  height: var(--field-h);
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  background: var(--sunken);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1.5px solid transparent;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.quickDateOn {
+  background: color-mix(in srgb, var(--primary) var(--wash), transparent);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  color: var(--primary);
+}
+
+/* ---- Search ----------------------------------------------------------- */
+
+.search {
+  composes: field;
+  min-height: 42px;
+  border-radius: var(--r-pill);
+  background: var(--glass-fill);
+  border: 0.75px solid var(--glass-edge);
+  box-shadow: var(--shadow);
+}
+
+.search .input {
+  height: 42px;
+}

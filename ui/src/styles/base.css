@@ -1,0 +1,327 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  background: var(--bg);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  /* The page colour lives on <html>, so the glow below can sit between it and the content. */
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior-y: none;
+}
+
+/* Soft brand-tinted light behind every screen: taupe from the top left,
+   dark taupe from the top right. Fixed, so it never scrolls or repaints. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(80vmax 46vmax at 8% -12%, var(--bg-glow-a), transparent 62%),
+    radial-gradient(64vmax 40vmax at 104% -4%, var(--bg-glow-b), transparent 60%);
+}
+
+img,
+svg {
+  display: block;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+/* Thin, quiet scrollbars on desktop. */
+@media (hover: hover) and (pointer: fine) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) 35%, transparent) transparent;
+  }
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- Typography (app_typography.dart) --------------------------------- */
+
+.t-display-lg,
+.t-display-md,
+.t-display-sm,
+.t-headline-lg,
+.t-headline-md,
+.t-headline-sm,
+.t-title-lg,
+.t-section {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.t-display-lg {
+  font-size: 34px;
+  line-height: 1.1;
+  letter-spacing: -0.6px;
+}
+.t-display-md {
+  font-size: 30px;
+  line-height: 1.12;
+  letter-spacing: -0.5px;
+}
+.t-display-sm {
+  font-size: 28px;
+  line-height: 1.14;
+  letter-spacing: -0.4px;
+}
+.t-headline-lg {
+  font-size: 25px;
+  line-height: 1.18;
+  letter-spacing: -0.3px;
+}
+.t-headline-md {
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: -0.2px;
+}
+.t-headline-sm {
+  font-size: 18.5px;
+  line-height: 1.22;
+  letter-spacing: -0.1px;
+}
+.t-title-lg {
+  font-size: 21px;
+  line-height: 1.22;
+  letter-spacing: -0.2px;
+}
+.t-section {
+  font-size: 18px;
+  line-height: 1.25;
+  letter-spacing: -0.2px;
+}
+.t-title-md {
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+.t-title-sm {
+  font-size: 13.5px;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.t-body-lg {
+  font-size: 15px;
+  line-height: 1.4;
+}
+.t-body-md {
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.t-body-sm {
+  font-size: 12.5px;
+  line-height: 1.32;
+  color: var(--muted);
+}
+.t-label-lg {
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.15px;
+}
+.t-label-md {
+  font-size: 12.5px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+}
+.t-label-sm {
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.25px;
+  color: var(--muted);
+}
+.t-eyebrow {
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.t-muted {
+  color: var(--muted);
+}
+.t-center {
+  text-align: center;
+}
+.t-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Every amount a user might compare against another uses fixed-width digits. */
+.money {
+  font-variant-numeric: lining-nums tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- Tones ------------------------------------------------------------ */
+
+.tone-income {
+  color: var(--income);
+}
+.tone-expense {
+  color: var(--expense);
+}
+.tone-warning {
+  color: var(--warning);
+}
+.tone-transfer {
+  color: var(--transfer);
+}
+.tone-primary {
+  color: var(--primary);
+}
+.tone-muted {
+  color: var(--muted);
+}
+
+/* ---- Motion (AppFadeIn) ------------------------------------------------ */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fade-in {
+  animation: fade-in-up var(--dur-normal) var(--ease-enter) both;
+}
+
+.fade-in-soft {
+  animation: fade-in var(--dur-fast) var(--ease-standard) both;
+}
+
+/* ---- Layout helpers ---------------------------------------------------- */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  display: flex;
+  align-items: center;
+}
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+.gap-xs {
+  gap: var(--sp-xs);
+}
+.gap-sm {
+  gap: var(--sp-sm);
+}
+.gap-md {
+  gap: var(--sp-md);
+}
+.gap-lg {
+  gap: var(--sp-lg);
+}
+.gap-section {
+  gap: var(--section);
+}

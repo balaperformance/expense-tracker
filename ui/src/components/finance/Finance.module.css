@@ -1,0 +1,457 @@
+/* ---- Avatars ---------------------------------------------------------- */
+
+.avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 29%;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) var(--wash), transparent);
+}
+
+.bankAvatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 29%;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: var(--on-primary);
+  font-weight: 700;
+}
+
+/* ---- Transaction row -------------------------------------------------- */
+
+.txn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  width: 100%;
+  min-height: 52px;
+  padding: 9px var(--sp-md);
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+  -webkit-touch-callout: none;
+}
+
+button.txn:active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+@media (hover: hover) {
+  button.txn:hover {
+    background: color-mix(in srgb, var(--text) 3%, transparent);
+  }
+}
+
+.txnText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.txnTitle {
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.txnTitleTwoLines {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.txnMeta {
+  font-size: 12.5px;
+  line-height: 1.32;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.txnAmount {
+  flex: none;
+  max-width: 45%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.txnBelow {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dayHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-sm);
+  padding: var(--sp-md) var(--sp-xs) 6px;
+}
+
+.dayHeaderFirst {
+  padding-top: 0;
+}
+
+.dayLabel {
+  flex: 1 1 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--muted);
+}
+
+.dayTotal {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ---- Progress bars ---------------------------------------------------- */
+
+.bar {
+  --tone: var(--income);
+  position: relative;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--tone) var(--wash), transparent);
+  overflow: hidden;
+}
+
+.barFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 62%, var(--surface)), var(--tone));
+  transform-origin: left center;
+  animation: bar-grow 480ms var(--ease-standard) both;
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* ---- Budget tile ------------------------------------------------------ */
+
+.budget {
+  --tone: var(--income);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  width: 100%;
+  padding: var(--sp-md);
+  text-align: left;
+  color: inherit;
+}
+
+.budgetHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.budgetName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budgetPercent {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--tone);
+  font-variant-numeric: tabular-nums;
+}
+
+.budgetFoot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  margin-top: -4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.budgetLeft {
+  color: var(--tone);
+  font-weight: 600;
+}
+
+.alert {
+  --tone: var(--warning);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  width: 100%;
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--tone) var(--wash), transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 30%, transparent);
+  color: var(--tone);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+}
+
+/* ---- Balance (Net) hero ----------------------------------------------- */
+
+.eyebrowRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.heroBadge {
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--hero-accent) 14%, transparent);
+  border: 0.75px solid color-mix(in srgb, var(--hero-accent) 30%, transparent);
+  color: var(--hero-accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.net {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  line-height: 1.14;
+  letter-spacing: -0.5px;
+  font-weight: 500;
+  color: var(--hero-ink);
+  margin-top: var(--sp-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spendBar {
+  position: relative;
+  height: 5px;
+  margin-top: var(--sp-sm);
+  border-radius: var(--r-pill);
+  background: var(--hero-track);
+  overflow: hidden;
+}
+
+.legs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-md);
+}
+
+.leg {
+  --tone: var(--income);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) 10px;
+  border-radius: var(--r-md);
+  background: rgb(255 255 255 / 0.06);
+  min-width: 0;
+}
+
+.legIcon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 22%, transparent);
+}
+
+.legText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.legAmount {
+  color: var(--tone);
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bankLine {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.bankLine .money {
+  color: var(--hero-ink);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+/* ---- Quick actions ---------------------------------------------------- */
+
+.quick {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-sm);
+}
+
+.quickAction {
+  --tone: var(--primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border-radius: var(--r-md);
+  transition: transform var(--dur-instant) ease-out;
+}
+
+.quickAction:active {
+  transform: scale(0.95);
+}
+
+.quickTile {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: var(--card-fill);
+  box-shadow: var(--shadow);
+  border: 0.75px solid var(--card-edge);
+  transition: box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+@media (hover: hover) {
+  .quickAction:hover .quickTile {
+    box-shadow: var(--shadow-strong);
+  }
+}
+
+/* A solid jewel of the action's own colour, lit from the top left. */
+.quickWell {
+  --quick-ink: #ffffff;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--quick-ink);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--tone) 70%, #ffffff), var(--tone) 72%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.28),
+    0 5px 12px -4px color-mix(in srgb, var(--tone) 70%, transparent);
+}
+
+:global(:root[data-theme='dark']) .quickWell {
+  --quick-ink: #120e0e;
+}
+
+.quickLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.25px;
+  color: var(--text);
+}
+
+/* ---- Stat tile -------------------------------------------------------- */
+
+.stat {
+  --tone: var(--primary);
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  min-width: 0;
+}
+
+.statLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  font-size: 12.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.statIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border-radius: var(--r-xs);
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) var(--wash), transparent);
+}
+
+.statValue {
+  font-family: var(--font-serif);
+  font-size: 18.5px;
+  line-height: 1.22;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In a narrow tile the words matter more than the glyph. */
+@container (max-width: 96px) {
+  .statIcon {
+    display: none;
+  }
+}
+
+/* ---- Month stepper ---------------------------------------------------- */
+
+/* A pill that reads as one control; on wider screens it keeps to the title's edge. */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  height: 44px;
+  padding: 0 2px;
+  border-radius: var(--r-pill);
+  background: var(--card-fill);
+  border: 0.75px solid var(--card-edge);
+  box-shadow: var(--shadow-soft);
+}
+
+@media (min-width: 768px) {
+  .stepper {
+    max-width: 400px;
+  }
+}
+
+.stepperLabel {
+  flex: 1 1 auto;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}

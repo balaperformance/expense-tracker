@@ -1,0 +1,49 @@
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-md);
+}
+
+.swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  border: 2.5px solid transparent;
+  transition: transform var(--dur-instant) ease-out;
+}
+
+.swatch:active {
+  transform: scale(0.92);
+}
+
+.swatchOn {
+  border-color: var(--text);
+}
+
+.icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: var(--sp-sm);
+}
+
+.iconChoice {
+  --tone: var(--primary);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--muted);
+  border: 1.6px solid transparent;
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.iconChoiceOn {
+  background: color-mix(in srgb, var(--tone) 18%, transparent);
+  border-color: var(--tone);
+  color: var(--tone);
+}

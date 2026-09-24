@@ -1,0 +1,30 @@
+.entry {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-md) var(--sp-lg);
+}
+
+.subField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding-top: var(--sp-xs);
+}
+
+.smsSample {
+  padding: var(--sp-md);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary) var(--wash), transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+  color: var(--text);
+}
+
+.reference {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-md) var(--sp-lg);
+}

@@ -1,0 +1,233 @@
+/*
+ * Gothic Noir design tokens.
+ *
+ * Every value is taken from the Flutter theme so both apps are one product:
+ *   app_colors.dart        surfaces, ink, semantic money tones, hero
+ *   app_glass.dart         pane fills, lit edges, two-layer shadows
+ *   app_chart_colors.dart  the muted jewel chart palette
+ *   app_spacing.dart       the tight spacing / radius / sizing scale
+ *   app_typography.dart    serif for voice, sans for work
+ *   app_motion.dart        short, decelerating, self-terminating motion
+ *
+ * Semantics are fixed across themes: green is money in, rose is money out,
+ * amber is budget pressure, slate is a transfer, dark taupe is the brand.
+ */
+
+:root {
+  /* ---- Palette sources ---------------------------------------------- */
+  --palette-black: #000000;
+  --palette-light-gray: #d1d0d0;
+  --palette-taupe: #988686;
+  --palette-dark-taupe: #5c4e4e;
+
+  /* ---- Surfaces & ink (light) --------------------------------------- */
+  --bg: #f3f1f1;
+  /* Two soft brand-tinted pools of light behind the page, so it never reads as flat gray. */
+  --bg-glow-a: rgb(152 134 134 / 0.24);
+  --bg-glow-b: rgb(92 78 78 / 0.12);
+  --surface: #ffffff;
+  --surface-2: #faf8f8;
+  --sunken: rgb(209 208 208 / 0.35);
+  --border: rgb(92 78 78 / 0.11);
+  --text: #171212;
+  --muted: #6b5f5f;
+  --primary: #5c4e4e;
+  --primary-hi: #756464;
+  --primary-lo: #3d3232;
+  --on-primary: #ffffff;
+  --accent: #988686;
+  --scrim: rgb(0 0 0 / 0.42);
+
+  /* ---- Brand --------------------------------------------------------- */
+  --brand-gradient: linear-gradient(140deg, var(--primary-hi) 0%, var(--primary) 46%, var(--primary-lo) 100%);
+  --brand-glow: rgb(92 78 78 / 0.42);
+
+  /* ---- Money tones --------------------------------------------------- */
+  --income: #0b875e;
+  --expense: #e11d48;
+  --warning: #b45309;
+  --transfer: #64748b;
+  --error: var(--expense);
+  --on-error: #ffffff;
+  --wash: 13%;
+
+  /* ---- Panes --------------------------------------------------------- */
+  --glass-fill: rgb(255 255 255 / 0.97);
+  --glass-fill-strong: rgb(255 255 255 / 0.99);
+  --glass-edge-top: #ffffff;
+  --glass-edge: rgb(92 78 78 / 0.1);
+  /* Cards: a faint top-lit fill and a warm three-layer shadow for real depth. */
+  --card-fill: linear-gradient(180deg, #ffffff 0%, #fcfafa 100%);
+  --card-edge: rgb(92 78 78 / 0.1);
+  --shadow-soft: 0 1px 2px rgb(42 31 31 / 0.05), 0 4px 12px -4px rgb(42 31 31 / 0.1);
+  --shadow: 0 0.5px 1px rgb(42 31 31 / 0.05), 0 3px 8px -2px rgb(42 31 31 / 0.07), 0 14px 30px -12px rgb(60 44 44 / 0.2);
+  --shadow-strong: 0 1px 2px rgb(42 31 31 / 0.06), 0 12px 24px -8px rgb(42 31 31 / 0.18), 0 30px 56px -20px rgb(60 44 44 / 0.34);
+  --rail-fill: linear-gradient(180deg, rgb(255 255 255 / 0.82), rgb(255 255 255 / 0.46));
+
+  /* ---- Hero ---------------------------------------------------------- */
+  --hero-from: #000000;
+  --hero-to: #1c1616;
+  --hero-edge: rgb(255 255 255 / 0.07);
+  --hero-ink: #f7f5f5;
+  --hero-track: rgb(247 245 245 / 0.18);
+  --hero-glow: #9aa8ba;
+  --hero-accent: #988686;
+
+  /* ---- Charts -------------------------------------------------------- */
+  --chart-1: #a63a50; /* garnet */
+  --chart-2: #6650a6; /* amethyst */
+  --chart-3: #b5842a; /* antique gold */
+  --chart-4: #2e8278; /* jade */
+  --chart-5: #a04a86; /* plum */
+  --chart-6: #3f6d9e; /* steel blue */
+  --chart-other: #b8aeae;
+  --chart-emphasis: #a63a50;
+  --chart-emphasis-hi: #c66478;
+  --chart-idle: rgb(166 58 80 / 0.2);
+  --chart-expense: #a63a50;
+  --chart-expense-hi: #c9607a;
+  --chart-income: #2e8278;
+  --chart-income-hi: #52aa9f;
+  --chart-label-on-emphasis: #7a2236;
+
+  /* ---- Typography ---------------------------------------------------- */
+  --font-sans: system-ui, -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  /*
+   * New York on Apple platforms, Noto Serif on Android, Cambria on Windows —
+   * all system fonts with lining figures, so no font bytes are downloaded and
+   * amounts never fall into old-style digits. Georgia is the last resort.
+   */
+  --font-serif: ui-serif, 'New York', 'Noto Serif', Cambria, Georgia, 'Times New Roman', serif;
+
+  /* ---- Spacing (app_spacing.dart) ------------------------------------ */
+  --sp-xxs: 2px;
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 12px;
+  --sp-lg: 14px;
+  --sp-xl: 18px;
+  --sp-xxl: 22px;
+  --sp-xxxl: 28px;
+  --gutter: 14px;
+  --section: 14px;
+  --card-gap: 10px;
+  --card-pad: 12px;
+
+  --r-xs: 8px;
+  --r-sm: 12px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 26px;
+  --r-xxl: 30px;
+  --r-pill: 999px;
+
+  --touch: 44px;
+  --button-h: 40px;
+  --button-h-sm: 32px;
+  --button-h-lg: 46px;
+  --field-h: 46px;
+  --avatar: 34px;
+  --avatar-sm: 30px;
+  --appbar-h: 52px;
+  --nav-h: 56px;
+  --content-max: 1080px;
+
+  /* ---- Motion (app_motion.dart) -------------------------------------- */
+  --dur-instant: 90ms;
+  --dur-fast: 160ms;
+  --dur-normal: 240ms;
+  --dur-slow: 320ms;
+  --dur-figure: 420ms;
+  --ease-standard: cubic-bezier(0.33, 1, 0.68, 1); /* easeOutCubic */
+  --ease-enter: cubic-bezier(0.25, 1, 0.5, 1); /* easeOutQuart */
+  --ease-exit: cubic-bezier(0.32, 0, 0.67, 0); /* easeInCubic */
+
+  /* ---- Safe areas ---------------------------------------------------- */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  color-scheme: light;
+}
+
+/*
+ * Dark theme. Genuinely different values rather than an inversion: the
+ * brand moves to taupe (dark taupe is 2.2:1 on the dark surface), money
+ * tones brighten, and panes lift off the page instead of sinking into it.
+ */
+:root[data-theme='dark'],
+.theme-dark {
+  --bg: #0b0909;
+  --bg-glow-a: rgb(152 134 134 / 0.11);
+  --bg-glow-b: rgb(92 78 78 / 0.16);
+  --surface: #1c1818;
+  --surface-2: #231e1e;
+  --sunken: #272121;
+  --border: rgb(209 208 208 / 0.1);
+  --text: #f2f0f0;
+  --muted: #a89e9e;
+  --primary: #988686;
+  --primary-hi: #b3a1a1;
+  --primary-lo: #7a6868;
+  --on-primary: #000000;
+  --scrim: rgb(0 0 0 / 0.6);
+  --brand-glow: rgb(0 0 0 / 0.55);
+
+  --income: #34d399;
+  --expense: #fb7185;
+  --warning: #fbbf24;
+  --transfer: #94a3b8;
+  --on-error: #000000;
+  --wash: 20%;
+
+  --glass-fill: rgb(28 24 24 / 0.9);
+  --glass-fill-strong: rgb(26 22 22 / 0.96);
+  --glass-edge-top: rgb(255 255 255 / 0.14);
+  --glass-edge: rgb(255 255 255 / 0.08);
+  --card-fill: linear-gradient(180deg, #221d1d 0%, #1a1616 100%);
+  --card-edge: rgb(255 255 255 / 0.075);
+  --shadow-soft: 0 4px 12px rgb(0 0 0 / 0.26);
+  --shadow: 0 10px 24px -6px rgb(0 0 0 / 0.5);
+  --shadow-strong: 0 16px 38px rgb(0 0 0 / 0.5);
+  --rail-fill: linear-gradient(180deg, rgb(28 24 24 / 0.92), rgb(18 15 15 / 0.72));
+
+  --hero-from: #2a2222;
+  --hero-to: #151111;
+  --hero-edge: rgb(255 255 255 / 0.1);
+
+  --chart-1: #d9677b;
+  --chart-2: #9a86d8;
+  --chart-3: #d9a84e;
+  --chart-4: #4db3a6;
+  --chart-5: #cc78b4;
+  --chart-6: #72a0d6;
+  --chart-other: #5a5050;
+  --chart-emphasis: #d9677b;
+  --chart-emphasis-hi: #e892a1;
+  --chart-idle: rgb(217 103 123 / 0.3);
+  --chart-expense: #d9677b;
+  --chart-expense-hi: #e892a1;
+  --chart-income: #4db3a6;
+  --chart-income-hi: #7fd0c5;
+  --chart-label-on-emphasis: #f0a3b0;
+
+  color-scheme: dark;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --gutter: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-fast: 0ms;
+    --dur-normal: 0ms;
+    --dur-slow: 0ms;
+    --dur-figure: 0ms;
+  }
+}
