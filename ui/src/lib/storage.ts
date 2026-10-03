@@ -8,6 +8,8 @@ export const StorageKeys = {
   theme: 'et.theme',
   hideBalances: 'et.hideBalances',
   currency: 'et.currency',
+  /** '1' once the user turned push notifications on for this device; cleared when they turn them off. */
+  pushEnabled: 'et.pushEnabled',
 } as const;
 
 export function readPref(key: string): string | null {

@@ -7,6 +7,8 @@ import { useRef, type MouseEvent, type PointerEvent } from 'react';
 export function useLongPress(onLongPress: (() => void) | undefined, ms = 520) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const origin = useRef<{ x: number; y: number } | null>(null);
+  // The click that follows a long press is not a tap.
+  const fired = useRef(false);
   if (!onLongPress) return {};
   const cancel = () => {
     clearTimeout(timer.current);
@@ -14,14 +16,22 @@ export function useLongPress(onLongPress: (() => void) | undefined, ms = 520) {
   };
   return {
     onPointerDown: (event: PointerEvent) => {
+      fired.current = false;
       if (event.pointerType === 'mouse') return;
       origin.current = { x: event.clientX, y: event.clientY };
       timer.current = setTimeout(() => {
         origin.current = null;
+        fired.current = true;
         // Not every browser has vibrate (Safari does not).
         if ('vibrate' in navigator) navigator.vibrate(10);
         onLongPress();
       }, ms);
+    },
+    onClickCapture: (event: MouseEvent) => {
+      if (!fired.current) return;
+      fired.current = false;
+      event.preventDefault();
+      event.stopPropagation();
     },
     onPointerMove: (event: PointerEvent) => {
       const start = origin.current;

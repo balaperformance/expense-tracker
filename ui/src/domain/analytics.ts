@@ -4,6 +4,7 @@
  * budgets and export so they can never disagree.
  */
 import { FALLBACK_CATEGORY_COLOR } from '@/lib/color';
+import { firstOfMonth, type IsoDate } from '@/lib/dates';
 
 import { FALLBACK_CATEGORY_ICON } from './defaults';
 import type { Budget, Expense, ExpenseCategory } from './models';
@@ -30,6 +31,15 @@ export function shareOf(spend: CategorySpend, periodTotal: number): number {
 
 export function sumBy<T>(items: readonly T[], value: (item: T) => number): number {
   return items.reduce((sum, item) => sum + value(item), 0);
+}
+
+/**
+ * The expenses that are the user's own spending: everything except purchases
+ * paid on someone else's behalf ([paidForIds]), which are owed back. Every
+ * spending figure — dashboard, reports, budgets, exports — goes through this.
+ */
+export function personalSpending<T extends { id: string }>(expenses: readonly T[], paidForIds: ReadonlySet<string>): T[] {
+  return paidForIds.size ? expenses.filter((e) => !paidForIds.has(e.id)) : [...expenses];
 }
 
 /** Groups expenses by category, largest first. */
@@ -60,6 +70,53 @@ export function buildCategoryBreakdown(
       };
     })
     .sort((a, b) => b.total - a.total);
+}
+
+/**
+ * The month [day] falls in is still running: its income and spending are only
+ * what has happened so far — a salary paid at month-end has not arrived yet —
+ * so the two are not compared as if the month were over.
+ */
+export function isMonthInProgress(month: IsoDate, day: IsoDate): boolean {
+  return firstOfMonth(month) === firstOfMonth(day);
+}
+
+/**
+ * What a month's summary leads with.
+ *
+ *   balance  the month is running and there are accounts: the money available
+ *            now, from the account balances
+ *   spent    the month is running and there are no accounts: spending so far
+ *   net      the month is over: income less spending — saved or overspent. Only
+ *            then are both figures complete enough to compare.
+ *
+ * Nothing is projected: a salary that has not arrived counts for nothing.
+ */
+export type MonthStanding =
+  | { kind: 'balance'; available: number }
+  | { kind: 'spent'; spent: number }
+  | { kind: 'net'; net: number; saved: boolean };
+
+export function monthStanding({
+  inProgress,
+  available,
+  income,
+  expense,
+}: {
+  inProgress: boolean;
+  /** Every account's balance added up; null when there are no accounts. */
+  available: number | null;
+  income: number;
+  expense: number;
+}): MonthStanding {
+  if (inProgress) return available != null ? { kind: 'balance', available } : { kind: 'spent', spent: expense };
+  const net = income - expense;
+  return { kind: 'net', net, saved: net >= 0 };
+}
+
+/** The average expense: spending over the number of expenses, never a forecast. */
+export function averagePerExpense(total: number, count: number): number {
+  return count > 0 ? total / count : 0;
 }
 
 /** `yyyy-MM` → total, for the trend charts. */

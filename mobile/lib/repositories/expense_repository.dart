@@ -5,6 +5,7 @@ import '../core/errors/app_exception.dart';
 import '../core/utils/date_utils.dart';
 import '../models/expense.dart';
 import '../models/expense_filter.dart';
+import '../models/ledger_entry.dart';
 import '../services/schema_capabilities.dart';
 import '../services/sms/sms_expense_draft.dart';
 import 'ledger_repository.dart';
@@ -27,16 +28,18 @@ class ExpenseRepository {
 
   /// Optional columns are selected only when the migration that adds them has
   /// run, so the Phase 1 schema keeps working untouched.
-  String get _select {
+  String get _optionalColumns {
     final String merchant = SchemaCapabilities.merchant ? ', merchant' : '';
     final String bank =
         SchemaCapabilities.expenseBankLink ? ', bank_account_id' : '';
     final String card =
         SchemaCapabilities.creditCards ? ', credit_card_id' : '';
-    return 'id, user_id, amount, category_id, payment_method_id, '
-        'expense_date, description, notes, created_at, updated_at'
-        '$merchant$bank$card, categories(*), payment_methods(*)';
+    return '$merchant$bank$card';
   }
+
+  String get _select => 'id, user_id, amount, category_id, payment_method_id, '
+      'expense_date, description, notes, created_at, updated_at'
+      '$_optionalColumns, categories(*), payment_methods(*)';
 
   Future<void> _resolveCapabilities() =>
       SchemaCapabilities.resolve(_client);
@@ -145,6 +148,55 @@ class ExpenseRepository {
     }
   }
 
+  /// The newest [limit] expenses dated from [from] up to [toExclusive],
+  /// newest first — the history behind Quick add, so only what it reads: no
+  /// notes, category or payment method rows.
+  Future<List<Expense>> fetchRecent({
+    required String userId,
+    required DateTime from,
+    required DateTime toExclusive,
+    required int limit,
+  }) async {
+    try {
+      await _resolveCapabilities();
+      final List<Map<String, dynamic>> rows = await _client
+          .from(_table)
+          .select('id, user_id, amount, category_id, payment_method_id, '
+              'expense_date, description, created_at$_optionalColumns')
+          .eq('user_id', userId)
+          .gte('expense_date', AppDateUtils.toDateString(from))
+          .lt('expense_date', AppDateUtils.toDateString(toExclusive))
+          .order('expense_date', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return rows.map(Expense.fromMap).toList();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Ids of expenses paid on someone else's behalf (migration 005): owed
+  /// back, so not the user's own spending habits.
+  Future<Set<String>> fetchPaidForExpenseIds({required String userId}) async {
+    try {
+      await _resolveCapabilities();
+      if (!SchemaCapabilities.treatments) return <String>{};
+      final List<Map<String, dynamic>> rows =
+          await fetchAllPages(postgrestPages(() => _client
+              .from('receivables')
+              .select('id, expense_id')
+              .eq('user_id', userId)
+              .not('expense_id', 'is', null)
+              .order('id')));
+      return rows
+          .map((Map<String, dynamic> r) => r['expense_id'] as String?)
+          .whereType<String>()
+          .toSet();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
   /// Month totals for a contiguous range, returned as `yyyy-MM` -> total.
   ///
   /// One request covers the whole trend chart instead of one per month.
@@ -171,7 +223,9 @@ class ExpenseRepository {
     }
   }
 
-  Future<Expense> create(Expense expense) async {
+  /// [details]: what an imported statement printed about the payment, kept
+  /// on its ledger movement (migration 007).
+  Future<Expense> create(Expense expense, {MovementDetails? details}) async {
     try {
       await _resolveCapabilities();
       final Map<String, dynamic> row = await _client
@@ -185,7 +239,7 @@ class ExpenseRepository {
           .single();
 
       final Expense created = Expense.fromMap(row);
-      await _syncLedger(created);
+      await _syncLedger(created, details: details);
       return created;
     } catch (error) {
       throw ErrorMapper.map(error);
@@ -259,7 +313,7 @@ class ExpenseRepository {
   /// A cash expense (no account) produces no movement, which is what keeps
   /// cash spending from touching any bank balance — and so does a card
   /// purchase, which carries no bank account.
-  Future<void> _syncLedger(Expense expense) async {
+  Future<void> _syncLedger(Expense expense, {MovementDetails? details}) async {
     if (!SchemaCapabilities.phase2Ready) return;
     await _ledger.syncForExpense(
       userId: expense.userId,
@@ -269,6 +323,7 @@ class ExpenseRepository {
       date: expense.expenseDate,
       description: expense.title,
       categoryId: expense.categoryId,
+      details: details,
     );
   }
 
@@ -342,38 +397,6 @@ class ExpenseRepository {
       return byShape.isEmpty ? null : Expense.fromMap(byShape.first);
     } catch (_) {
       return null;
-    }
-  }
-
-  /// Total spend for one category in one month, for budget progress.
-  Future<double> totalForCategoryMonth({
-    required String userId,
-    required String? categoryId,
-    required DateTime month,
-  }) async {
-    try {
-      final MonthRange range = AppDateUtils.monthRange(month);
-      final List<Map<String, dynamic>> rows =
-          await fetchAllPages(postgrestPages(() {
-        PostgrestFilterBuilder<List<Map<String, dynamic>>> query = _client
-            .from(_table)
-            .select('id, amount')
-            .eq('user_id', userId)
-            .gte('expense_date', AppDateUtils.toDateString(range.start))
-            .lt('expense_date',
-                AppDateUtils.toDateString(range.endExclusive));
-        if (categoryId != null) {
-          query = query.eq('category_id', categoryId);
-        }
-        return query.order('id');
-      }));
-      int cents = 0;
-      for (final Map<String, dynamic> row in rows) {
-        cents += (((row['amount'] as num?)?.toDouble() ?? 0) * 100).round();
-      }
-      return cents / 100;
-    } catch (error) {
-      throw ErrorMapper.map(error);
     }
   }
 

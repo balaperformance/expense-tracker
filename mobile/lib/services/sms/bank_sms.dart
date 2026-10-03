@@ -76,16 +76,6 @@ class ParsedBankSms {
   /// no transaction to review. Everything else is a convenience.
   bool get isUsable => hasAmount && direction != null;
 
-  /// Names of the fields that were read, for the "what we found" line.
-  List<String> get foundFields => <String>[
-        if (hasAmount) 'amount',
-        if (bankName != null) 'bank',
-        if (last4 != null) 'account',
-        if (counterparty != null) 'payee',
-        if (date != null) 'date',
-        if (reference != null) 'reference',
-      ];
-
   @override
   String toString() => 'ParsedBankSms(${direction?.name}, $amount, '
       '$bankName, $last4, $counterparty, $date, $reference)';

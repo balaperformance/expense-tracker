@@ -12,6 +12,7 @@ import { queryClient } from '@/state/queryClient';
 import { SessionBootstrap, SessionCleanup, Splash } from '@/state/session';
 import { SettingsProvider } from '@/state/settings';
 
+import { PushSync } from './PushSync';
 import { UpdatePrompt } from './UpdatePrompt';
 
 // Everything past the first screen is split out, so a cold start downloads
@@ -30,6 +31,10 @@ const ReportsPage = named(() => import('@/features/reports/ReportsPage'), 'Repor
 const SettingsPage = named(() => import('@/features/settings/SettingsPage'), 'SettingsPage');
 const AccountsPage = named(() => import('@/features/accounts/AccountsPage'), 'AccountsPage');
 const StatementPage = named(() => import('@/features/accounts/StatementPage'), 'StatementPage');
+const ImportStatementPage = named(() => import('@/features/statementImport/ImportStatementPage'), 'ImportStatementPage');
+const CreditCardsPage = named(() => import('@/features/creditCards/CreditCardsPage'), 'CreditCardsPage');
+const CardStatementPage = named(() => import('@/features/creditCards/CardStatementPage'), 'CardStatementPage');
+const ReceivablesPage = named(() => import('@/features/receivables/ReceivablesPage'), 'ReceivablesPage');
 const BudgetsPage = named(() => import('@/features/budgets/BudgetsPage'), 'BudgetsPage');
 const CategoriesPage = named(() => import('@/features/catalog/CategoriesPage'), 'CategoriesPage');
 const PaymentMethodsPage = named(() => import('@/features/catalog/PaymentMethodsPage'), 'PaymentMethodsPage');
@@ -44,6 +49,7 @@ function RequireAuth() {
   return (
     <SessionBootstrap>
       <AppShell />
+      <PushSync />
     </SessionBootstrap>
   );
 }
@@ -78,7 +84,11 @@ export function AppRoutes() {
           <Route path="reports" element={<ReportsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="accounts" element={<AccountsPage />} />
+          <Route path="accounts/import" element={<ImportStatementPage />} />
           <Route path="accounts/:id" element={<StatementPage />} />
+          <Route path="cards" element={<CreditCardsPage />} />
+          <Route path="cards/:id" element={<CardStatementPage />} />
+          <Route path="owed" element={<ReceivablesPage />} />
           <Route path="budgets" element={<BudgetsPage />} />
           <Route path="categories" element={<CategoriesPage />} />
           <Route path="payment-methods" element={<PaymentMethodsPage />} />

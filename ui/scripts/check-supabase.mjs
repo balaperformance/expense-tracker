@@ -95,17 +95,37 @@ for (const [table, columns] of Object.entries(TABLES)) {
   }
 }
 
-// Optional columns the app probes for (migrations 001–003).
+// Optional tables and columns the app probes for (migrations 001–009).
 const OPTIONAL = [
   ['expenses', 'merchant'],
   ['expenses', 'bank_account_id'],
   ['income', 'bank_account_id'],
   ['account_transactions', 'counterparty_account_id'],
+  ['credit_cards', 'id, user_id, card_name, issuer, credit_limit, statement_day, payment_due_day'],
+  ['credit_card_transactions', 'id, user_id, card_id, kind, direction, amount, txn_date'],
+  ['expenses', 'credit_card_id'],
+  ['account_transactions', 'credit_card_id'],
+  ['receivables', 'id, user_id, kind, person, ledger_entry_id, expense_id, due_date, note'],
+  ['account_transactions', 'receivable_id'],
+  ['tags', 'id, user_id, name'],
+  ['expense_tags', 'expense_id, tag_id, user_id'],
+  ['income_tags', 'income_id, tag_id, user_id'],
+  ['account_transactions', 'reference, upi_id, txn_time'],
+  ['notification_preferences', 'user_id, daily_reminder, spending_summary, low_balance, card_due, timezone'],
+  ['push_subscriptions', 'id, user_id, endpoint, disabled_at'],
+  // 009 (mobile/supabase): the Android app's push tokens.
+  ['mobile_push_tokens', 'id, user_id, token, platform, disabled_at'],
 ];
 for (const [table, column] of OPTIONAL) {
-  const result = await request(`/rest/v1/${table}?select=${column}&limit=1`);
-  if (result.status === 200) ok(`${table}.${column} present`);
-  else warn(`${table}.${column} missing (HTTP ${result.status}) — the app hides the dependent feature`);
+  const result = await request(`/rest/v1/${table}?select=${encodeURIComponent(column)}&limit=1`);
+  const name = column.includes(',') ? table : `${table}.${column}`;
+  if (result.status !== 200) {
+    warn(`${name} missing (HTTP ${result.status}) — the app hides the dependent feature`);
+  } else if (Array.isArray(result.body) && result.body.length > 0) {
+    fail(`${name}: an anonymous caller can read ${result.body.length} row(s) — check RLS`);
+  } else {
+    ok(`${name} present`);
+  }
 }
 
 // 4. Edge Function
@@ -131,6 +151,19 @@ for (const [table, column] of OPTIONAL) {
   if (anonymous.status === 401) ok('ai-chat refuses a call without a user session (401)');
   else if (anonymous.status === 404) fail('ai-chat is not deployed (404)');
   else fail(`ai-chat answered an anonymous call with ${anonymous.status}`);
+}
+
+// 5. Push notification sender (optional: only if notifications were set up)
+{
+  const anonymous = await request('/functions/v1/push-notify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (anonymous.status === 401) ok('push-notify refuses a call without the schedule secret (401)');
+  else if (anonymous.status === 404) warn('push-notify is not deployed (404) — push notifications are off');
+  else if (anonymous.status === 503) warn('push-notify is deployed but not configured (503) — set its secrets');
+  else fail(`push-notify answered an anonymous call with ${anonymous.status}`);
 }
 
 console.log(failures ? `\n${failures} check(s) failed.` : '\nAll Supabase checks passed.');

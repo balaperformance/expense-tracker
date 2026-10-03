@@ -87,6 +87,11 @@ function mapPostgrest(error: { code: string; message: string }): AppError {
       return new AppError('Your session expired. Please sign in again.', { isAuthExpired: true });
     case 'PGRST303':
       return new AppError('Your device clock looks out of sync. Retrying usually fixes it.');
+    case 'P0001':
+      // Raised by the app's own database functions and triggers (migration 005)
+      // with a message written for the user — never query text or identifiers.
+      if (error.message.trim()) return new AppError(error.message.trim());
+      break;
   }
   const raw = error.message.toLowerCase();
   if (raw.includes('row-level security') || raw.includes('policy')) {
@@ -124,13 +129,4 @@ export function errorMessage(error: unknown, fallback?: string): string {
   if (error == null) return fallback ?? 'Something went wrong. Please try again.';
   const mapped = toAppError(error);
   return mapped.message;
-}
-
-/** Runs [action] and rethrows anything as an [AppError]. */
-export async function guarded<T>(action: () => Promise<T>): Promise<T> {
-  try {
-    return await action();
-  } catch (error) {
-    throw toAppError(error);
-  }
 }

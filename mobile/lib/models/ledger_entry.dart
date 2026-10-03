@@ -18,6 +18,53 @@ extension LedgerDirectionWire on LedgerDirection {
 /// not spending, so it is derived here rather than stored as a category.
 const String cardPaymentLabel = 'Card bill payment';
 
+/// What a statement printed about a movement beyond its figures — its
+/// reference (a UPI reference number), the other side's UPI ID and the time
+/// of day — kept on the movement's own ledger row (migration 007), the same
+/// three columns the web app writes.
+class MovementDetails {
+  const MovementDetails({this.reference, this.upiId, this.time});
+
+  final String? reference;
+  final String? upiId;
+
+  /// "HH:mm".
+  final String? time;
+
+  bool get isEmpty =>
+      _clean(reference) == null && _clean(upiId) == null && _clean(time) == null;
+
+  /// The engine's `details` object (`{reference, upiId, time}`), or null.
+  static MovementDetails? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final MovementDetails details = MovementDetails(
+      reference: json['reference'] as String?,
+      upiId: json['upiId'] as String?,
+      time: json['time'] as String?,
+    );
+    return details.isEmpty ? null : details;
+  }
+
+  /// The columns, cleaned exactly as the web app's `detailsColumns`: a
+  /// reference of at most 64 characters, a UPI ID of 3 to 255, the time.
+  Map<String, dynamic> toColumns() {
+    final String? ref = _clean(reference);
+    final String? upi = _clean(upiId);
+    return <String, dynamic>{
+      'reference': ref == null ? null : (ref.length > 64 ? ref.substring(0, 64) : ref),
+      'upi_id': upi == null || upi.length < 3
+          ? null
+          : (upi.length > 255 ? upi.substring(0, 255) : upi),
+      'txn_time': _clean(time),
+    };
+  }
+
+  static String? _clean(String? value) {
+    final String? trimmed = value?.trim();
+    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+  }
+}
+
 /// Filter for a statement view.
 enum StatementTypeFilter { all, debitsOnly, creditsOnly }
 
@@ -51,6 +98,10 @@ class LedgerEntry {
     this.transferGroupId,
     this.counterpartyAccountId,
     this.creditCardId,
+    this.receivableId,
+    this.reference,
+    this.upiId,
+    this.txnTime,
     this.createdAt,
     this.category,
   });
@@ -89,6 +140,17 @@ class LedgerEntry {
   /// lowers the bank balance and that card's outstanding, so the two sides
   /// can never disagree. It is not an expense.
   final String? creditCardId;
+
+  /// Set when this credit repays a loan or reimburses a purchase (migration
+  /// 005, recorded from the web app). Read only so such a row is never taken
+  /// for a plain movement, e.g. as the other leg of an imported transfer.
+  final String? receivableId;
+
+  /// What an imported statement printed about this movement (migration 007):
+  /// its reference, the other side's UPI ID and the time of day ("HH:mm:ss").
+  final String? reference;
+  final String? upiId;
+  final String? txnTime;
 
   final DateTime? createdAt;
   final ExpenseCategory? category;
@@ -143,6 +205,10 @@ class LedgerEntry {
       transferGroupId: map['transfer_group_id'] as String?,
       counterpartyAccountId: map['counterparty_account_id'] as String?,
       creditCardId: map['credit_card_id'] as String?,
+      receivableId: map['receivable_id'] as String?,
+      reference: map['reference'] as String?,
+      upiId: map['upi_id'] as String?,
+      txnTime: map['txn_time'] as String?,
       createdAt: map['created_at'] == null
           ? null
           : DateTime.parse(map['created_at'] as String),

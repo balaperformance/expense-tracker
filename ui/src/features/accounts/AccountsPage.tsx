@@ -3,14 +3,15 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { Page } from '@/components/layout/Page';
-import { BankAvatar } from '@/components/finance/Avatars';
+import { BankAvatar, ClaimAvatar } from '@/components/finance/Avatars';
 import { Money } from '@/components/finance/Money';
 import { Button, Fab, IconButton } from '@/components/ui/Button';
 import { Centered, EmptyState, ErrorView, ListSkeleton, Notice } from '@/components/ui/Feedback';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { Card, Hero, IconWell, SectionHeader } from '@/components/ui/Surface';
-import { accountBankLine, accountInitial, currentBalance, type BankAccount } from '@/domain/models';
-import { useAccounts, useCapabilities } from '@/hooks/data';
+import { Card, Hero, IconWell, ListRow, SectionHeader } from '@/components/ui/Surface';
+import { accountBankLine, accountInitial, currentBalance, totalBalance, type BankAccount } from '@/domain/models';
+import { isOpen, totalOutstanding } from '@/domain/receivables';
+import { useAccounts, useCapabilities, useClaims } from '@/hooks/data';
 import { useSheet } from '@/hooks/useSheet';
 import { errorMessage } from '@/lib/errors';
 import { missingSummary, resolveCapabilities } from '@/services/capabilities';
@@ -33,13 +34,16 @@ export function AccountsPage() {
   const { currency } = useSettings();
   const caps = useCapabilities();
   const accounts = useAccounts();
+  const claims = useClaims().data ?? [];
   const { data: sheet, isOpen: sheetOpen, key: sheetKey, open, close } = useSheet<SheetState>();
   const [rechecking, setRechecking] = useState(false);
 
   const balances = accounts.data ?? [];
+  const owed = totalOutstanding(claims);
+  const owedCount = claims.filter((c) => isOpen(c.status)).length;
   const transfersAvailable = caps.bankAccounts && caps.transfers;
   const canTransfer = transfersAvailable && balances.length >= 2;
-  const total = balances.reduce((sum, b) => sum + currentBalance(b), 0);
+  const total = totalBalance(balances);
 
   const recheck = async () => {
     setRechecking(true);
@@ -104,6 +108,18 @@ export function AccountsPage() {
             <IconWell icon="bankSolid" tone="var(--hero-accent)" size={44} />
           </div>
         </Hero>
+        {owedCount ? (
+          <Card padding="flush">
+            <ListRow
+              leading={<ClaimAvatar />}
+              title="Owed to you"
+              subtitle={`${String(owedCount)} open · loans and purchases paid for others`}
+              trailing={<Money amount={owed} currency={currency} tone="transfer" emphasis />}
+              chevron
+              to="/owed"
+            />
+          </Card>
+        ) : null}
         {transfersAvailable ? (
           <div>
             <Button
@@ -156,7 +172,16 @@ export function AccountsPage() {
     <Page
       title="Accounts"
       back="/"
-      actions={canTransfer ? <IconButton icon="transfer" label="Transfer" onClick={() => open({ kind: 'transfer', from: null })} /> : null}
+      actions={
+        <>
+          {caps.creditCards ? <IconButton icon="card" label="Credit cards" onClick={() => void navigate('/cards')} /> : null}
+          {caps.treatments ? <IconButton icon="lend" label="Owed to you" onClick={() => void navigate('/owed')} /> : null}
+          {caps.bankAccounts && balances.length ? (
+            <IconButton icon="document" label="Import statement" onClick={() => void navigate('/accounts/import')} />
+          ) : null}
+          {canTransfer ? <IconButton icon="transfer" label="Transfer" onClick={() => open({ kind: 'transfer', from: null })} /> : null}
+        </>
+      }
     >
       {body}
       {caps.bankAccounts && balances.length ? <Fab label="Account" onClick={() => open({ kind: 'form', account: null })} /> : null}

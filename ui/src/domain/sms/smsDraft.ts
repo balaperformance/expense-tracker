@@ -24,7 +24,8 @@ const GENERIC_BANK_WORDS = new Set([
   'financial', 'services', 'account', 'savings', 'current', 'a/c', 'ac',
 ]);
 
-function identifyingWords(name: string | null | undefined): Set<string> {
+/** A bank or account name's words that tell banks apart ("HDFC Bank Salary" → hdfc, salary). Shared with statement import. */
+export function identifyingWords(name: string | null | undefined): Set<string> {
   if (!name) return new Set();
   return new Set(
     name

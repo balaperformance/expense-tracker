@@ -14,6 +14,7 @@ import { errorMessage } from '@/lib/errors';
 import { today } from '@/lib/dates';
 import { amountToInput, parseAmount, sanitiseAmountInput, validateAmount, validateRequired } from '@/lib/validators';
 import { accountMovementCount } from '@/services/accounts';
+import { cardPaymentCountForAccount } from '@/services/ledger';
 import { useUserId } from '@/state/auth';
 import { useFeedback } from '@/state/feedback';
 import { useSettings } from '@/state/settings';
@@ -66,13 +67,20 @@ export function AccountFormSheet({ open, account, onClose }: { open: boolean; ac
 
   const confirmDelete = async () => {
     if (!account) return;
-    const movements = await accountMovementCount(userId, account.id);
+    const [movements, cardPayments] = await Promise.all([
+      accountMovementCount(userId, account.id),
+      cardPaymentCountForAccount(userId, account.id),
+    ]);
+    // A bill payment is the same row on the card's statement, so it goes from there too.
+    const cardNote = cardPayments
+      ? ` That includes ${cardPayments} credit card bill ${cardPayments === 1 ? 'payment' : 'payments'}, which will no longer reduce those cards' outstanding.`
+      : '';
     const ok = await confirm({
       title: `Delete "${account.nickname}"?`,
       message:
         movements === 0
           ? 'This account has no transactions. This cannot be undone.'
-          : `Its ${movements} ${movements === 1 ? 'transaction' : 'transactions'} will be removed too. Linked expenses and income are kept but revert to Cash / untracked. This cannot be undone.`,
+          : `Its ${movements} ${movements === 1 ? 'transaction' : 'transactions'} will be removed too.${cardNote} Linked expenses and income are kept but revert to Cash / untracked. This cannot be undone.`,
     });
     if (!ok) return;
     try {

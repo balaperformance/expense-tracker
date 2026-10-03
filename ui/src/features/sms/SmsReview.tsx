@@ -1,19 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { Page } from '@/components/layout/Page';
+import { AvailableCredit, CardChips, FundingToggle, type FundingMode } from '@/components/finance/CardPickers';
 import { AccountChips, CategoryChips } from '@/components/finance/Pickers';
+import { TagField } from '@/components/finance/TagField';
 import { Button } from '@/components/ui/Button';
 import { Badge, InlineError, Notice } from '@/components/ui/Feedback';
-import { AmountField, DateField, FieldLabel, TextArea, TextField } from '@/components/ui/Fields';
+import { AmountField, DateField, FieldLabel, TextArea } from '@/components/ui/Fields';
 import { Icon } from '@/components/ui/Icon';
 import { Card } from '@/components/ui/Surface';
-import { accountLabel, expenseTitle, type Expense } from '@/domain/models';
+import { looksLikeCardBillPayment, matchSmsCard } from '@/domain/creditCards';
+import { accountLabel, cardLabel, expenseTitle, type Expense } from '@/domain/models';
 import type { ParsedBankSms } from '@/domain/sms/bankSmsParser';
 import { describeUnmatchedAccount, smsReferenceNote, type SmsCategorySource, type SmsExpenseDraft } from '@/domain/sms/smsDraft';
-import { useAccounts, useCapabilities, useCategories } from '@/hooks/data';
+import { addTag } from '@/domain/tags';
+import { useAccounts, useCapabilities, useCategories, useCreditCards, useTags } from '@/hooks/data';
 import { useDebounced } from '@/hooks/useDebounced';
 import { useSaveExpense } from '@/hooks/mutations';
+import { useTagInput } from '@/hooks/useTagInput';
 import { errorMessage } from '@/lib/errors';
 import { dayMonthYear, formatCurrency } from '@/lib/format';
 import { amountToInput, parseAmount } from '@/lib/validators';
@@ -41,7 +46,7 @@ function categoryHint(source: SmsCategorySource, reason: string | null): string 
  * Nothing is written until the user confirms (SmsReviewScreen). A likely
  * duplicate is a warning the user can override, never a refusal.
  */
-export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: SmsExpenseDraft; onBack: () => void }) {
+export function SmsReview({ sms, draft, text, onBack }: { sms: ParsedBankSms; draft: SmsExpenseDraft; text: string; onBack: () => void }) {
   const navigate = useNavigate();
   const userId = useUserId();
   const { symbol, currency } = useSettings();
@@ -49,11 +54,26 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
   const caps = useCapabilities();
   const categories = useCategories().data ?? [];
   const accounts = (useAccounts().data ?? []).map((b) => b.account);
+  const cards = useCreditCards();
   const save = useSaveExpense();
+  const knownTags = useTags().data ?? [];
+  const tagInput = useTagInput();
+
+  // A card alert ("…spent on your credit card ending 1234") is matched to the
+  // card by its digits; until the user picks, that match is the default.
+  const cardOptions = useMemo(() => (caps.creditCards ? (cards.data ?? []).filter((o) => o.card.isActive) : []), [caps.creditCards, cards.data]);
+  const cardMatch = useMemo(
+    () => matchSmsCard({ text, last4: sms.last4, cards: cardOptions.map((o) => o.card), accounts }),
+    [text, sms.last4, cardOptions, accounts],
+  );
+  const [chosenFunding, setChosenFunding] = useState<{ mode: FundingMode; cardId: string | null } | null>(null);
+  const payByCard = cardOptions.length > 0 && (chosenFunding?.mode ?? (cardMatch ? 'card' : 'account')) === 'card';
+  const creditCardId = chosenFunding ? chosenFunding.cardId : (cardMatch?.id ?? null);
+  const selectedCard = payByCard ? cardOptions.find((o) => o.card.id === creditCardId) : undefined;
 
   const [amount, setAmount] = useState(amountToInput(draft.amount));
-  const [merchant, setMerchant] = useState(draft.merchant ?? '');
-  const [description, setDescription] = useState(draft.merchant != null ? '' : (sms.bankName ?? ''));
+  // There is no merchant field: the payee the message names is the description to start from.
+  const [description, setDescription] = useState(draft.merchant ?? sms.bankName ?? '');
   const [date, setDate] = useState(draft.date);
   const [categoryId, setCategoryId] = useState(draft.categoryId);
   const [bankAccountId, setBankAccountId] = useState(draft.bankAccountId);
@@ -65,13 +85,25 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
   const [accepted, setAccepted] = useState(false);
 
   const settledAmount = useDebounced(amount, 450);
+  const duplicateAccountId = payByCard ? null : bankAccountId;
+  const duplicateCardId = selectedCard?.card.id ?? null;
   useEffect(() => {
     const value = parseAmount(settledAmount);
     // A later edit supersedes this lookup; its answer must not land.
     const run = { current: true };
     void (async () => {
       setChecking(true);
-      const found = value == null ? null : await findPossibleDuplicate({ userId, amount: value, date, reference: draft.reference, bankAccountId });
+      const found =
+        value == null
+          ? null
+          : await findPossibleDuplicate({
+              userId,
+              amount: value,
+              date,
+              reference: draft.reference,
+              bankAccountId: duplicateAccountId,
+              creditCardId: duplicateCardId,
+            });
       if (!run.current) return;
       setDuplicate(found);
       setChecking(false);
@@ -80,7 +112,7 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
     return () => {
       run.current = false;
     };
-  }, [settledAmount, date, bankAccountId, userId, draft.reference]);
+  }, [settledAmount, date, duplicateAccountId, duplicateCardId, userId, draft.reference]);
 
   const warnDuplicate = duplicate != null && !accepted;
   const categoryMissing = submitted && categoryId == null;
@@ -103,20 +135,27 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
       setError('Choose a category for this expense.');
       return;
     }
+    if (payByCard && !selectedCard) {
+      setError('Choose the credit card this was paid with.');
+      return;
+    }
     try {
-      await save.mutateAsync({
+      const result = await save.mutateAsync({
         draft: {
           amount: value,
           expenseDate: date,
           categoryId,
           paymentMethodId: null,
-          bankAccountId,
-          merchant,
+          bankAccountId: selectedCard ? null : bankAccountId,
+          creditCardId: selectedCard?.card.id ?? null,
           description,
           notes: draft.reference ? smsReferenceNote(draft.reference) : null,
         },
+        // Typed but not confirmed with Enter counts too.
+        tags: caps.tags ? addTag(tagInput.tags, tagInput.draft, knownTags) : undefined,
       });
       toast('success', 'Expense added');
+      if (result.tagError) toast('error', `The expense was saved, but its tags were not: ${result.tagError}`);
       void navigate('/expenses', { replace: true });
     } catch (failure) {
       setError(errorMessage(failure, 'Could not save the expense.'));
@@ -141,6 +180,22 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
         </>
       }
     >
+      {caps.creditCards && looksLikeCardBillPayment(text) ? (
+        <Notice
+          icon="warning"
+          tone="var(--expense)"
+          message={
+            <>
+              This looks like a credit card <strong>bill payment</strong>, not spending — the card purchases are already expenses. Record it from{' '}
+              <button type="button" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'underline' }} onClick={() => void navigate('/cards')}>
+                Credit cards › Pay bill
+              </button>{' '}
+              instead, or it will be counted twice.
+            </>
+          }
+        />
+      ) : null}
+
       {missing.length ? (
         <Notice
           icon="factCheck"
@@ -173,8 +228,32 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
       </div>
 
       <div>
-        <FieldLabel text="Paid from" required hint={bankAccountId == null ? 'No balance affected' : null} />
-        {!caps.bankAccounts ? (
+        <FieldLabel text="Paid from" required hint={payByCard ? null : bankAccountId == null ? 'No balance affected' : null} />
+        {cardOptions.length ? (
+          <div style={{ paddingBottom: 'var(--sp-sm)' }}>
+            <FundingToggle
+              value={payByCard ? 'card' : 'account'}
+              onChange={(mode) => setChosenFunding({ mode, cardId: creditCardId })}
+              disabled={save.isPending}
+            />
+          </div>
+        ) : null}
+        {payByCard ? (
+          <div className="stack gap-sm">
+            {cardMatch && selectedCard?.card.id === cardMatch.id ? (
+              <Notice icon="verified" tone="var(--income)" message={`Matched ${cardLabel(cardMatch)} by the card's last four digits.`} />
+            ) : null}
+            <CardChips
+              cards={cardOptions.map((o) => o.card)}
+              selectedId={creditCardId}
+              onSelect={(cardId) => setChosenFunding({ mode: 'card', cardId })}
+              disabled={save.isPending}
+            />
+            {selectedCard ? (
+              <AvailableCredit card={selectedCard.card} summary={selectedCard.summary} amount={parseAmount(amount)} currency={currency} />
+            ) : null}
+          </div>
+        ) : !caps.bankAccounts ? (
           <Notice message="Bank accounts are not set up, so this is recorded as cash and no balance changes." />
         ) : (
           <div className="stack gap-sm">
@@ -200,11 +279,6 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
             )}
           </div>
         )}
-      </div>
-
-      <div>
-        <FieldLabel text="Merchant" />
-        <TextField value={merchant} onChange={setMerchant} placeholder="Who you paid" aria-label="Merchant" icon="store" autoCapitalize="words" disabled={save.isPending} />
       </div>
 
       <div>
@@ -236,6 +310,13 @@ export function SmsReview({ sms, draft, onBack }: { sms: ParsedBankSms; draft: S
         <FieldLabel text="Description" hint="Optional" />
         <TextArea value={description} onChange={setDescription} placeholder="What this was for" aria-label="Description" icon="text" disabled={save.isPending} />
       </div>
+
+      {caps.tags ? (
+        <div>
+          <FieldLabel text="Tags" hint="Optional" />
+          <TagField input={tagInput} known={knownTags} disabled={save.isPending} />
+        </div>
+      ) : null}
 
       {draft.reference ? (
         <Card padding="flush">

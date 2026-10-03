@@ -4,11 +4,16 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/date_utils.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
+import '../../models/bank_account.dart';
+import '../../models/credit_card.dart';
 import '../../models/expense_category.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/credit_card_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_import_provider.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_fields.dart';
@@ -16,6 +21,48 @@ import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+
+/// The other side of a transfer, as the review item stores it.
+class _Target {
+  const _Target.account(String this.accountId)
+      : type = 'account',
+        cardId = null;
+  const _Target.card(String this.cardId)
+      : type = 'card',
+        accountId = null;
+  const _Target.cash()
+      : type = 'cash',
+        accountId = null,
+        cardId = null;
+
+  final String type;
+  final String? accountId;
+  final String? cardId;
+
+  static _Target? of(ImportRow row) => switch (row.transferTargetType) {
+        'account' when row.transferAccountId != null =>
+          _Target.account(row.transferAccountId!),
+        'card' when row.transferCardId != null => _Target.card(row.transferCardId!),
+        'cash' => const _Target.cash(),
+        _ => null,
+      };
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'type': type,
+        if (accountId != null) 'accountId': accountId,
+        if (cardId != null) 'cardId': cardId,
+      };
+
+  @override
+  bool operator ==(Object other) =>
+      other is _Target &&
+      other.type == type &&
+      other.accountId == accountId &&
+      other.cardId == cardId;
+
+  @override
+  int get hashCode => Object.hash(type, accountId, cardId);
+}
 
 /// Edits one statement row before import. Nothing is saved from here — only
 /// the review list changes. Pops 'saved' or 'removed'.
@@ -36,6 +83,11 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     'transfer': 'Transfer',
   };
 
+  /// A tag is at most 40 characters and a row has at most 20 — the limits
+  /// `set_transaction_tags` enforces.
+  static const int _maxTagLength = 40;
+  static const int _maxTags = 20;
+
   late final TextEditingController _description =
       TextEditingController(text: widget.row.description);
   late final TextEditingController _amount =
@@ -45,10 +97,17 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   late final TextEditingController _source = TextEditingController(
     text: widget.row.kind == 'income' ? (widget.row.category ?? '') : '',
   );
+  late final TextEditingController _notes =
+      TextEditingController(text: widget.row.notes ?? '');
+  final TextEditingController _tagDraft = TextEditingController();
   late DateTime _date = widget.row.date;
   late bool _debit = widget.row.isDebit;
   late String _kind = widget.row.kind;
   late String? _categoryId = widget.row.categoryId;
+  late String _bankAccountId = widget.row.bankAccountId;
+  late String? _time = _hhmm(widget.row.transactionTime);
+  late List<String> _tags = List<String>.of(widget.row.tags);
+  late _Target? _target = _Target.of(widget.row);
   List<String> _debitKinds = const <String>['expense', 'transfer'];
   List<String> _creditKinds = const <String>['income', 'refund', 'transfer'];
   String? _error;
@@ -56,6 +115,13 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   static String _trim(double value) {
     final String text = value.toStringAsFixed(2);
     return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
+  }
+
+  /// "13:05:00" or "13:05" → "13:05"; anything else → null.
+  static String? _hhmm(String? value) {
+    final RegExpMatch? match =
+        RegExp(r'^(\d{2}):(\d{2})').firstMatch(value?.trim() ?? '');
+    return match == null ? null : '${match.group(1)}:${match.group(2)}';
   }
 
   @override
@@ -85,18 +151,31 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     _amount.dispose();
     _payee.dispose();
     _source.dispose();
+    _notes.dispose();
+    _tagDraft.dispose();
     super.dispose();
   }
 
   List<String> get _kinds => _debit ? _debitKinds : _creditKinds;
 
+  bool get _taggable =>
+      SchemaCapabilities.tags && (_kind == 'expense' || _kind == 'income');
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final SettingsProvider settings = context.watch<SettingsProvider>();
+    final StatementImportProvider provider =
+        context.watch<StatementImportProvider>();
     final List<ExpenseCategory> categories =
         context.watch<CategoryProvider>().categories;
+    final List<CreditCard> cards = context.watch<CreditCardProvider>().cards;
     final ImportRow row = widget.row;
+    // A multi-account statement's row can move to another account; any other
+    // row stays on the statement's.
+    final List<BankAccount> accounts = provider.accounts
+        .where((BankAccount a) => a.isActive || a.id == _bankAccountId)
+        .toList();
 
     return AppSheet(
       title: 'Edit transaction',
@@ -125,11 +204,37 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           ),
           const SizedBox(height: AppSpacing.md),
         ],
-        if (row.rawDescription.isNotEmpty &&
-            row.rawDescription != row.description) ...<Widget>[
-          Text('On the statement: ${row.rawDescription}',
+        if (row.movable) ...<Widget>[
+          FieldLabel(
+            _debit ? 'Paid from' : 'Received in',
+            isRequired: true,
+            hint: _bankAccountId.isEmpty
+                ? 'Choose one'
+                : (row.accountStatus == 'matched' &&
+                        _bankAccountId == row.bankAccountId
+                    ? 'Matched'
+                    : null),
+          ),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: accounts
+                .map((BankAccount a) => AppChoiceChip(
+                      label: a.displayLabel,
+                      icon: Icons.account_balance_outlined,
+                      selected: a.id == _bankAccountId,
+                      onSelected: () => setState(() {
+                        _bankAccountId = a.id;
+                        // A transfer cannot go to the account it is on.
+                        if (_target?.accountId == a.id) _target = null;
+                      }),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text('The statement says: ${row.sourceAccount?.isNotEmpty == true ? row.sourceAccount : 'no account'}',
               style: theme.textTheme.labelSmall),
-          const SizedBox(height: AppSpacing.md),
+          const SizedBox(height: AppSpacing.lg),
         ],
         const FieldLabel('Direction'),
         SizedBox(
@@ -144,16 +249,13 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
             onSelectionChanged: (Set<bool> v) => setState(() {
               _debit = v.first;
               if (!_kinds.contains(_kind)) _kind = _debit ? 'expense' : 'income';
+              // Only money out can pay a card bill.
+              if (!_debit && _target?.type == 'card') _target = null;
             }),
           ),
         ),
         const SizedBox(height: AppSpacing.lg),
-        FieldLabel(
-          'Record as',
-          hint: _kind == 'refund' || _kind == 'transfer'
-              ? 'Balance only — not income or spending'
-              : null,
-        ),
+        const FieldLabel('Record as'),
         Wrap(
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.sm,
@@ -161,16 +263,31 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
               .map((String k) => AppChoiceChip(
                     label: _kindLabels[k] ?? k,
                     selected: k == _kind,
-                    onSelected: () => setState(() => _kind = k),
+                    onSelected: () => setState(() {
+                      _kind = k;
+                      _error = null;
+                    }),
                   ))
               .toList(),
         ),
+        // On its own line: beside the label it does not fit a phone's width.
+        if (_kind == 'refund' || _kind == 'transfer') ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          Text('Balance only — not income or spending',
+              style: theme.textTheme.labelSmall),
+        ],
+        if (_kind == 'transfer') ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          ..._transferTarget(theme, accounts, cards),
+        ],
         const SizedBox(height: AppSpacing.lg),
         AmountField(
           controller: _amount,
           symbol: settings.currencySymbol,
           autofocus: false,
-          tone: _debit ? ToneColors.expense(context) : ToneColors.income(context),
+          tone: _kind == 'transfer'
+              ? ToneColors.transfer(context)
+              : (_debit ? ToneColors.expense(context) : ToneColors.income(context)),
         ),
         if (_kind == 'expense' || _kind == 'income') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
@@ -186,11 +303,27 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         const FieldLabel('Description', isRequired: true),
         TextField(controller: _description),
         const SizedBox(height: AppSpacing.lg),
-        const FieldLabel('Date', isRequired: true),
+        FieldLabel(row.hasTime ? 'Date & time' : 'Date', isRequired: true),
         DateField(
           date: _date,
           onChanged: (DateTime value) => setState(() => _date = value),
         ),
+        if (row.hasTime) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm),
+          SelectField(
+            value: _time == null ? null : Formatters.clockTime(_time!),
+            placeholder: 'No time on the statement',
+            icon: Icons.schedule_rounded,
+            onTap: _pickTime,
+            trailing: _time == null
+                ? null
+                : IconButton(
+                    tooltip: 'Clear time',
+                    icon: const Icon(Icons.close_rounded, size: AppSpacing.iconSm),
+                    onPressed: () => setState(() => _time = null),
+                  ),
+          ),
+        ],
         if (_kind == 'expense') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
           const FieldLabel('Category', isRequired: true),
@@ -220,12 +353,191 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
             decoration: const InputDecoration(hintText: 'Salary, Interest…'),
           ),
         ],
+        if (row.hasNotes && (_kind == 'expense' || _kind == 'income')) ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          const FieldLabel('Notes', hint: 'Optional'),
+          TextField(
+            controller: _notes,
+            minLines: 1,
+            maxLines: 4,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(hintText: 'Notes'),
+          ),
+        ],
+        if (_taggable) ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          const FieldLabel('Tags', hint: 'Optional'),
+          _tagField(theme),
+        ],
+        const SizedBox(height: AppSpacing.lg),
+        _asPrinted(theme, row),
         if (_error != null) ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
           InlineError(message: _error!),
         ],
       ],
     );
+  }
+
+  /// Where a transfer went (money out) or came from (money in): another of
+  /// the user's accounts, a credit card (its bill), or cash.
+  List<Widget> _transferTarget(
+    ThemeData theme,
+    List<BankAccount> accounts,
+    List<CreditCard> cards,
+  ) {
+    // Both legs of a transfer to an account need migration 003.
+    final List<BankAccount> others = SchemaCapabilities.transfers
+        ? accounts
+            .where((BankAccount a) => a.isActive && a.id != _bankAccountId)
+            .toList()
+        : const <BankAccount>[];
+    final List<CreditCard> payable = _debit && SchemaCapabilities.creditCards
+        ? cards.where((CreditCard c) => c.isActive).toList()
+        : const <CreditCard>[];
+    return <Widget>[
+      FieldLabel(_debit ? 'Transfer to' : 'Transfer from', isRequired: true),
+      Wrap(
+        spacing: AppSpacing.sm,
+        runSpacing: AppSpacing.sm,
+        children: <Widget>[
+          for (final BankAccount a in others)
+            AppChoiceChip(
+              label: a.displayLabel,
+              icon: Icons.account_balance_outlined,
+              selected: _target == _Target.account(a.id),
+              onSelected: () => setState(() {
+                _target = _Target.account(a.id);
+                _error = null;
+              }),
+            ),
+          for (final CreditCard c in payable)
+            AppChoiceChip(
+              label: '${c.cardName} bill',
+              icon: Icons.credit_card_rounded,
+              selected: _target == _Target.card(c.id),
+              onSelected: () => setState(() {
+                _target = _Target.card(c.id);
+                _error = null;
+              }),
+            ),
+          AppChoiceChip(
+            label: 'Cash or other',
+            icon: Icons.payments_outlined,
+            selected: _target == const _Target.cash(),
+            onSelected: () => setState(() {
+              _target = const _Target.cash();
+              _error = null;
+            }),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      Text(
+        _target?.type == 'account'
+            ? 'Both accounts are updated; neither side counts as income or spending.'
+            : _target?.type == 'card'
+                ? "Recorded as this card's bill payment — never an expense."
+                : 'Only this balance changes.',
+        style: theme.textTheme.labelSmall,
+      ),
+    ];
+  }
+
+  Widget _tagField(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (_tags.isNotEmpty) ...<Widget>[
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: _tags
+                .map((String tag) => InputChip(
+                      label: Text('#$tag'),
+                      visualDensity: VisualDensity.compact,
+                      onDeleted: () => setState(() => _tags.remove(tag)),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        TextField(
+          controller: _tagDraft,
+          textInputAction: TextInputAction.done,
+          decoration: const InputDecoration(
+            hintText: 'Add a tag',
+            prefixIcon: Icon(Icons.tag_rounded, size: AppSpacing.iconSm),
+          ),
+          onChanged: (String value) {
+            if (value.contains(',')) _commitTag();
+          },
+          onSubmitted: (_) => _commitTag(),
+        ),
+      ],
+    );
+  }
+
+  /// The tag being typed, cleaned as the database cleans it: no "#", single
+  /// spaces, no repeats (ignoring case).
+  List<String> _withDraft() {
+    final List<String> next = List<String>.of(_tags);
+    for (final String part in _tagDraft.text.split(',')) {
+      final String name = part
+          .replaceFirst(RegExp(r'^\s*#+'), '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      if (name.isEmpty) continue;
+      final String clipped =
+          name.length > _maxTagLength ? name.substring(0, _maxTagLength) : name;
+      if (next.any((String t) => t.toLowerCase() == clipped.toLowerCase())) continue;
+      if (next.length >= _maxTags) break;
+      next.add(clipped);
+    }
+    return next;
+  }
+
+  void _commitTag() {
+    setState(() {
+      _tags = _withDraft();
+      _tagDraft.clear();
+    });
+  }
+
+  /// What the statement printed, unchanged, to check the row against.
+  Widget _asPrinted(ThemeData theme, ImportRow row) {
+    final List<String> lines = <String>[
+      row.rawDescription.isNotEmpty ? row.rawDescription : '—',
+      if (row.upiId != null) 'UPI ID: ${row.upiId}',
+      if (row.upiId != null && row.reference != null)
+        'UPI Ref No: ${row.reference}',
+    ];
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text('As printed on the statement', style: theme.textTheme.labelSmall),
+          const SizedBox(height: AppSpacing.xs),
+          for (final String line in lines)
+            Text(line, style: theme.textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickTime() async {
+    final List<String> parts = (_time ?? '12:00').split(':');
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: int.tryParse(parts.first) ?? 12,
+        minute: int.tryParse(parts.length > 1 ? parts[1] : '0') ?? 0,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _time =
+        '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}');
   }
 
   Future<void> _save() async {
@@ -239,13 +551,28 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
       setState(() => _error = 'Add a description.');
       return;
     }
+    if (row.movable && _bankAccountId.isEmpty) {
+      setState(() => _error = _debit
+          ? 'Choose the account it was paid from.'
+          : 'Choose the account it was received in.');
+      return;
+    }
     if (_kind == 'expense' && _categoryId == null) {
       setState(() => _error = 'Choose a category for this expense.');
+      return;
+    }
+    if (_kind == 'transfer' && _target == null) {
+      setState(() => _error = _debit
+          ? 'Choose where the money went.'
+          : 'Choose where the money came from.');
       return;
     }
     final String description = _description.text.trim();
     final String payee = _payee.text.trim();
     final String source = _source.text.trim();
+    final String notes = _notes.text.trim();
+    final List<String> tags = _withDraft();
+    final _Target? before = _Target.of(row);
     final Map<String, Object?> patch = <String, Object?>{
       if (description != row.description) 'description': description,
       if ((value * 100).round() != (row.amount * 100).round()) 'amount': value,
@@ -259,6 +586,17 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         'category': source.isEmpty ? null : source,
       if (payee != (row.counterparty ?? ''))
         'counterparty': payee.isEmpty ? null : payee,
+      if (row.movable && _bankAccountId != row.bankAccountId)
+        'bankAccountId': _bankAccountId,
+      if (_kind == 'transfer' && _target != before)
+        'transferTarget': _target?.toJson(),
+      if (row.hasTime && _time != _hhmm(row.transactionTime))
+        'transactionTime': _time,
+      if (row.hasNotes &&
+          (_kind == 'expense' || _kind == 'income') &&
+          (notes.isEmpty ? null : notes) != row.notes)
+        'notes': notes.isEmpty ? null : notes,
+      if (_taggable && tags.join('\n') != row.tags.join('\n')) 'tags': tags,
     };
     if (patch.isNotEmpty) {
       await context.read<StatementImportProvider>().edit(row.id, patch);

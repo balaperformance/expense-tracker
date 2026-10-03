@@ -21,6 +21,7 @@ import { useFeedback } from '@/state/feedback';
 import { useSettings, type ThemePreference } from '@/state/settings';
 
 import { ChangePasswordSheet } from './ChangePasswordSheet';
+import { NotificationsSection } from './NotificationsSection';
 import styles from './Settings.module.css';
 
 type Overlay = 'name' | 'currency' | 'password' | 'about' | 'install' | null;
@@ -138,10 +139,13 @@ export function SettingsPage() {
             </CardList>
           </div>
 
+          <NotificationsSection />
+
           <div>
             <SectionHeader title="Money" />
             <CardList indent={54}>
               {row('bank', 'Bank accounts', 'Balances, statements and transfers', () => void navigate('/accounts'))}
+              {row('cardSolid', 'Credit cards', 'Outstanding, bills, due dates and statements', () => void navigate('/cards'))}
               {row('budget', 'Budgets', 'Monthly limits', () => void navigate('/budgets'))}
               {row('category', 'Categories', 'Organise your spending', () => void navigate('/categories'))}
               {row('card', 'Payment methods', 'Cash, cards, UPI and more', () => void navigate('/payment-methods'))}

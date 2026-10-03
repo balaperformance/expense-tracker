@@ -49,6 +49,9 @@ app.*.map.json
 # Android local / signing files
 android/local.properties
 android/key.properties
+# Firebase project config for push notifications (see README). Not a secret,
+# but project-specific: each build environment supplies its own.
+android/app/google-services.json
 
 # Environment variables / secrets
 .env

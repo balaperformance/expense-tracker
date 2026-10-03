@@ -31,6 +31,7 @@ import 'package:expense_tracker/repositories/expense_repository.dart';
 import 'package:expense_tracker/repositories/income_repository.dart';
 import 'package:expense_tracker/repositories/ledger_repository.dart';
 import 'package:expense_tracker/repositories/profile_repository.dart';
+import 'package:expense_tracker/repositories/tag_repository.dart';
 import 'package:expense_tracker/screens/cards/card_statement_screen.dart';
 import 'package:expense_tracker/screens/cards/credit_cards_screen.dart';
 import 'package:expense_tracker/screens/statement_import/import_statement_screen.dart';
@@ -243,6 +244,7 @@ Future<void> pumpScreen(
             expenses: ExpenseRepository(client),
             income: IncomeRepository(client),
             ledger: ledger,
+            tags: TagRepository(client),
           ),
         ),
       ],

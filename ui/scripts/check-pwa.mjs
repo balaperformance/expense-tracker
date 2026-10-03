@@ -51,12 +51,18 @@ check(/index\.html/.test(sw), 'service worker precaches index.html');
 check(/NavigationRoute|createHandlerBoundToURL/.test(sw), 'service worker serves the app shell for navigations (offline)');
 check(!/supabase\.co/.test(sw), 'service worker never caches Supabase responses');
 check(/ocr-assets/.test(sw), 'OCR assets cached on first use');
+check(/importScripts\(\s*["'`]push-sw\.js["'`]/.test(sw), 'service worker loads the push handlers (push-sw.js)');
+const pushSw = existsSync(join(dist, 'push-sw.js')) ? readFileSync(join(dist, 'push-sw.js'), 'utf8') : '';
+check(/addEventListener\(\s*['"]push['"]/.test(pushSw) && /showNotification/.test(pushSw), 'push-sw.js shows a notification for every push');
+check(/addEventListener\(\s*['"]notificationclick['"]/.test(pushSw), 'push-sw.js opens the app when a notification is clicked');
+check(!/supabase|localStorage|fetch\(/.test(pushSw), 'push-sw.js touches no data and makes no requests');
 
 // ---- Headers ----------------------------------------------------------------
 const headers = readFileSync(join(dist, '_headers'), 'utf8');
 check(/Content-Security-Policy:/.test(headers) && /supabase\.co/.test(headers), 'CSP restricts connections to the Supabase project');
 check(/frame-ancestors 'none'/.test(headers), 'clickjacking protection');
 check(/\/sw\.js\s+Cache-Control: no-cache/.test(headers), 'service worker is never HTTP-cached');
+check(/\/push-sw\.js\s+Cache-Control: no-cache/.test(headers), 'push handlers script is never HTTP-cached');
 
 // ---- Size -------------------------------------------------------------------
 const tooLarge = ['tesseract/tesseract-core-simd-lstm.wasm.js', 'tesseract/eng.traineddata.gz'].filter(

@@ -35,6 +35,17 @@ class AuthProvider extends AsyncProvider {
   /// Guards against submitting a form twice.
   bool _submitting = false;
 
+  /// Cleanup that must run while the session still exists (e.g. removing this
+  /// phone's push token), registered by the providers that own it.
+  final List<Future<void> Function()> _beforeSignOut =
+      <Future<void> Function()>[];
+
+  /// Each task runs before signing out, at most [beforeSignOutTimeout] long;
+  /// a failure never stops the sign-out.
+  static const Duration beforeSignOutTimeout = Duration(seconds: 8);
+
+  void addBeforeSignOut(Future<void> Function() task) => _beforeSignOut.add(task);
+
   AuthStage get stage => _stage;
   User? get user => _user;
   String? get userId => _user?.id;
@@ -118,7 +129,16 @@ class AuthProvider extends AsyncProvider {
   }
 
   Future<void> signOut() async {
-    await _submit(() => _repository.signOut());
+    await _submit(() async {
+      for (final Future<void> Function() task in _beforeSignOut) {
+        try {
+          await task().timeout(beforeSignOutTimeout);
+        } catch (_) {
+          // Best effort: signing out matters more than the cleanup.
+        }
+      }
+      await _repository.signOut();
+    });
   }
 
   void clearPendingConfirmation() {

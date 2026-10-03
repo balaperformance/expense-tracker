@@ -29,7 +29,7 @@ import {
 } from '@/domain/export/model';
 import { renderCsv, renderPrintableHtml } from '@/domain/export/render';
 import { accountLabel } from '@/domain/models';
-import { useAccounts, useCategories, usePaymentMethods } from '@/hooks/data';
+import { useAccounts, useCategories, useCreditCards, usePaymentMethods } from '@/hooks/data';
 import { addMonths, isValidIso, today } from '@/lib/dates';
 import { errorMessage } from '@/lib/errors';
 import { printDocument, shareOrDownload } from '@/lib/share';
@@ -61,6 +61,7 @@ export function ExportPage() {
   const accounts = useAccounts().data ?? [];
   const categories = useCategories().data ?? [];
   const methods = usePaymentMethods().data ?? [];
+  const cards = (useCreditCards().data ?? []).map((o) => o.card);
   const [request, setRequest] = useState<ExportRequest>(() => initialRequest(params));
   const [exporting, setExporting] = useState(false);
   const accountList = accounts.map((b) => b.account);
@@ -73,7 +74,7 @@ export function ExportPage() {
 
   const preview = useQuery({
     queryKey: keys.exportPreview(userId, { ...effective, format: null }),
-    queryFn: () => buildExport({ userId, request: effective, currency, accounts: accountList, categories, paymentMethods: methods }),
+    queryFn: () => buildExport({ userId, request: effective, currency, accounts: accountList, categories, paymentMethods: methods, cards }),
     enabled: runnable,
     placeholderData: keepPreviousData,
   });

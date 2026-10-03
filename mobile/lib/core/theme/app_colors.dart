@@ -161,9 +161,6 @@ class AppColors {
     return parsed == null ? fallback : Color(parsed);
   }
 
-  static String toHex(Color color) =>
-      '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-
   /// Lifts a category colour so it stays legible on a dark surface.
   ///
   /// Saturated mid-tones chosen against a light sheet can drop below the

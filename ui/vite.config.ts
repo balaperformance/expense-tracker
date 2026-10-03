@@ -112,6 +112,9 @@ function cloudflareHeaders(csp: string): Plugin {
 /sw.js
   Cache-Control: no-cache
 
+/push-sw.js
+  Cache-Control: no-cache
+
 /index.html
   Cache-Control: no-cache
 
@@ -124,8 +127,24 @@ function cloudflareHeaders(csp: string): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => {
+/**
+ * VITE_* values are baked into the bundle at build time, so a production
+ * build without them would ship an app that can only show its configuration
+ * screen. Fail the build instead, naming what is missing (never the values).
+ */
+function requireBuildEnv(env: Partial<Record<string, string>>): void {
+  const missing = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'].filter((name) => !env[name]?.trim());
+  if (!missing.length) return;
+  throw new Error(
+    `Missing build variable(s): ${missing.join(', ')}. Set them where the build runs — ` +
+      'locally in .env.local, on Cloudflare under Settings → Build → Variables and secrets ' +
+      '(build variables, not runtime Worker variables).',
+  );
+}
+
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, root, 'VITE_');
+  if (command === 'build') requireBuildEnv(env);
   const csp = contentSecurityPolicy(env.VITE_SUPABASE_URL);
 
   return {
@@ -185,7 +204,11 @@ export default defineConfig(({ mode }) => {
           // The app shell only. OCR assets are cached on first use instead of
           // on install — they are large and most sessions never scan.
           globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
-          globIgnores: ['tesseract/**'],
+          // The statement reader (PDF.js) is ~430 KB: fetched when first used, not on install.
+          globIgnores: ['tesseract/**', 'assets/pdf-*.js'],
+          // Web Push: the push and notificationclick handlers (public/push-sw.js) are added to
+          // the generated worker without replacing any of its caching.
+          importScripts: ['push-sw.js'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [/^\/tesseract\//, /^\/_/],
           cleanupOutdatedCaches: true,
@@ -197,6 +220,15 @@ export default defineConfig(({ mode }) => {
               options: {
                 cacheName: 'ocr-assets',
                 expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 60 },
+                cacheableResponse: { statuses: [200] },
+              },
+            },
+            {
+              urlPattern: ({ url, sameOrigin }) => sameOrigin && /^\/assets\/pdf[.-]/.test(url.pathname),
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'statement-reader',
+                expiration: { maxEntries: 6, maxAgeSeconds: 60 * 60 * 24 * 60 },
                 cacheableResponse: { statuses: [200] },
               },
             },

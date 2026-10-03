@@ -66,28 +66,6 @@ class DashboardData {
 
   bool get hasAnyData =>
       totalExpense > 0 || totalIncome > 0 || recentExpenses.isNotEmpty;
-
-  double? get budgetRatio {
-    final double? limit = overallBudget;
-    if (limit == null || limit <= 0) return null;
-    return overallSpent / limit;
-  }
-
-  double? get budgetRemaining {
-    final double? limit = overallBudget;
-    return limit == null ? null : limit - overallSpent;
-  }
-
-  static DashboardData emptyFor(DateTime month) => DashboardData(
-        month: month,
-        totalExpense: 0,
-        totalIncome: 0,
-        recentExpenses: const <Expense>[],
-        categoryBreakdown: const <CategorySpend>[],
-        trend: const <MonthlyPoint>[],
-        overallBudget: null,
-        overallSpent: 0,
-      );
 }
 
 /// Report figures for an arbitrary month.
@@ -111,9 +89,6 @@ class ReportData {
   final CategorySpend? topCategory;
 
   double get net => totalIncome - totalExpense;
-
-  double get savingsRate =>
-      totalIncome <= 0 ? 0 : (totalIncome - totalExpense) / totalIncome;
 
   bool get isEmpty => totalExpense == 0 && totalIncome == 0;
 

@@ -1,0 +1,248 @@
+/* ---- Totals hero ------------------------------------------------------- */
+
+.totalRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.total {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  line-height: 1.14;
+  letter-spacing: -0.4px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.heroFoot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-md);
+}
+
+.heroLegs {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  font-size: 12.5px;
+}
+
+.heroLeg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.heroLeg:last-child {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.heroLegValue {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ---- Card tiles -------------------------------------------------------- */
+
+.grid {
+  display: grid;
+  gap: var(--card-gap);
+}
+
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  width: 100%;
+  padding: var(--sp-md) var(--sp-md) var(--sp-sm);
+  text-align: left;
+}
+
+.owed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: 0 var(--sp-md) var(--sp-md);
+}
+
+.cardFacts {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.due {
+  --tone: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--tone) var(--wash), transparent);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.due svg {
+  color: var(--tone);
+}
+
+.dueText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dueStatus {
+  font-weight: 600;
+  color: var(--tone);
+  white-space: nowrap;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  border-top: 0.75px solid var(--border);
+}
+
+.cardAction {
+  flex: 1 1 0;
+  height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.cardAction:active {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.cardAction + .cardAction {
+  border-left: 0.75px solid var(--border);
+}
+
+@media (max-width: 380px) {
+  .cardActionLabel {
+    display: none;
+  }
+}
+
+.inactiveTag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--sunken);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* ---- Card statement ---------------------------------------------------- */
+
+.statementTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  min-width: 0;
+}
+
+.periodBar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.actionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+
+.summaryLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-sm);
+}
+
+.summaryLine + .summaryLine {
+  margin-top: var(--sp-sm);
+}
+
+.divider {
+  height: 0.75px;
+  background: var(--border);
+  margin: var(--sp-md) 0;
+}
+
+.closing {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 500;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-md) var(--sp-lg);
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.factValue {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* ---- Sheets ------------------------------------------------------------ */
+
+.twoUp {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-sm);
+}
+
+.fieldError {
+  font-size: 12.5px;
+  color: var(--error);
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  background: var(--sunken);
+}

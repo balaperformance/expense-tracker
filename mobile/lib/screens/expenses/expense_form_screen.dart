@@ -10,6 +10,7 @@ import '../../models/bank_account.dart';
 import '../../models/expense.dart';
 import '../../models/expense_category.dart';
 import '../../models/expense_prefill.dart';
+import '../../models/frequent_expense.dart';
 import '../../models/payment_method.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
@@ -28,6 +29,7 @@ import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import 'paste_sms_screen.dart';
+import 'quick_add_chips.dart';
 import 'receipt_scan_flow.dart';
 
 /// Create or edit an expense.
@@ -95,6 +97,19 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   /// values came from instead of the user wondering why fields are populated.
   bool _fromScan = false;
 
+  /// What Quick add suggests from; null until read (or when it could not be).
+  QuickAddHistory? _quickAddHistory;
+
+  /// The Quick add chip last applied, for the selected chip and the notice.
+  FrequentExpense? _quickAdded;
+
+  /// Quick add is offered only on a blank new expense: a scan, a card's "Add
+  /// purchase" or an edit already says what this is.
+  bool get _offersQuickAdd =>
+      !widget.isEditing &&
+      widget.prefill == null &&
+      widget.initialCardId == null;
+
   @override
   void initState() {
     super.initState();
@@ -127,6 +142,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     _date = existing?.expenseDate ?? prefill?.date ?? AppDateUtils.today();
     _fromScan = prefill?.source == ExpensePrefillSource.receiptScan;
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadCards());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadQuickAdd());
   }
 
   /// The card choices, with their headroom. Cheap when already loaded.
@@ -135,6 +151,72 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     final String? userId = context.read<AuthProvider>().userId;
     if (userId == null) return;
     await context.read<CreditCardProvider>().load(userId: userId);
+  }
+
+  /// The purchases Quick add suggests from. Cheap when already read.
+  Future<void> _loadQuickAdd() async {
+    if (!mounted || !_offersQuickAdd) return;
+    final String? userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    final QuickAddHistory? history =
+        await context.read<ExpenseProvider>().quickAddHistory(userId: userId);
+    if (!mounted || history == null) return;
+    setState(() => _quickAddHistory = history);
+  }
+
+  /// The user's frequent expenses, rebuilt from the loaded lists so none
+  /// ever points at a deleted category or a closed account or card.
+  List<FrequentExpense> _quickAddSuggestions({
+    required List<ExpenseCategory> categories,
+    required List<PaymentMethod> methods,
+    required List<BankAccount> accounts,
+    required List<CardOverview> cards,
+  }) {
+    final QuickAddHistory? history = _quickAddHistory;
+    if (history == null || !_offersQuickAdd) return const <FrequentExpense>[];
+    return frequentExpenses(
+      history.expenses,
+      FrequentExpenseContext(
+        today: AppDateUtils.today(),
+        excludeIds: history.paidForIds,
+        categoryIds: categories.map((ExpenseCategory c) => c.id).toSet(),
+        paymentMethodIds: methods.map((PaymentMethod m) => m.id).toSet(),
+        accountIds: accounts
+            .where((BankAccount a) => a.isActive)
+            .map((BankAccount a) => a.id)
+            .toSet(),
+        cardIds: cards.map((CardOverview o) => o.card.id).toSet(),
+      ),
+    );
+  }
+
+  /// Starts the form from the habit's latest purchase. Every field the chip
+  /// covers is replaced, so switching chips never mixes two habits; nothing
+  /// is saved until the user saves.
+  void _applyQuickAdd(FrequentExpense suggestion) {
+    final double? amount = suggestion.amount;
+    final FrequentSource? source = suggestion.source;
+    setState(() {
+      // A varying amount is left blank for the user to type.
+      _amount.text = amount == null ? '' : _trimTrailingZeros(amount);
+      _categoryId = suggestion.categoryId;
+      _merchant.text = suggestion.merchant ?? '';
+      _description.text = suggestion.description ?? '';
+      _paymentMethodId = suggestion.paymentMethodId;
+      // An account or card closed since falls back to cash, as on a blank
+      // form.
+      _byCard = source?.kind == FrequentSourceKind.card;
+      if (_byCard) {
+        _creditCardId = source?.id;
+      } else {
+        _bankAccountId =
+            source?.kind == FrequentSourceKind.account ? source?.id : null;
+      }
+      _quickAdded = suggestion;
+      _fromScan = false;
+      _submitted = false;
+      _error = null;
+    });
   }
 
   /// Runs the scan flow and folds the result into the form.
@@ -160,6 +242,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         _paymentMethodId = scanned.paymentMethodId;
       }
       _fromScan = true;
+      _quickAdded = null;
       _submitted = false;
       _error = null;
     });
@@ -211,6 +294,13 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       if (o.card.id == _creditCardId) selectedCard = o;
     }
     final bool cardMissing = _submitted && payByCard && selectedCard == null;
+    final List<FrequentExpense> quickAdd = _quickAddSuggestions(
+      categories: categories.categories,
+      methods: payments.methods,
+      accounts: accounts.accounts,
+      cards: cardOptions,
+    );
+    final FrequentExpense? quickAdded = _quickAdded;
 
     return Scaffold(
       appBar: AppBar(
@@ -252,12 +342,40 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
               const SizedBox(height: AppSpacing.lg),
             ],
 
+            // ---------------------------------------------------------
+            // Quick add — the user's frequent expenses, one tap each
+            // ---------------------------------------------------------
+            if (quickAdd.isNotEmpty) ...<Widget>[
+              const FieldLabel('Quick add', hint: 'Your frequent expenses'),
+              QuickAddChips(
+                suggestions: quickAdd,
+                categories: categories.categories,
+                currency: settings.currency,
+                selectedKey: quickAdded?.key,
+                enabled: !_saving,
+                onPicked: _applyQuickAdd,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
             if (_fromScan) ...<Widget>[
               AppNotice(
                 icon: Icons.auto_awesome_outlined,
                 tone: theme.colorScheme.primary,
                 message: 'Filled in from your receipt. Change anything that '
                     'is not right before saving.',
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
+            if (quickAdded != null) ...<Widget>[
+              AppNotice(
+                icon: Icons.auto_awesome_outlined,
+                tone: theme.colorScheme.primary,
+                message: 'Filled in from your usual '
+                    '“${quickAddName(quickAdded, categories.categories)}”. '
+                    '${quickAdded.amount == null ? 'Enter the amount (it varies) and change' : 'Change'}'
+                    ' anything that is not right before saving.',
               ),
               const SizedBox(height: AppSpacing.lg),
             ],

@@ -11,8 +11,6 @@
 ///    `categories`, so it never pollutes the category picker or breakdown.
 library;
 
-import '../core/utils/date_utils.dart';
-
 /// Shown wherever a real category would be. Intentionally not a database
 /// category: see the library comment above.
 const String moneyTransferLabel = 'Money Transfer';
@@ -133,7 +131,3 @@ String transferDescription({
       ? 'Transfer to $counterpartyLabel'
       : 'Transfer from $counterpartyLabel';
 }
-
-/// Convenience for building the wire date, kept here so the repository and
-/// tests agree on the format.
-String transferDateString(DateTime date) => AppDateUtils.toDateString(date);

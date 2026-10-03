@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/bank_account.dart';
+import '../../models/credit_card.dart';
 import '../../models/expense_category.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
@@ -185,6 +186,13 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
                     ))
                 .toList(),
           ),
+          const SizedBox(height: AppSpacing.md),
+          const AppNotice(
+            icon: Icons.account_balance_outlined,
+            message: 'A Paytm UPI statement covers several accounts: choose '
+                'any one — each payment goes to the account the statement '
+                'names, and you choose it for any it cannot match.',
+          ),
           const SizedBox(height: AppSpacing.lg),
           const _PrivacyNote(),
         ],
@@ -195,17 +203,30 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     if (outcome != null) return _ResultView(outcome: outcome, account: account);
 
     final List<Widget> children = <Widget>[
-      AppListRow(
-        leading: BankAvatar(initial: account.initial),
-        title: account.displayLabel,
-        subtitle: account.bankName,
-        trailing: provider.hasRows || busy
-            ? null
-            : TextButton(
-                onPressed: () => provider.reset(),
-                child: const Text('Change'),
-              ),
-      ),
+      // A payment app's statement covers several accounts: its rows go to
+      // the accounts it names, not to the one chosen to start.
+      if (provider.multiAccount)
+        AppListRow(
+          leading: IconWell(
+            icon: Icons.account_balance_outlined,
+            tone: Theme.of(context).colorScheme.primary,
+            size: AppSpacing.avatarSm,
+          ),
+          title: 'Several accounts',
+          subtitle: 'Each payment goes to the account the statement names',
+        )
+      else
+        AppListRow(
+          leading: BankAvatar(initial: account.initial),
+          title: account.displayLabel,
+          subtitle: account.bankName,
+          trailing: provider.hasRows || busy
+              ? null
+              : TextButton(
+                  onPressed: () => provider.reset(),
+                  child: const Text('Change'),
+                ),
+        ),
       const SizedBox(height: AppSpacing.md),
     ];
 
@@ -267,7 +288,18 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     }
 
     for (final ImportedStatement s in provider.statements) {
-      children.add(_StatementTile(statement: s));
+      children.add(_StatementTile(
+        statement: s,
+        spread: s.accountPerRow
+            ? _AccountSpread(
+                rows: provider.rows
+                    .where((ImportRow r) => r.sourceStatementId == s.id)
+                    .toList(),
+                provider: provider,
+                bankName: s.bankName,
+              )
+            : null,
+      ));
       children.add(const SizedBox(height: AppSpacing.sm));
     }
     children.add(_SummaryCard(summary: provider.summary, currency: currency));
@@ -324,7 +356,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         case _Filter.duplicates:
           return r.isDuplicate;
         case _Filter.attention:
-          return r.attention || r.uncategorized;
+          return r.attention || r.uncategorized || r.problem != null;
       }
     }).toList()
       ..sort((ImportRow a, ImportRow b) => b.isoDate.compareTo(a.isoDate));
@@ -344,6 +376,11 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     final Map<String, ExpenseCategory> categories = <String, ExpenseCategory>{
       for (final ExpenseCategory c in context.read<CategoryProvider>().categories) c.id: c,
     };
+    final Map<String, String> cardNames = <String, String>{
+      for (final CreditCard c in context.read<CreditCardProvider>().cards)
+        c.id: c.cardName,
+    };
+    final bool showAccount = provider.multiAccount;
     final List<Widget> out = <Widget>[];
     int i = 0;
     while (i < visible.length) {
@@ -368,6 +405,10 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
                   row: r,
                   currency: currency,
                   category: categories[r.categoryId],
+                  accountName: showAccount && r.bankAccountId.isNotEmpty
+                      ? provider.accountById(r.bankAccountId)?.nickname ?? 'Account'
+                      : null,
+                  targetLabel: _targetLabel(r, provider, cardNames),
                   enabled: !busy,
                   onToggle: () => provider.toggle(r.id),
                   onEdit: () => _editRow(r),
@@ -426,6 +467,28 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     await provider.unlock(value);
   }
 
+  /// Where a transfer went or came from, for the row's second line.
+  String? _targetLabel(
+    ImportRow row,
+    StatementImportProvider provider,
+    Map<String, String> cardNames,
+  ) {
+    if (row.kind != 'transfer') return null;
+    final String direction = row.isDebit ? 'to' : 'from';
+    switch (row.transferTargetType) {
+      case 'account':
+        final String? name = provider.accountById(row.transferAccountId ?? '')?.nickname;
+        return '$direction ${name ?? 'your account'}';
+      case 'card':
+        final String? card = cardNames[row.transferCardId];
+        return card == null ? 'Card bill payment' : '$card bill';
+      case 'cash':
+        return 'Cash or other';
+      default:
+        return null;
+    }
+  }
+
   Future<void> _editRow(ImportRow row) async {
     final String? result = await showAppSheet<String>(
       context: context,
@@ -444,26 +507,35 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     String money(double v) => Formatters.currency(v, currencyCode: currency);
     final List<Map<String, Object?>> expenses = plan.ofType('expense').toList();
     final List<Map<String, Object?>> income = plan.ofType('income').toList();
-    final List<Map<String, Object?>> movements = plan.ofType('movement').toList();
-    final int cardBills = movements
-        .where((Map<String, Object?> op) => op['creditCardId'] != null)
-        .length;
+    final ImportCounts counts = plan.counts;
     final String? skippedReason = plan.skipped.isEmpty
         ? null
         : (plan.skipped.first['reason'] as String?)?.toLowerCase();
+    // A multi-account statement writes into each row's own account.
+    final Map<String, int> perAccount = plan.perAccount;
+    final String into = perAccount.entries
+        .map((MapEntry<String, int> e) =>
+            '${provider.accountById(e.key)?.displayLabel ?? 'an account'}'
+            '${perAccount.length > 1 ? ' (${e.value})' : ''}')
+        .join(', ');
+    final int untracked = provider.rows
+        .where((ImportRow r) =>
+            r.selected && r.kind == 'transfer' && r.transferTargetType == null)
+        .length;
     final bool ok = await AppFeedback.confirm(
       context,
       title: 'Import ${plan.operations.length} '
           '${plan.operations.length == 1 ? 'transaction' : 'transactions'}?',
       message: <String>[
-        'Into ${provider.account!.displayLabel}:',
+        'Into $into:',
         if (expenses.isNotEmpty)
-          '• ${expenses.length} expenses · ${money(ImportPreview.total(expenses))}',
+          '• ${_n(expenses.length, 'expense', 'expenses')} · ${money(ImportPreview.total(expenses))}',
         if (income.isNotEmpty)
           '• ${income.length} income · ${money(ImportPreview.total(income))}',
-        if (movements.isNotEmpty)
-          '• ${movements.length} refunds and transfers (balance only)'
-              '${cardBills > 0 ? ', including $cardBills card bill ${cardBills == 1 ? 'payment' : 'payments'}' : ''}',
+        ..._countLines(counts, skipIncomeAndSpending: true).map((String l) => '• $l'),
+        if (untracked > 0)
+          '$untracked ${untracked == 1 ? 'transfer has' : 'transfers have'} no '
+              'account chosen and will change this balance only.',
         if (plan.skipped.isNotEmpty)
           '${plan.skipped.length} selected rows will be skipped: $skippedReason.',
         'Rows recorded meanwhile are checked again and left out.',
@@ -488,6 +560,77 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
   }
 }
 
+String _n(int value, String one, String many) => '$value ${value == 1 ? one : many}';
+
+/// The confirmation's and result's lines — the web import's wording: what
+/// each group is, and that only expenses and income are spending or earnings.
+List<String> _countLines(ImportCounts counts, {bool skipIncomeAndSpending = false}) =>
+    <String>[
+      if (!skipIncomeAndSpending && counts.expenses > 0)
+        _n(counts.expenses, 'expense', 'expenses'),
+      if (!skipIncomeAndSpending && counts.income > 0) '${counts.income} income',
+      if (counts.transfers > 0)
+        '${_n(counts.transfers, 'transfer', 'transfers')} between your accounts',
+      if (counts.lent > 0) '${_n(counts.lent, 'loan', 'loans')} given — owed back, not spending',
+      if (counts.repaid > 0)
+        '${_n(counts.repaid, 'repayment or reimbursement', 'repayments and reimbursements')} — not income',
+      if (counts.paidFor > 0)
+        '${_n(counts.paidFor, 'purchase', 'purchases')} paid for someone else — not your spending',
+      if (counts.movements > 0)
+        '${_n(counts.movements, 'refund, card bill or cash movement', 'refunds, card bills and cash movements')} (balance only)',
+    ];
+
+/// A multi-account statement's rows by the account each went to — and how
+/// many named an account that is not one of the user's, so they can choose it.
+class _AccountSpread extends StatelessWidget {
+  const _AccountSpread({
+    required this.rows,
+    required this.provider,
+    required this.bankName,
+  });
+
+  final List<ImportRow> rows;
+  final StatementImportProvider provider;
+  final String? bankName;
+
+  @override
+  Widget build(BuildContext context) {
+    final Map<String, int> counts = <String, int>{};
+    for (final ImportRow r in rows) {
+      counts[r.bankAccountId] = (counts[r.bankAccountId] ?? 0) + 1;
+    }
+    final int unmatched = counts[''] ?? 0;
+    final String placed = counts.entries
+        .where((MapEntry<String, int> e) => e.key.isNotEmpty)
+        .map((MapEntry<String, int> e) =>
+            '${provider.accountById(e.key)?.nickname ?? 'an account'} (${e.value})')
+        .join(', ');
+    final String who = bankName ?? 'the statement';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AppNotice(
+          icon: Icons.account_balance_outlined,
+          message: placed.isNotEmpty
+              ? 'Each payment goes to the account $who names: $placed.'
+              : 'None of the accounts $who names is one of yours yet.',
+        ),
+        if (unmatched > 0) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm),
+          AppNotice(
+            icon: Icons.warning_amber_rounded,
+            tone: ToneColors.warning(context),
+            message: '$unmatched ${unmatched == 1 ? 'payment names an account' : 'payments name accounts'} '
+                'that could not be matched to yours. Choose the account on '
+                '${unmatched == 1 ? 'it' : 'each'} — nothing is put in an '
+                'account you did not choose.',
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _PrivacyNote extends StatelessWidget {
   const _PrivacyNote();
 
@@ -501,9 +644,12 @@ class _PrivacyNote extends StatelessWidget {
 }
 
 class _StatementTile extends StatelessWidget {
-  const _StatementTile({required this.statement});
+  const _StatementTile({required this.statement, this.spread});
 
   final ImportedStatement statement;
+
+  /// For a statement covering several accounts: where its rows went.
+  final Widget? spread;
 
   @override
   Widget build(BuildContext context) {
@@ -537,7 +683,11 @@ class _StatementTile extends StatelessWidget {
             ].where((String s) => s.isNotEmpty).join(' · '),
             style: theme.textTheme.labelSmall,
           ),
-          if (statement.accountMismatch) ...<Widget>[
+          if (spread != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            spread!,
+          ],
+          if (statement.accountMismatch && !statement.accountPerRow) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             AppNotice(
               icon: Icons.warning_amber_rounded,
@@ -602,6 +752,9 @@ class _SummaryCard extends StatelessWidget {
           if (_n('duplicates') > 0)
             line('Already recorded', '${_n('duplicates')} left out',
                 tone: ToneColors.warning(context)),
+          if (_n('needsDetail') > 0)
+            line('Need an account or other details', '${_n('needsDetail')}',
+                tone: ToneColors.warning(context)),
           if (_n('needsAttention') + _n('uncategorized') > 0)
             line('To check', '${_n('needsAttention') + _n('uncategorized')}'),
           const Divider(height: AppSpacing.lg),
@@ -617,14 +770,33 @@ class _ImportRowTile extends StatelessWidget {
     required this.row,
     required this.currency,
     required this.category,
+    required this.accountName,
+    required this.targetLabel,
     required this.enabled,
     required this.onToggle,
     required this.onEdit,
   });
 
+  /// What a row still needs, in a word or two — the web review's wording.
+  static const Map<String, String> _needs = <String, String>{
+    'account': 'Choose account',
+    'transferTarget': 'Choose account',
+    'loanPerson': 'Who?',
+    'loan': 'Which loan?',
+    'settles': 'Which purchase?',
+    'settlePerson': 'Who?',
+    'paidForPerson': 'Who?',
+  };
+
   final ImportRow row;
   final String currency;
   final ExpenseCategory? category;
+
+  /// The account a multi-account statement's row goes to; null otherwise.
+  final String? accountName;
+
+  /// For a transfer: where the money went or came from.
+  final String? targetLabel;
   final bool enabled;
   final VoidCallback onToggle;
   final VoidCallback onEdit;
@@ -632,7 +804,11 @@ class _ImportRowTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final bool balanceOnly = row.kind == 'refund' || row.kind == 'transfer';
+    final bool balanceOnly = row.kind == 'refund' ||
+        row.kind == 'transfer' ||
+        row.kind == 'loan' ||
+        row.kind == 'reimbursement';
+    final String? needs = row.problem == null ? null : (_needs[row.problem] ?? 'Add details');
     return Opacity(
       opacity: row.selected ? 1 : 0.55,
       child: InkWell(
@@ -669,7 +845,11 @@ class _ImportRowTile extends StatelessWidget {
                           category?.name ?? 'Choose a category',
                         if (row.kind == 'income' && (row.category ?? '').isNotEmpty)
                           row.category!,
-                        if (row.creditCardId != null) 'Card bill payment',
+                        if (targetLabel != null) targetLabel!,
+                        if (targetLabel == null && row.creditCardId != null)
+                          'Card bill payment',
+                        if (row.transactionTime != null)
+                          Formatters.clockTime(row.transactionTime!),
                         if (row.duplicateBadge != null) row.duplicateBadge!,
                         if (row.attention) 'Check this row',
                       ].join(' · '),
@@ -681,6 +861,30 @@ class _ImportRowTile extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (accountName != null ||
+                        row.tags.isNotEmpty ||
+                        needs != null) ...<Widget>[
+                      const SizedBox(height: AppSpacing.xs),
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xxs,
+                        children: <Widget>[
+                          if (needs != null)
+                            AppBadge(
+                              label: needs,
+                              icon: Icons.edit_outlined,
+                              tone: ToneColors.warning(context),
+                            ),
+                          if (accountName != null)
+                            AppBadge(
+                              label: accountName!,
+                              icon: Icons.account_balance_outlined,
+                            ),
+                          for (final String tag in row.tags)
+                            AppBadge(label: '#$tag'),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -785,8 +989,10 @@ class _ResultView extends StatelessWidget {
               const SizedBox(height: AppSpacing.sm),
               Text(
                 '${outcome.expenses} expenses · ${outcome.income} income · '
-                '${outcome.movements} balance-only movements into '
-                '${account.displayLabel}.',
+                '${outcome.movements} balance-only movements'
+                '${outcome.transfers > 0 ? ' · ${outcome.transfers} transfers between your accounts' : ''}'
+                '${outcome.other > 0 ? ' · ${outcome.other} loans and repayments' : ''}'
+                '${provider.multiAccount ? ' into the accounts the statement names.' : ' into ${account.displayLabel}.'}',
                 style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -812,6 +1018,15 @@ class _ResultView extends StatelessWidget {
                 '${outcome.failures.isEmpty ? 'the connection kept failing' : outcome.failures.first} '
                 'Import the statement again — rows already saved are '
                 'recognised and left out.',
+          ),
+        ],
+        if (outcome.partial > 0) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          AppNotice(
+            icon: Icons.warning_amber_rounded,
+            tone: ToneColors.warning(context),
+            message: '${outcome.partial} saved without all their tags or UPI '
+                'details. Open them to add the tags.',
           ),
         ],
         const SizedBox(height: AppSpacing.lg),

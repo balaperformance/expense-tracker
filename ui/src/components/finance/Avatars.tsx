@@ -31,6 +31,30 @@ export const LedgerAvatar = ({ credit, size = 34 }: { credit: boolean; size?: nu
   <ToneAvatar icon={credit ? 'moneyIn' : 'moneyOut'} tone={credit ? 'var(--income)' : 'var(--expense)'} size={size} />
 );
 
+/** Money lent, or money coming back against a loan or a paid-for purchase — owed, not income or spending. */
+export const ClaimAvatar = ({ size = 34 }: { size?: number }) => <ToneAvatar icon="lend" tone="var(--transfer)" size={size} />;
+
+/** A credit card: purchases and fees on it, or its row in a list. */
+export const CardAvatar = ({ size = 34, tone = 'var(--accent)' }: { size?: number; tone?: string }) => (
+  <ToneAvatar icon="card" tone={tone} size={size} />
+);
+
+/** A movement on a card statement that is not a purchase (those carry their category). */
+export function CardMovementAvatar({ kind, fromAccount, size = 34 }: { kind: string; fromAccount?: boolean; size?: number }) {
+  switch (kind) {
+    case 'payment':
+      return <ToneAvatar icon={fromAccount ? 'bank' : 'cash'} tone="var(--transfer)" size={size} />;
+    case 'refund':
+    case 'cashback':
+      return <ToneAvatar icon="moneyIn" tone="var(--income)" size={size} />;
+    case 'fee':
+    case 'interest':
+      return <ToneAvatar icon="moneyOut" tone="var(--expense)" size={size} />;
+    default:
+      return <ToneAvatar icon="edit" tone="var(--muted)" size={size} />;
+  }
+}
+
 /** The bank's initial on the brand gradient. */
 export function BankAvatar({ initial, size = 34 }: { initial: string; size?: number }) {
   return (

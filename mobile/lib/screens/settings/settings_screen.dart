@@ -29,6 +29,7 @@ import '../assistant/ai_chat_screen.dart';
 import '../export/export_screen.dart';
 import 'budgets_screen.dart';
 import 'change_password_sheet.dart';
+import 'notifications_section.dart';
 import 'categories_screen.dart';
 import 'payment_methods_screen.dart';
 
@@ -147,6 +148,11 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.section),
+
+          // ---------------------------------------------------------------
+          // Notifications (hidden until migrations 008 and 009 exist)
+          // ---------------------------------------------------------------
+          const NotificationsSection(),
 
           // ---------------------------------------------------------------
           // Money

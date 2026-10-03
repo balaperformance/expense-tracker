@@ -5,6 +5,8 @@
 import { AppError, toAppError } from '@/lib/errors';
 import { getSupabase } from '@/lib/supabase';
 
+import { releasePushForSignOut } from './push';
+
 export type SignUpOutcome = { needsEmailConfirmation: boolean; email: string };
 
 export async function signUp(email: string, password: string, fullName: string): Promise<SignUpOutcome> {
@@ -28,6 +30,8 @@ export async function signIn(email: string, password: string): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
+  // While the session still exists: stop this device receiving the account's notifications.
+  await releasePushForSignOut();
   const { error } = await getSupabase().auth.signOut();
   if (error) throw toAppError(error);
 }

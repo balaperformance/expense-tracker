@@ -1,10 +1,16 @@
 import 'dart:async';
 
 import '../core/constants/app_constants.dart';
+import '../core/utils/date_utils.dart';
 import '../models/expense.dart';
 import '../models/expense_filter.dart';
+import '../models/frequent_expense.dart';
 import '../repositories/expense_repository.dart';
 import 'async_state.dart';
+
+/// What Quick add reads: recent purchases, and the ids of those paid for
+/// someone else (owed back, so not the user's own habits).
+typedef QuickAddHistory = ({List<Expense> expenses, Set<String> paidForIds});
 
 /// Paginated, filterable expense list.
 ///
@@ -29,6 +35,11 @@ class ExpenseProvider extends AsyncProvider {
   /// Incremented on every mutation so dependent screens can tell their cached
   /// aggregates are stale without re-fetching eagerly.
   int _revision = 0;
+
+  static const Duration _quickAddFresh = Duration(minutes: 5);
+  QuickAddHistory? _quickAdd;
+  String? _quickAddKey;
+  DateTime? _quickAddAt;
 
   List<Expense> get expenses => List<Expense>.unmodifiable(_expenses);
   ExpenseFilter get filter => _filter;
@@ -146,6 +157,49 @@ class ExpenseProvider extends AsyncProvider {
     );
   }
 
+  /// The history behind Quick add on a new expense.
+  ///
+  /// Reused until an expense changes here, the day turns, or a few minutes
+  /// pass (imports write elsewhere), so opening the form again costs nothing.
+  /// Read-only and outside [guard], like [findPossibleDuplicate]: a failed
+  /// read only means no suggestions, never an error on the list.
+  Future<QuickAddHistory?> quickAddHistory({required String userId}) async {
+    final DateTime today = AppDateUtils.today();
+    final String key =
+        '$userId|$_revision|${AppDateUtils.toDateString(today)}';
+    final DateTime now = DateTime.now();
+    final QuickAddHistory? cached = _quickAdd;
+    final DateTime? at = _quickAddAt;
+    if (cached != null &&
+        _quickAddKey == key &&
+        at != null &&
+        now.difference(at) < _quickAddFresh) {
+      return cached;
+    }
+    try {
+      final (List<Expense>, Set<String>) read = await (
+        _repository.fetchRecent(
+          userId: userId,
+          from: DateTime(
+            today.year,
+            today.month,
+            today.day - (frequentWindowDays - 1),
+          ),
+          toExclusive: DateTime(today.year, today.month, today.day + 1),
+          limit: frequentHistoryRows,
+        ),
+        _repository.fetchPaidForExpenseIds(userId: userId),
+      ).wait;
+      final QuickAddHistory history = (expenses: read.$1, paidForIds: read.$2);
+      _quickAdd = history;
+      _quickAddKey = key;
+      _quickAddAt = now;
+      return history;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<bool> create(Expense expense) async {
     final bool ok = await guard(() async {
       final Expense created = await _repository.create(expense);
@@ -215,6 +269,9 @@ class ExpenseProvider extends AsyncProvider {
     _expenses = <Expense>[];
     _filter = const ExpenseFilter();
     _userId = null;
+    _quickAdd = null;
+    _quickAddKey = null;
+    _quickAddAt = null;
     _page = 0;
     _hasMore = true;
     safeNotify();

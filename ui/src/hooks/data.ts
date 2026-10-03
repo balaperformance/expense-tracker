@@ -3,19 +3,33 @@
  * load() methods, with react-query doing the caching and deduplication.
  */
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 
-import { buildBudgetProgress, buildCategoryBreakdown, sumBy, type CategorySpend, type MonthlyPoint } from '@/domain/analytics';
+import {
+  buildBudgetProgress,
+  buildCategoryBreakdown,
+  personalSpending,
+  sumBy,
+  type CategorySpend,
+  type MonthlyPoint,
+} from '@/domain/analytics';
+import { summariseCard, type CardSummary } from '@/domain/creditCards';
 import { PAGE_SIZE } from '@/domain/defaults';
 import type { ExpenseFilter } from '@/domain/expenseFilter';
-import type { Expense } from '@/domain/models';
+import { FREQUENT_HISTORY_ROWS, FREQUENT_WINDOW_DAYS, frequentExpenses, type FrequentExpense } from '@/domain/frequentExpenses';
+import type { CreditCard, Expense } from '@/domain/models';
+import type { ClaimSummary } from '@/domain/receivables';
 import { buildStatement, type StatementTypeFilter } from '@/domain/statement';
-import { addMonths, firstOfMonth, monthRange, trailingMonths } from '@/lib/dates';
+import { tagNames, type Tag, type TagKind } from '@/domain/tags';
+import { findTransferMatches, TRANSFER_MATCH_DAYS } from '@/domain/treatment';
+import { addDays, addMonths, firstOfMonth, monthRange, today, trailingMonths } from '@/lib/dates';
 import { fetchAccountBalances } from '@/services/accounts';
 import { fetchBudgetsForMonth } from '@/services/budgets';
 import { resolveCapabilities, type SchemaCapabilities } from '@/services/capabilities';
 import { fetchCategories, fetchPaymentMethods } from '@/services/catalog';
-import { fetchById, fetchForMonth, fetchMonthlyTotals, fetchPage } from '@/services/expenses';
+import { fetchCardEntries, fetchCards } from '@/services/creditCards';
+import { fetchById, fetchForMonth, fetchMonthlyTotals, fetchPage, fetchRecent } from '@/services/expenses';
+import { fetchClaims, fetchPaidForExpenseIds } from '@/services/receivables';
 import {
   fetchIncomeById,
   fetchIncomeForMonth,
@@ -23,6 +37,7 @@ import {
   fetchIncomePage,
 } from '@/services/income';
 import { fetchForAccount, netBefore } from '@/services/ledger';
+import { fetchTagIdsFor, fetchTags } from '@/services/tags';
 import { useUserId } from '@/state/auth';
 import { keys } from '@/state/queryClient';
 
@@ -32,6 +47,11 @@ const EMPTY_CAPS: SchemaCapabilities = {
   expenseBankLink: false,
   incomeBankLink: false,
   transfers: false,
+  creditCards: false,
+  treatments: false,
+  tags: false,
+  statementDetails: false,
+  notifications: false,
 };
 
 export function useCapabilities(): SchemaCapabilities {
@@ -64,6 +84,41 @@ export function useAccounts() {
   });
 }
 
+export type CreditCardOverview = { card: CreditCard; summary: CardSummary };
+
+async function loadCards(userId: string): Promise<CreditCardOverview[]> {
+  const [cards, entries] = await Promise.all([fetchCards(userId), fetchCardEntries(userId, null)]);
+  const day = today();
+  return cards.map((card) => ({ card, summary: summariseCard(card, entries, day) }));
+}
+
+/**
+ * Every card with its derived outstanding, available credit and bill status;
+ * empty until migration 004 exists. Inactive cards are included.
+ */
+export function useCreditCards() {
+  const userId = useUserId();
+  const caps = useCapabilities();
+  return useQuery({
+    queryKey: [...keys.creditCards(userId), caps.creditCards],
+    queryFn: () => (caps.creditCards ? loadCards(userId) : Promise.resolve([])),
+  });
+}
+
+/**
+ * One card's whole history, merged from purchases, bill payments and card
+ * transactions. [enabled] lets the screen wait until it knows the card exists.
+ */
+export function useCardEntries(cardId: string, enabled = true) {
+  const userId = useUserId();
+  const caps = useCapabilities();
+  return useQuery({
+    queryKey: keys.cardStatement(userId, cardId),
+    queryFn: () => fetchCardEntries(userId, cardId),
+    enabled: enabled && caps.creditCards && cardId !== '',
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard & reports
 // ---------------------------------------------------------------------------
@@ -80,17 +135,23 @@ type MonthRaw = {
 
 export type MonthSummary = MonthRaw & { breakdown: CategorySpend[] };
 
-/** The five reads behind a month's figures, issued concurrently. */
+/**
+ * The reads behind a month's figures, issued concurrently. Expenses paid on
+ * someone else's behalf are owed back, so they are left out of spending —
+ * and transfers, loans and repayments never reach these tables at all.
+ */
 async function loadMonth(userId: string, month: string): Promise<MonthRaw> {
   const months = trailingMonths(month, TREND_MONTHS);
   const trendStart = months[0] ?? firstOfMonth(month);
   const trendEnd = addMonths(month, 1);
-  const [expenses, income, expenseTotals, incomeTotals] = await Promise.all([
+  const paidFor = await fetchPaidForExpenseIds(userId);
+  const [allExpenses, income, expenseTotals, incomeTotals] = await Promise.all([
     fetchForMonth(userId, month),
     fetchIncomeForMonth(userId, month),
-    fetchMonthlyTotals(userId, trendStart, trendEnd),
+    fetchMonthlyTotals(userId, trendStart, trendEnd, paidFor),
     fetchIncomeMonthlyTotals(userId, trendStart, trendEnd),
   ]);
+  const expenses = personalSpending(allExpenses, paidFor);
   return {
     month: firstOfMonth(month),
     totalExpense: sumBy(expenses, (e) => e.amount),
@@ -140,10 +201,147 @@ export function useBudgets(anyDayOfMonth: string) {
   return useQuery({
     queryKey: keys.budgets(userId, month),
     queryFn: async () => {
-      const [budgets, expenses] = await Promise.all([fetchBudgetsForMonth(userId, month), fetchForMonth(userId, month)]);
-      return buildBudgetProgress(budgets, expenses);
+      const [budgets, expenses, paidFor] = await Promise.all([
+        fetchBudgetsForMonth(userId, month),
+        fetchForMonth(userId, month),
+        fetchPaidForExpenseIds(userId),
+      ]);
+      return buildBudgetProgress(budgets, personalSpending(expenses, paidFor));
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Money owed to you
+// ---------------------------------------------------------------------------
+
+/** Every loan and paid-for purchase with what is still owed; empty until migration 005 exists. */
+export function useClaims() {
+  const userId = useUserId();
+  const caps = useCapabilities();
+  return useQuery({
+    queryKey: [...keys.claims(userId), caps.treatments],
+    queryFn: () => (caps.treatments ? fetchClaims(userId) : Promise.resolve([] as ClaimSummary[])),
+  });
+}
+
+/**
+ * Rows on [accountId] that could be the other leg of a transfer of [amount]
+ * on [date] — opposite direction to [direction], within a few days.
+ */
+export function useTransferMatches(request: {
+  accountId: string | null;
+  direction: 'debit' | 'credit';
+  amount: number | null;
+  date: string;
+  /** Rows already chosen elsewhere (e.g. by another row of the same import). */
+  excludeIds?: readonly string[];
+}) {
+  const userId = useUserId();
+  const caps = useCapabilities();
+  const { accountId, direction, amount, date } = request;
+  return useQuery({
+    queryKey: keys.transferMatches(userId, { accountId, direction, amount, date }),
+    queryFn: async () =>
+      findTransferMatches(
+        await fetchForAccount({
+          userId,
+          accountId: accountId ?? '',
+          from: addDays(date, -TRANSFER_MATCH_DAYS),
+          toExclusive: addDays(date, TRANSFER_MATCH_DAYS + 1),
+        }),
+        { direction, amount: amount ?? 0, date },
+      ),
+    enabled: caps.treatments && accountId != null && amount != null && amount > 0,
+    select: (matches) => (request.excludeIds?.length ? matches.filter((m) => !request.excludeIds?.includes(m.id)) : matches),
+  });
+}
+
+/** Purchases up to a few days after [date], newest first — what a reimbursement can pay back. */
+export function usePurchasesBefore(date: string, enabled: boolean) {
+  const userId = useUserId();
+  return useQuery({
+    queryKey: keys.purchases(userId, date),
+    queryFn: () => fetchRecent(userId, addDays(date, -PURCHASE_LOOKBACK_DAYS), addDays(date, 4), 80),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/** How far back purchases are offered when choosing what a reimbursement pays back. */
+export const PURCHASE_LOOKBACK_DAYS = 120;
+
+/**
+ * Quick add on a new expense: the user's repeat purchases, most frequent
+ * first. One lean, cached read; the suggestions are rebuilt from the cached
+ * categories, methods, accounts and cards, so none ever points at something
+ * deleted or closed. Empty while loading, on error, or when [enabled] is off.
+ */
+export function useFrequentExpenses(enabled: boolean): FrequentExpense[] {
+  const userId = useUserId();
+  const day = today();
+  const history = useQuery({
+    queryKey: keys.frequentExpenses(userId, day),
+    queryFn: async () => {
+      const [expenses, paidFor] = await Promise.all([
+        fetchRecent(userId, addDays(day, -(FREQUENT_WINDOW_DAYS - 1)), addDays(day, 1), FREQUENT_HISTORY_ROWS, { lean: true }),
+        fetchPaidForExpenseIds(userId),
+      ]);
+      return { expenses, paidFor };
+    },
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+  const categories = useCategories().data;
+  const methods = usePaymentMethods().data;
+  const accounts = useAccounts().data;
+  const cards = useCreditCards().data;
+  return useMemo(() => {
+    if (!enabled || !history.data || !categories) return [];
+    return frequentExpenses(history.data.expenses, {
+      today: day,
+      excludeIds: history.data.paidFor,
+      categoryIds: new Set(categories.map((c) => c.id)),
+      paymentMethodIds: new Set((methods ?? []).map((m) => m.id)),
+      accountIds: new Set((accounts ?? []).filter((b) => b.account.isActive).map((b) => b.account.id)),
+      cardIds: new Set((cards ?? []).filter((o) => o.card.isActive).map((o) => o.card.id)),
+    });
+  }, [enabled, history.data, categories, methods, accounts, cards, day]);
+}
+
+// ---------------------------------------------------------------------------
+// Tags
+// ---------------------------------------------------------------------------
+
+/** Every tag the user has; empty until migration 006 exists. */
+export function useTags() {
+  const userId = useUserId();
+  const caps = useCapabilities();
+  return useQuery({
+    queryKey: [...keys.tags(userId), caps.tags],
+    queryFn: () => (caps.tags ? fetchTags(userId) : Promise.resolve([] as Tag[])),
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * The tag names on one expense or income row. `names` is null until they are
+ * known (or when they could not be read) — a form must not save tags then, or
+ * it would replace the real ones with an empty list.
+ */
+export function useTransactionTags(kind: TagKind, id: string | undefined): { names: string[] | null; isPending: boolean } {
+  const userId = useUserId();
+  const caps = useCapabilities();
+  const tags = useTags();
+  const enabled = caps.tags && id != null;
+  const links = useQuery({
+    queryKey: keys.transactionTags(userId, kind, id ?? ''),
+    queryFn: () => fetchTagIdsFor(userId, kind, id ?? ''),
+    enabled,
+    staleTime: 0,
+  });
+  const isPending = enabled && (links.isPending || tags.isPending);
+  return { names: enabled && links.data && tags.data ? tagNames(tags.data, links.data) : null, isPending };
 }
 
 // ---------------------------------------------------------------------------

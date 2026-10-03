@@ -183,7 +183,8 @@ class EngineJson {
         'createdAt': _iso(m.createdAt),
       };
 
-  /// A recorded ledger row, as the duplicate check sees it.
+  /// A recorded ledger row, as the duplicate check sees it. Its reference and
+  /// UPI ID (migration 007) let a payment be recognised whatever its date.
   static Map<String, Object?> existing(LedgerEntry e) => <String, Object?>{
         'accountId': e.accountId,
         'date': AppDateUtils.toDateString(e.txnDate),
@@ -191,5 +192,38 @@ class EngineJson {
         'direction': e.direction.wire,
         'description': e.description,
         'creditCardId': e.creditCardId,
+        if (e.reference != null) 'reference': e.reference,
+        if (e.upiId != null) 'upiId': e.upiId,
+      };
+
+  /// A recorded ledger row in the web model's full shape, for finding a
+  /// transfer's other leg. [lent]: the row is money lent (a claim's source),
+  /// which is never a plain movement.
+  static Map<String, Object?> ledgerEntry(LedgerEntry e, {bool lent = false}) =>
+      <String, Object?>{
+        'id': e.id,
+        'userId': e.userId,
+        'accountId': e.accountId,
+        'direction': e.direction.wire,
+        'amount': e.amount,
+        'txnDate': AppDateUtils.toDateString(e.txnDate),
+        'description': e.description,
+        'categoryId': e.categoryId,
+        'expenseId': e.expenseId,
+        'incomeId': e.incomeId,
+        'transferGroupId': e.transferGroupId,
+        'counterpartyAccountId': e.counterpartyAccountId,
+        'creditCardId': e.creditCardId,
+        'receivableId': e.receivableId,
+        'claim': lent
+            ? const <String, Object?>{
+                'receivableId': '',
+                'kind': 'loan',
+                'person': '',
+                'role': 'source',
+              }
+            : null,
+        'createdAt': _iso(e.createdAt),
+        'category': null,
       };
 }

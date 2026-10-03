@@ -2,19 +2,28 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import { Page } from '@/components/layout/Page';
-import { BankAvatar, CategoryAvatar, LedgerAvatar, TransferAvatar } from '@/components/finance/Avatars';
+import { BankAvatar, CardAvatar, CategoryAvatar, ClaimAvatar, LedgerAvatar, TransferAvatar } from '@/components/finance/Avatars';
 import { Money } from '@/components/finance/Money';
 import { MonthStepper, StatTile } from '@/components/finance/Stats';
 import { DayHeader, TransactionRow } from '@/components/finance/TransactionRow';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Chip';
+import { ChoiceSheet } from '@/components/ui/ChoiceSheet';
 import { Centered, EmptyState, ErrorView, ListSkeleton } from '@/components/ui/Feedback';
-import { Card, CardList } from '@/components/ui/Surface';
+import { Sheet } from '@/components/ui/Sheet';
+import { Card, CardList, IconWell, ListRow } from '@/components/ui/Surface';
+import { isLinkableDebit } from '@/domain/creditCards';
 import { groupByDay } from '@/domain/expenseFilter';
 import {
   accountBankLine,
   accountInitial,
+  cardIssuerLine,
+  cardLabel,
+  claimPersonText,
+  isCardPayment,
   isDocumentBacked,
+  isMoneyLent,
+  isSettlement,
   isTransfer,
   ledgerCategoryLabel,
   ledgerTitle,
@@ -22,9 +31,9 @@ import {
   type LedgerEntry,
 } from '@/domain/models';
 import { closingBalance, STATEMENT_FILTERS, type StatementRow, type StatementTypeFilter } from '@/domain/statement';
-import { useAccounts, useCapabilities, useStatement } from '@/hooks/data';
+import { useAccounts, useCapabilities, useCreditCards, useStatement } from '@/hooks/data';
 import { useSheet } from '@/hooks/useSheet';
-import { useDeleteLedgerEntry } from '@/hooks/mutations';
+import { useDeleteLedgerEntry, useLinkToCard } from '@/hooks/mutations';
 import { addMonths, firstOfMonth, today } from '@/lib/dates';
 import { errorMessage } from '@/lib/errors';
 import { dayMonthYear, formatCurrency, monthYear, relativeDay } from '@/lib/format';
@@ -32,6 +41,7 @@ import { useFeedback } from '@/state/feedback';
 import { useSettings } from '@/state/settings';
 
 import { MovementSheet, TransferSheet } from './AccountSheets';
+import { EditMovementSheet } from './EditMovementSheet';
 import styles from './Accounts.module.css';
 
 export function StatementPage() {
@@ -48,6 +58,11 @@ export function StatementPage() {
   const [typeFilter, setTypeFilter] = useState<StatementTypeFilter>('all');
   const sheet = useSheet<'movement' | 'transfer'>();
   const remove = useDeleteLedgerEntry();
+  const link = useLinkToCard();
+  const cards = (useCreditCards().data ?? []).map((o) => o.card);
+  const linkableCards = cards.filter((c) => c.isActive);
+  const actions = useSheet<{ entry: LedgerEntry; step: 'menu' | 'chooseCard' }>();
+  const editor = useSheet<LedgerEntry>();
 
   const statement = useStatement({
     accountId: id,
@@ -81,6 +96,11 @@ export function StatementPage() {
     );
   }
 
+  const cardName = (id: string | null) => {
+    const card = cards.find((c) => c.id === id);
+    return card ? cardLabel(card) : 'the card';
+  };
+
   const confirmDelete = async (entry: LedgerEntry) => {
     if (isDocumentBacked(entry)) {
       toast('info', `This came from ${entry.expenseId ? 'an expense' : 'an income'} entry. Delete it there instead.`);
@@ -88,18 +108,46 @@ export function StatementPage() {
     }
     const amountText = formatCurrency(entry.amount, currency);
     const debit = entry.direction === 'debit';
+    const paidCard = isCardPayment(entry) ? cardName(entry.creditCardId) : null;
+    const person = entry.claim?.person ?? 'them';
     const ok = await confirm({
-      title: isTransfer(entry) ? 'Delete transfer?' : 'Delete transaction?',
+      title: isTransfer(entry) ? 'Delete transfer?' : paidCard ? 'Delete card payment?' : 'Delete transaction?',
       message: isTransfer(entry)
         ? `This removes both sides of the ${amountText} transfer on ${dayMonthYear(entry.txnDate)} — the ${debit ? 'debit' : 'credit'} here and the matching ${debit ? 'credit' : 'debit'} on the other account. Both balances will be recalculated.`
-        : `${debit ? 'Debit' : 'Credit'} of ${amountText} on ${dayMonthYear(entry.txnDate)}. The balance will be recalculated.`,
+        : paidCard
+          ? `The ${amountText} payment on ${dayMonthYear(entry.txnDate)} is one record: deleting it removes it from this account and from ${paidCard}, and both are recalculated. To keep the debit here, unlink it instead.`
+          : isMoneyLent(entry)
+            ? `The ${amountText} lent to ${person} on ${dayMonthYear(entry.txnDate)} goes, and so does the loan. Any repayments already received stay on their accounts as plain money in. The balance will be recalculated.`
+            : isSettlement(entry)
+              ? `The ${amountText} from ${person} on ${dayMonthYear(entry.txnDate)} goes, so it no longer counts as paid back — that much shows as owed again. The balance will be recalculated.`
+              : `${debit ? 'Debit' : 'Credit'} of ${amountText} on ${dayMonthYear(entry.txnDate)}. The balance will be recalculated.`,
     });
     if (!ok) return;
     try {
       await remove.mutateAsync({ id: entry.id, transferGroupId: entry.transferGroupId });
-      toast('success', isTransfer(entry) ? 'Transfer deleted' : 'Transaction deleted');
+      editor.close();
+      toast('success', isTransfer(entry) ? 'Transfer deleted' : paidCard ? 'Card payment deleted' : 'Transaction deleted');
     } catch (error) {
       toast('error', errorMessage(error, 'Could not delete the transaction.'));
+    }
+  };
+
+  /** Card payments and linkable debits get a menu; everything else keeps the direct delete. */
+  const onLongPress = (entry: LedgerEntry) => {
+    if (caps.creditCards && (isCardPayment(entry) || (isLinkableDebit(entry) && linkableCards.length))) {
+      actions.open({ entry, step: 'menu' });
+    } else {
+      void confirmDelete(entry);
+    }
+  };
+
+  const setCard = async (entry: LedgerEntry, cardId: string | null) => {
+    actions.close();
+    try {
+      await link.mutateAsync({ entryId: entry.id, cardId });
+      toast('success', cardId ? `Marked as a payment to ${cardName(cardId)}` : 'Unlinked from the card');
+    } catch (error) {
+      toast('error', errorMessage(error, 'Could not update the transaction.'));
     }
   };
 
@@ -122,6 +170,7 @@ export function StatementPage() {
       back="/accounts"
       actions={
         <>
+          <IconButton icon="document" label="Import statement" onClick={() => void navigate(`/accounts/import?account=${account.id}`)} />
           <IconButton icon="export" label="Export statement" onClick={() => void navigate(exportUrl)} />
           {canTransfer ? <IconButton icon="transfer" label="Transfer" onClick={() => sheet.open('transfer')} /> : null}
           <IconButton icon="add" label="Add money" onClick={() => sheet.open('movement')} />
@@ -206,15 +255,23 @@ export function StatementPage() {
                         key={row.entry.id}
                         row={row}
                         currency={currency}
-                        counterparty={balances.find((b) => b.account.id === row.entry.counterpartyAccountId)?.account.nickname ?? null}
-                        onLongPress={() => void confirmDelete(row.entry)}
+                        counterparty={
+                          isCardPayment(row.entry)
+                            ? cardName(row.entry.creditCardId)
+                            : (balances.find((b) => b.account.id === row.entry.counterpartyAccountId)?.account.nickname ?? null)
+                        }
+                        onClick={caps.treatments ? () => editor.open(row.entry) : undefined}
+                        onLongPress={() => onLongPress(row.entry)}
                       />
                     ))}
                   </CardList>
                 </section>
               ))}
               <p className="t-label-sm t-center" style={{ paddingTop: 'var(--sp-lg)' }}>
-                Balance is calculated from the ledger, oldest first. Long-press (or right-click) a manual entry to delete it.
+                Balance is calculated from the ledger, oldest first.{' '}
+                {caps.treatments ? 'Tap a transaction to change how it is recorded — transfer, loan, reimbursement and more. ' : ''}
+                Long-press (or right-click) a manual entry to delete it
+                {caps.creditCards && linkableCards.length ? ', or to mark it as a credit card bill payment' : ''}.
               </p>
             </div>
           )}
@@ -224,7 +281,102 @@ export function StatementPage() {
       {sheet.data === 'transfer' ? (
         <TransferSheet key={sheet.key} open={sheet.isOpen} balances={balances} fromAccountId={account.id} onClose={sheet.close} />
       ) : null}
+      {actions.data?.step === 'menu' ? (
+        <Sheet
+          key={actions.key}
+          open={actions.isOpen}
+          onClose={actions.close}
+          title={formatCurrency(actions.data.entry.amount, currency)}
+          subtitle={`${ledgerTitle(actions.data.entry)} · ${dayMonthYear(actions.data.entry.txnDate)}`}
+        >
+          <EntryActions
+            entry={actions.data.entry}
+            cardName={cardName(actions.data.entry.creditCardId)}
+            onOpenCard={(cardId) => {
+              actions.close();
+              void navigate(`/cards/${cardId}`);
+            }}
+            onMark={(entry) => actions.open({ entry, step: 'chooseCard' })}
+            onUnlink={(entry) => void setCard(entry, null)}
+            onDelete={(entry) => {
+              actions.close();
+              void confirmDelete(entry);
+            }}
+          />
+        </Sheet>
+      ) : null}
+      {editor.data ? (
+        <EditMovementSheet
+          key={editor.key}
+          open={editor.isOpen}
+          entry={editor.data}
+          account={account}
+          accounts={balances.map((b) => b.account)}
+          cards={cards}
+          onClose={editor.close}
+          onDelete={(entry) => void confirmDelete(entry)}
+        />
+      ) : null}
+      {actions.data?.step === 'chooseCard' ? (
+        <ChoiceSheet
+          key={actions.key}
+          open={actions.isOpen}
+          onClose={actions.close}
+          title="Which card did this pay?"
+          subtitle="The debit stays as it is; the card's outstanding goes down by the same amount."
+          options={linkableCards.map((c) => ({ value: c.id, label: cardLabel(c), detail: cardIssuerLine(c) }))}
+          value=""
+          onChoose={(cardId) => {
+            const entry = actions.data?.entry;
+            if (entry) void setCard(entry, cardId);
+          }}
+        />
+      ) : null}
     </Page>
+  );
+}
+
+/** What can be done with a card payment, or with a debit that may be one. */
+function EntryActions({
+  entry,
+  cardName,
+  onOpenCard,
+  onMark,
+  onUnlink,
+  onDelete,
+}: {
+  entry: LedgerEntry;
+  cardName: string;
+  onOpenCard: (cardId: string) => void;
+  onMark: (entry: LedgerEntry) => void;
+  onUnlink: (entry: LedgerEntry) => void;
+  onDelete: (entry: LedgerEntry) => void;
+}) {
+  const cardId = entry.creditCardId;
+  return (
+    <CardList indent={12}>
+      {cardId ? (
+        <>
+          <ListRow dense leading={<CardAvatar size={30} />} title={`Open ${cardName}`} subtitle="Its statement and outstanding" chevron onClick={() => onOpenCard(cardId)} />
+          <ListRow
+            dense
+            leading={<IconWell icon="close" tone="var(--muted)" size={30} />}
+            title="Unlink from the card"
+            subtitle="Keeps this debit; the card no longer counts it as paid"
+            onClick={() => onUnlink(entry)}
+          />
+        </>
+      ) : (
+        <ListRow
+          dense
+          leading={<CardAvatar size={30} />}
+          title="Mark as a card bill payment"
+          subtitle="Lowers that card's outstanding — no new transaction"
+          onClick={() => onMark(entry)}
+        />
+      )}
+      <ListRow dense leading={<IconWell icon="delete" tone="var(--error)" size={30} />} title="Delete" tone="var(--error)" onClick={() => onDelete(entry)} />
+    </CardList>
   );
 }
 
@@ -232,18 +384,27 @@ function StatementLine({
   row,
   currency,
   counterparty,
+  onClick,
   onLongPress,
 }: {
   row: StatementRow;
   currency: string;
   counterparty: string | null;
+  onClick?: () => void;
   onLongPress: () => void;
 }) {
   const { entry } = row;
   const title = ledgerTitle(entry);
   const namesCounterparty = counterparty != null && title.toLowerCase().includes(counterparty.toLowerCase());
+  const cardPayment = isCardPayment(entry);
+  // Money lent and money paid back are owed, not income or spending: shown in the neutral tone.
+  const owed = isMoneyLent(entry) || isSettlement(entry);
   const leading = isTransfer(entry) ? (
     <TransferAvatar />
+  ) : cardPayment ? (
+    <CardAvatar tone="var(--transfer)" />
+  ) : owed ? (
+    <ClaimAvatar />
   ) : entry.category ? (
     <CategoryAvatar icon={entry.category.icon} color={entry.category.color} />
   ) : (
@@ -256,12 +417,18 @@ function StatementLine({
       titleLines={2}
       amount={signedAmount(entry)}
       currency={currency}
-      tone={isTransfer(entry) ? 'transfer' : entry.direction === 'credit' ? 'positive' : 'negative'}
+      tone={isTransfer(entry) || cardPayment || owed ? 'transfer' : entry.direction === 'credit' ? 'positive' : 'negative'}
       meta={[
         ledgerCategoryLabel(entry),
-        isTransfer(entry) && counterparty && !namesCounterparty ? (entry.direction === 'debit' ? `to ${counterparty}` : `from ${counterparty}`) : null,
+        claimPersonText(entry),
+        (isTransfer(entry) || cardPayment) && counterparty && !namesCounterparty
+          ? entry.direction === 'debit'
+            ? `to ${counterparty}`
+            : `from ${counterparty}`
+          : null,
       ]}
       trailingBelow={formatCurrency(row.balanceAfter, currency, { compact: true })}
+      onClick={onClick}
       onLongPress={onLongPress}
     />
   );

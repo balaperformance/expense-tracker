@@ -1,0 +1,19 @@
+// Cloudflare Workers deployment: a static-assets Worker serving the Vite build.
+//
+// `npm run build` writes dist/ (with the VITE_* build variables embedded);
+// `npx wrangler deploy` uploads that folder unchanged. Having this file stops
+// Wrangler's automatic configuration, which would otherwise rewrite
+// vite.config.ts and package.json and rebuild during the deploy step.
+//
+// No secrets belong here: the app needs only the public Supabase URL and
+// publishable key, and those are build variables, not Worker variables.
+{
+  // Must match the Worker's name in the Cloudflare dashboard.
+  "name": "expense-tracker-web",
+  "compatibility_date": "2026-09-21",
+  "assets": {
+    "directory": "./dist",
+    // Client-side routes (/reports, /expenses/123, …) get index.html.
+    "not_found_handling": "single-page-application"
+  }
+}

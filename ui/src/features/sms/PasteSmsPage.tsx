@@ -25,7 +25,7 @@ export function PasteSmsPage() {
   const [text, setText] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [parsed, setParsed] = useState<{ sms: ParsedBankSms; draft: SmsExpenseDraft } | null>(null);
+  const [parsed, setParsed] = useState<{ sms: ParsedBankSms; draft: SmsExpenseDraft; text: string } | null>(null);
 
   const change = (value: string) => {
     setText(value.slice(0, MAX_SMS_CHARS));
@@ -62,10 +62,10 @@ export function PasteSmsPage() {
       draft = applyAssistantCategory(draft, categories, await suggestCategory(draft.merchant));
     }
     setBusy(false);
-    setParsed({ sms, draft });
+    setParsed({ sms, draft, text });
   };
 
-  if (parsed) return <SmsReview sms={parsed.sms} draft={parsed.draft} onBack={() => setParsed(null)} />;
+  if (parsed) return <SmsReview sms={parsed.sms} draft={parsed.draft} text={parsed.text} onBack={() => setParsed(null)} />;
 
   return (
     <Page

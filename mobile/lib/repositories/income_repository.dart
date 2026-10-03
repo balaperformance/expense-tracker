@@ -4,6 +4,7 @@ import '../core/constants/app_constants.dart';
 import '../core/errors/app_exception.dart';
 import '../core/utils/date_utils.dart';
 import '../models/income.dart';
+import '../models/ledger_entry.dart';
 import '../services/schema_capabilities.dart';
 import 'ledger_repository.dart';
 import 'paging.dart';
@@ -130,7 +131,9 @@ class IncomeRepository {
     }
   }
 
-  Future<Income> create(Income income) async {
+  /// [details]: what an imported statement printed about the payment, kept
+  /// on its ledger movement (migration 007).
+  Future<Income> create(Income income, {MovementDetails? details}) async {
     try {
       await SchemaCapabilities.resolve(_client);
       final Map<String, dynamic> row = await _client
@@ -142,7 +145,7 @@ class IncomeRepository {
           .single();
 
       final Income created = Income.fromMap(row);
-      await _syncLedger(created);
+      await _syncLedger(created, details: details);
       return created;
     } catch (error) {
       throw ErrorMapper.map(error);
@@ -179,7 +182,7 @@ class IncomeRepository {
     }
   }
 
-  Future<void> _syncLedger(Income income) async {
+  Future<void> _syncLedger(Income income, {MovementDetails? details}) async {
     if (!SchemaCapabilities.bankAccounts ||
         !SchemaCapabilities.incomeBankLink) {
       return;
@@ -191,6 +194,7 @@ class IncomeRepository {
       amount: income.amount,
       date: income.incomeDate,
       description: income.title,
+      details: details,
     );
   }
 }

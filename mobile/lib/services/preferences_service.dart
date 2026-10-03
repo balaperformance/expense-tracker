@@ -48,6 +48,28 @@ class PreferencesService {
   Future<void> setHideBalances(bool value) =>
       _prefs.setBool(_hideBalancesKey, value);
 
+  static const String _pushUserKey = 'pref_push_user';
+  static const String _pushTokenKey = 'pref_push_token';
+
+  /// The account push notifications were turned on for on this phone, and
+  /// the token registered for it — null when they are off here. Per device,
+  /// like the theme: each phone opts in on its own.
+  String? get pushUser => _prefs.getString(_pushUserKey);
+  String? get pushToken => _prefs.getString(_pushTokenKey);
+
+  Future<void> setPush({required String? userId, required String? token}) async {
+    if (userId == null) {
+      await _prefs.remove(_pushUserKey);
+    } else {
+      await _prefs.setString(_pushUserKey, userId);
+    }
+    if (token == null) {
+      await _prefs.remove(_pushTokenKey);
+    } else {
+      await _prefs.setString(_pushTokenKey, token);
+    }
+  }
+
   String? get cachedCurrency => _prefs.getString(_currencyKey);
 
   Future<void> setCachedCurrency(String code) =>

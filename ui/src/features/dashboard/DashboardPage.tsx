@@ -5,7 +5,7 @@ import { CardCarousel, type CarouselPage } from '@/components/charts/CardCarouse
 import { CategoryBreakdownList, CategoryDonut } from '@/components/charts/CategoryCharts';
 import { MonthlyTrendCard } from '@/components/charts/TrendCharts';
 import { Page } from '@/components/layout/Page';
-import { BankAvatar } from '@/components/finance/Avatars';
+import { BankAvatar, CardAvatar } from '@/components/finance/Avatars';
 import { BudgetAlertBanner, BudgetCard } from '@/components/finance/Budget';
 import { Money } from '@/components/finance/Money';
 import { BalanceCard, QuickActions } from '@/components/finance/Stats';
@@ -14,8 +14,9 @@ import { Fab, IconButton } from '@/components/ui/Button';
 import { EmptyState, ErrorView, Skeleton } from '@/components/ui/Feedback';
 import { Card, CardList, IconWell, ListRow, SectionHeader } from '@/components/ui/Surface';
 import { budgetAlerts } from '@/domain/analytics';
-import { accountBankLine, accountInitial, currentBalance, type BankAccountBalance } from '@/domain/models';
-import { useAccounts, useBudgets, useDashboard } from '@/hooks/data';
+import { dueSummaryText } from '@/domain/creditCards';
+import { accountBankLine, accountInitial, currentBalance, totalBalance, type BankAccountBalance } from '@/domain/models';
+import { useAccounts, useBudgets, useCreditCards, useDashboard } from '@/hooks/data';
 import { errorMessage } from '@/lib/errors';
 import { greeting, monthYear, shortMonth } from '@/lib/format';
 import { today } from '@/lib/dates';
@@ -34,6 +35,7 @@ export function DashboardPage() {
   const dashboard = useDashboard(month);
   const budgets = useBudgets(month);
   const accounts = useAccounts();
+  const cards = useCreditCards();
   const currency = settings.currency;
 
   const frame = (body: ReactNode) => (
@@ -61,7 +63,9 @@ export function DashboardPage() {
   const hasAnyData = data.totalExpense > 0 || data.totalIncome > 0 || data.expenses.length > 0;
   const balances = accounts.data ?? [];
   const hasAccounts = balances.length > 0;
-  const bankTotal = hasAccounts ? balances.reduce((sum, b) => sum + currentBalance(b), 0) : null;
+  const bankTotal = hasAccounts ? totalBalance(balances) : null;
+  // Cards in use, and closed ones still being paid off; the full list is on the Credit cards screen.
+  const cardsShown = (cards.data ?? []).filter((o) => o.card.isActive || o.summary.outstanding > 0).slice(0, 3);
   const recent = data.expenses.slice(0, 5);
   const hasTrend = data.trend.some((p) => p.expense > 0 || p.income > 0);
   const chartPages: CarouselPage[] = [
@@ -151,6 +155,23 @@ export function DashboardPage() {
               <div className={styles.block}>
                 <SectionHeader title="Accounts" actionLabel="View" actionTo="/accounts" />
                 <AccountCarousel balances={balances} currency={currency} masked={settings.balancesHidden} onOpen={() => void navigate('/accounts')} />
+              </div>
+            ) : null}
+            {hasAnyData && cardsShown.length ? (
+              <div className={styles.block}>
+                <SectionHeader title="Credit cards" actionLabel="View" actionTo="/cards" />
+                <CardList>
+                  {cardsShown.map(({ card, summary }) => (
+                    <ListRow
+                      key={card.id}
+                      leading={<CardAvatar />}
+                      title={card.cardName}
+                      subtitle={dueSummaryText(summary, currency)}
+                      trailing={<Money amount={summary.outstanding} currency={currency} obscured={settings.balancesHidden} className={styles.balance} />}
+                      to={`/cards/${card.id}`}
+                    />
+                  ))}
+                </CardList>
               </div>
             ) : null}
           </div>

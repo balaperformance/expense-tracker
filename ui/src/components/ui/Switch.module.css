@@ -1,0 +1,64 @@
+.switch {
+  flex: none;
+  display: grid;
+  place-items: center;
+  /* A comfortable touch target around a small track. */
+  min-width: 52px;
+  min-height: 44px;
+  margin: -6px -4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.switch:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.track {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--sunken);
+  border: 0.75px solid var(--border);
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+.track[data-on='true'] {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.track[data-on='true'] .thumb {
+  transform: translateX(18px);
+}
+
+.switch:focus-visible .track {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .thumb {
+    transition: none;
+  }
+}

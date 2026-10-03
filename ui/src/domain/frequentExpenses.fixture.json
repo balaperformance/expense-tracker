@@ -1,0 +1,101 @@
+{
+  "_comment": "Quick add (frequent expenses). Read by frequentExpenses.test.ts here and by mobile/test/frequent_expense_test.dart, so the web and the app always suggest the same things. Ids are invented; nothing here is real data.",
+  "cases": [
+    {
+      "name": "ranks habits by frequency, then recency, and fills each from its latest purchase",
+      "today": "2026-10-03",
+      "limit": 20,
+      "context": {
+        "excludeIds": ["pf1", "pf2"],
+        "categoryIds": ["catFood", "catTransport", "catGroceries", "catBills", "catShopping"],
+        "paymentMethodIds": ["pmUpi", "pmCard"],
+        "accountIds": ["accMain"],
+        "cardIds": ["cardA"]
+      },
+      "expenses": [
+        { "id": "c3", "amount": 150, "expenseDate": "2026-09-26", "createdAt": "2026-09-26T08:00:00Z", "categoryId": "catFood", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Coffee" },
+        { "id": "g2", "amount": 1210, "expenseDate": "2026-09-14", "createdAt": "2026-09-14T19:00:00Z", "categoryId": "catGroceries", "paymentMethodId": "pmCard", "bankAccountId": null, "creditCardId": "cardA", "merchant": "Bigbasket", "description": "Monthly stock" },
+        { "id": "r0", "amount": 299, "expenseDate": "2026-07-05", "createdAt": "2026-07-05T10:00:00Z", "categoryId": "catBills", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Mobile recharge" },
+        { "id": "t2", "amount": 20, "expenseDate": "2026-09-30", "createdAt": "2026-09-30T18:30:00Z", "categoryId": "catFood", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Tea" },
+        { "id": "c1", "amount": 120, "expenseDate": "2026-09-20", "createdAt": "2026-09-20T08:00:00Z", "categoryId": "catFood", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Coffee" },
+        { "id": "u4", "amount": 300, "expenseDate": "2026-09-26", "createdAt": "2026-09-26T21:00:00Z", "categoryId": "catTransport", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Uber ride" },
+        { "id": "d1", "amount": 300, "expenseDate": "2026-08-02", "createdAt": "2026-08-02T20:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Dining out" },
+        { "id": "p2", "amount": 2000, "expenseDate": "2026-09-01", "createdAt": "2026-09-01T07:30:00Z", "categoryId": "catTransport", "paymentMethodId": "pmCard", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Petrol" },
+        { "id": "f1", "amount": 60, "expenseDate": "2026-09-12", "createdAt": "2026-09-12T13:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": "accMain", "creditCardId": null, "merchant": "", "description": null },
+        { "id": "a4", "amount": 150, "expenseDate": "2026-09-02", "createdAt": "2026-09-02T11:00:00Z", "categoryId": "catGroceries", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": "Amazon", "description": null },
+        { "id": "l1", "amount": 400, "expenseDate": "2026-09-10", "createdAt": "2026-09-10T13:30:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Team lunch" },
+        { "id": "c6", "amount": 120, "expenseDate": "2026-10-03", "createdAt": "2026-10-03T08:05:00Z", "categoryId": "catFood", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Coffee" },
+        { "id": "x1", "amount": 1500, "expenseDate": "2026-09-04", "createdAt": "2026-09-04T06:00:00Z", "categoryId": "catDeleted", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Gym" },
+        { "id": "u1", "amount": 230, "expenseDate": "2026-09-05", "createdAt": "2026-09-05T09:00:00Z", "categoryId": "catTransport", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Uber" },
+        { "id": "r1", "amount": 299, "expenseDate": "2026-07-06", "createdAt": "2026-07-06T10:00:00Z", "categoryId": "catBills", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Mobile recharge" },
+        { "id": "k1", "amount": 50, "expenseDate": "2026-09-09", "createdAt": "2026-09-09T10:00:00Z", "categoryId": "catTransport", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Parking" },
+        { "id": "g1", "amount": 532.5, "expenseDate": "2026-09-07", "createdAt": "2026-09-07T19:00:00Z", "categoryId": "catGroceries", "paymentMethodId": "pmCard", "bankAccountId": null, "creditCardId": "cardA", "merchant": "BigBasket", "description": null },
+        { "id": "d4", "amount": 520, "expenseDate": "2026-09-13", "createdAt": "2026-09-13T20:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Dining out" },
+        { "id": "a1", "amount": 999, "expenseDate": "2026-08-01", "createdAt": "2026-08-01T15:00:00Z", "categoryId": "catShopping", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": "Amazon", "description": null },
+        { "id": "t1", "amount": 20, "expenseDate": "2026-09-30", "createdAt": "2026-09-30T09:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Tea" },
+        { "id": "pf1", "amount": 400, "expenseDate": "2026-09-17", "createdAt": "2026-09-17T13:30:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Team lunch" },
+        { "id": "c2", "amount": 120, "expenseDate": "2026-09-23", "createdAt": "2026-09-23T08:00:00Z", "categoryId": "catFood", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "coffee " },
+        { "id": "p4", "amount": 2000, "expenseDate": "2026-09-22", "createdAt": "2026-09-22T07:30:00Z", "categoryId": "catTransport", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Petrol" },
+        { "id": "x2", "amount": 1500, "expenseDate": "2026-09-11", "createdAt": "2026-09-11T06:00:00Z", "categoryId": "catDeleted", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Gym" },
+        { "id": "f3", "amount": 60, "expenseDate": "2026-09-30", "createdAt": "2026-09-30T13:00:00Z", "categoryId": "catFood", "paymentMethodId": "pmGone", "bankAccountId": "accOld", "creditCardId": null, "merchant": null, "description": null },
+        { "id": "m1", "amount": 100, "expenseDate": "2026-09-03", "createdAt": "2026-09-03T10:00:00Z", "categoryId": null, "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Misc" },
+        { "id": "u2", "amount": 245, "expenseDate": "2026-09-15", "createdAt": "2026-09-15T09:00:00Z", "categoryId": "catTransport", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "uber" },
+        { "id": "d2", "amount": 450, "expenseDate": "2026-08-16", "createdAt": "2026-08-16T20:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Dining out" },
+        { "id": "k2", "amount": 0, "expenseDate": "2026-09-16", "createdAt": "2026-09-16T10:00:00Z", "categoryId": "catTransport", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Parking" },
+        { "id": "a2", "amount": 499, "expenseDate": "2026-08-15", "createdAt": "2026-08-15T15:00:00Z", "categoryId": "catShopping", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": "Amazon", "description": null },
+        { "id": "r2", "amount": 299, "expenseDate": "2026-08-10", "createdAt": "2026-08-10T10:00:00Z", "categoryId": "catBills", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Mobile recharge" },
+        { "id": "c4", "amount": 120, "expenseDate": "2026-09-29", "createdAt": "2026-09-29T08:00:00Z", "categoryId": "catFood", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "COFFEE" },
+        { "id": "t3", "amount": 20, "expenseDate": "2026-09-30", "createdAt": "2026-09-30T12:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Tea" },
+        { "id": "m2", "amount": 100, "expenseDate": "2026-09-13", "createdAt": "2026-09-13T10:00:00Z", "categoryId": null, "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Misc" },
+        { "id": "g3", "amount": 845, "expenseDate": "2026-09-28", "createdAt": "2026-09-28T19:00:00Z", "categoryId": "catGroceries", "paymentMethodId": "pmCard", "bankAccountId": null, "creditCardId": "cardA", "merchant": "BigBasket", "description": "Weekly groceries" },
+        { "id": "p1", "amount": 1000, "expenseDate": "2026-08-25", "createdAt": "2026-08-25T07:30:00Z", "categoryId": "catTransport", "paymentMethodId": "pmCard", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Petrol" },
+        { "id": "u3", "amount": 230, "expenseDate": "2026-09-25", "createdAt": "2026-09-25T09:00:00Z", "categoryId": "catTransport", "paymentMethodId": "pmUpi", "bankAccountId": null, "creditCardId": "cardB", "merchant": null, "description": " UBER " },
+        { "id": "k3", "amount": 50, "expenseDate": "2026-09-23", "createdAt": "2026-09-23T10:00:00Z", "categoryId": "catTransport", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Parking" },
+        { "id": "a5", "amount": 150, "expenseDate": "2026-09-03", "createdAt": "2026-09-03T11:00:00Z", "categoryId": "catGroceries", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": "Amazon", "description": null },
+        { "id": "x3", "amount": 1500, "expenseDate": "2026-09-18", "createdAt": "2026-09-18T06:00:00Z", "categoryId": "catDeleted", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Gym" },
+        { "id": "f2", "amount": 80, "expenseDate": "2026-09-21", "createdAt": "2026-09-21T13:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "   " },
+        { "id": "d5", "amount": 610, "expenseDate": "2026-09-27", "createdAt": "2026-09-27T20:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Dining out" },
+        { "id": "r3", "amount": 299, "expenseDate": "2026-09-10", "createdAt": "2026-09-10T10:00:00Z", "categoryId": "catBills", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Mobile recharge" },
+        { "id": "k4", "amount": -50, "expenseDate": "2026-09-24", "createdAt": "2026-09-24T10:00:00Z", "categoryId": "catTransport", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Parking" },
+        { "id": "c5", "amount": 120, "expenseDate": "2026-10-01", "createdAt": "2026-10-01T08:00:00Z", "categoryId": "catFood", "paymentMethodId": "pmUpi", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Coffee" },
+        { "id": "a3", "amount": 999, "expenseDate": "2026-09-01", "createdAt": "2026-09-01T15:00:00Z", "categoryId": "catShopping", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": "Amazon", "description": null },
+        { "id": "m3", "amount": 100, "expenseDate": "2026-09-23", "createdAt": "2026-09-23T10:00:00Z", "categoryId": null, "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Misc" },
+        { "id": "k5", "amount": 50, "expenseDate": "2026-10-05", "createdAt": "2026-10-02T10:00:00Z", "categoryId": "catTransport", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Parking" },
+        { "id": "p3", "amount": 1000, "expenseDate": "2026-09-08", "createdAt": "2026-09-08T07:30:00Z", "categoryId": "catTransport", "paymentMethodId": "pmCard", "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Petrol" },
+        { "id": "x4", "amount": 1500, "expenseDate": "2026-09-25", "createdAt": "2026-09-25T06:00:00Z", "categoryId": "catDeleted", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Gym" },
+        { "id": "l3", "amount": 400, "expenseDate": "2026-09-24", "createdAt": "2026-09-24T13:30:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": "accMain", "creditCardId": null, "merchant": null, "description": "Team lunch" },
+        { "id": "d3", "amount": 300, "expenseDate": "2026-08-30", "createdAt": "2026-08-30T20:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Dining out" },
+        { "id": "r-old", "amount": 299, "expenseDate": "2026-06-10", "createdAt": "2026-06-10T10:00:00Z", "categoryId": "catBills", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Mobile recharge" }
+      ],
+      "expected": [
+        { "key": "catFood|coffee", "title": "Coffee", "categoryId": "catFood", "amount": 120, "description": "Coffee", "merchant": null, "paymentMethodId": "pmUpi", "source": { "kind": "account", "id": "accMain" }, "count": 6, "lastDate": "2026-10-03" },
+        { "key": "catFood|dining out", "title": "Dining out", "categoryId": "catFood", "amount": null, "description": "Dining out", "merchant": null, "paymentMethodId": null, "source": { "kind": "account", "id": "accMain" }, "count": 5, "lastDate": "2026-09-27" },
+        { "key": "catTransport|petrol", "title": "Petrol", "categoryId": "catTransport", "amount": 2000, "description": "Petrol", "merchant": null, "paymentMethodId": "pmUpi", "source": { "kind": "account", "id": "accMain" }, "count": 4, "lastDate": "2026-09-22" },
+        { "key": "catFood|tea", "title": "Tea", "categoryId": "catFood", "amount": 20, "description": "Tea", "merchant": null, "paymentMethodId": "pmUpi", "source": { "kind": "account", "id": "accMain" }, "count": 3, "lastDate": "2026-09-30" },
+        { "key": "catFood|", "title": null, "categoryId": "catFood", "amount": 60, "description": null, "merchant": null, "paymentMethodId": null, "source": null, "count": 3, "lastDate": "2026-09-30" },
+        { "key": "catGroceries|bigbasket", "title": "BigBasket", "categoryId": "catGroceries", "amount": null, "description": "Weekly groceries", "merchant": "BigBasket", "paymentMethodId": "pmCard", "source": { "kind": "card", "id": "cardA" }, "count": 3, "lastDate": "2026-09-28" },
+        { "key": "catTransport|uber", "title": "UBER", "categoryId": "catTransport", "amount": 230, "description": "UBER", "merchant": null, "paymentMethodId": "pmUpi", "source": null, "count": 3, "lastDate": "2026-09-25" },
+        { "key": "catBills|mobile recharge", "title": "Mobile recharge", "categoryId": "catBills", "amount": 299, "description": "Mobile recharge", "merchant": null, "paymentMethodId": null, "source": { "kind": "cash" }, "count": 3, "lastDate": "2026-09-10" },
+        { "key": "catShopping|amazon", "title": "Amazon", "categoryId": "catShopping", "amount": 999, "description": null, "merchant": "Amazon", "paymentMethodId": null, "source": { "kind": "cash" }, "count": 3, "lastDate": "2026-09-01" }
+      ]
+    },
+    {
+      "name": "suggests nothing until a purchase repeats three times",
+      "today": "2026-10-03",
+      "limit": 6,
+      "context": {
+        "excludeIds": [],
+        "categoryIds": ["catFood"],
+        "paymentMethodIds": [],
+        "accountIds": [],
+        "cardIds": []
+      },
+      "expenses": [
+        { "id": "s1", "amount": 120, "expenseDate": "2026-09-30", "createdAt": "2026-09-30T08:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Coffee" },
+        { "id": "s2", "amount": 120, "expenseDate": "2026-10-01", "createdAt": "2026-10-01T08:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Coffee" },
+        { "id": "s3", "amount": 90, "expenseDate": "2026-10-02", "createdAt": "2026-10-02T08:00:00Z", "categoryId": "catFood", "paymentMethodId": null, "bankAccountId": null, "creditCardId": null, "merchant": null, "description": "Sandwich" }
+      ],
+      "expected": []
+    }
+  ]
+}

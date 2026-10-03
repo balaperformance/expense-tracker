@@ -259,6 +259,48 @@ export function DatePickerField({
   );
 }
 
+/** A choice from a short list, shown like the date field and picked with the platform's own menu. */
+export function SelectField<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  icon,
+  placeholder = 'Choose',
+  disabled,
+}: {
+  value: T | '';
+  onChange: (value: T | '') => void;
+  options: ReadonlyArray<{ value: T; label: string }>;
+  label: string;
+  icon?: IconName;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const selected = options.find((o) => o.value === value);
+  return (
+    <div className={cx(styles.select, disabled && styles.fieldDisabled)}>
+      {icon ? <Icon name={icon} size={20} color="var(--muted)" /> : null}
+      <span className={cx(styles.selectValue, !selected && styles.placeholder)}>{selected ? selected.label : placeholder}</span>
+      <Icon name="chevronDown" size={18} color="var(--muted)" />
+      <select
+        className={styles.nativeDate}
+        value={selected ? value : ''}
+        aria-label={label}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value as T | '')}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /** Date field with the Today / Yesterday quick picks (DateField). */
 export function DateField({ value, onChange, disabled, label = 'Date' }: { value: string; onChange: (value: string) => void; disabled?: boolean; label?: string }) {
   const today = todayIso();

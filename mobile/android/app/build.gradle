@@ -49,10 +49,32 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.debug
+            // Flutter has no 32-bit x86 release engine, so plugins' x86
+            // libraries (ML Kit's OCR alone is ~11 MB) could never load there.
+            // `--split-per-abi` builds choose their own ABIs, and Gradle rejects
+            // abiFilters alongside ABI splits, so only the universal APK filters.
+            if (!(project.findProperty("split-per-abi")?.toBoolean() ?: false)) {
+                ndk {
+                    abiFilters "armeabi-v7a", "arm64-v8a", "x86_64"
+                }
+            }
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+// Push notifications: Firebase Cloud Messaging delivers what the push-notify
+// Edge Function sends. The Firebase project is configured by dropping its
+// google-services.json into this folder (see README); without it the app
+// builds and runs exactly as before and simply offers no notifications.
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
+dependencies {
+    implementation platform("com.google.firebase:firebase-bom:32.8.1")
+    implementation "com.google.firebase:firebase-messaging"
 }

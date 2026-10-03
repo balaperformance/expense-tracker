@@ -8,11 +8,14 @@ import { dayMonthYear, formatCurrency, formatPercent, monthYear } from '@/lib/fo
 import { buildCategoryBreakdown, bucketByMonth, sumBy, type CategorySpend } from '../analytics';
 import {
   accountLabel,
+  cardLabel,
+  claimPersonText,
   isTransfer,
   ledgerCategoryLabel,
   ledgerTitle,
   MONEY_TRANSFER_LABEL,
   type BankAccount,
+  type CreditCard,
   type Expense,
   type ExpenseCategory,
   type Income,
@@ -42,16 +45,19 @@ export class ExportContext {
   private readonly accounts: Map<string, BankAccount>;
   private readonly categories: Map<string, ExpenseCategory>;
   private readonly methods: Map<string, PaymentMethod>;
+  private readonly cards: Map<string, CreditCard>;
 
   constructor(
     readonly currencyCode: string,
     accounts: readonly BankAccount[] = [],
     categories: readonly ExpenseCategory[] = [],
     paymentMethods: readonly PaymentMethod[] = [],
+    cards: readonly CreditCard[] = [],
   ) {
     this.accounts = new Map(accounts.map((a) => [a.id, a]));
     this.categories = new Map(categories.map((c) => [c.id, c]));
     this.methods = new Map(paymentMethods.map((p) => [p.id, p]));
+    this.cards = new Map(cards.map((c) => [c.id, c]));
   }
 
   money = (amount: number) => formatCurrency(amount, this.currencyCode);
@@ -61,6 +67,13 @@ export class ExportContext {
     const account = this.accounts.get(id);
     return account ? accountLabel(account) : 'Closed account';
   };
+  cardName = (id: string) => {
+    const card = this.cards.get(id);
+    return card ? cardLabel(card) : 'Credit card';
+  };
+  /** What an expense was paid from: its card, its account, or Cash. */
+  sourceName = (expense: Pick<Expense, 'bankAccountId' | 'creditCardId'>) =>
+    expense.creditCardId != null ? this.cardName(expense.creditCardId) : this.accountName(expense.bankAccountId);
   categoryName = (id: string | null) => (id == null ? 'Uncategorised' : (this.categories.get(id)?.name ?? 'Uncategorised'));
   paymentMethodName = (id: string | null) => (id == null ? '' : (this.methods.get(id)?.name ?? ''));
 }
@@ -78,6 +91,8 @@ const monthLabel = (key: string) => monthYear(`${key}-01`);
 
 function statementDescription(entry: LedgerEntry, context: ExportContext): string {
   const title = ledgerTitle(entry);
+  const person = claimPersonText(entry);
+  if (person) return `${title} (${person})`;
   if (!isTransfer(entry) || entry.counterpartyAccountId == null) return title;
   const name = context.accountName(entry.counterpartyAccountId);
   return entry.direction === 'debit' ? `${title} to ${name}` : `${title} from ${name}`;
@@ -176,7 +191,7 @@ export function expensesDataset({
           cell(context.categoryName(e.categoryId)),
           cell(e.merchant ?? ''),
           cell(e.description ?? ''),
-          cell(context.accountName(e.bankAccountId)),
+          cell(context.sourceName(e)),
           cell(context.paymentMethodName(e.paymentMethodId)),
           cell(e.notes ?? ''),
           moneyCell(context.money(e.amount), e.amount),
@@ -245,19 +260,21 @@ function categorySection(byCategory: CategorySpend[], total: number, context: Ex
 }
 
 function sourceSection(expenses: readonly Expense[], total: number, context: ExportContext): ExportSection {
-  const totals = new Map<string | null, { amount: number; count: number }>();
+  // A card and an account never share a bucket, even with the same id space.
+  const totals = new Map<string, { label: string; amount: number; count: number }>();
   for (const e of expenses) {
-    const bucket = totals.get(e.bankAccountId) ?? { amount: 0, count: 0 };
+    const key = e.creditCardId != null ? `card:${e.creditCardId}` : `account:${e.bankAccountId ?? ''}`;
+    const bucket = totals.get(key) ?? { label: context.sourceName(e), amount: 0, count: 0 };
     bucket.amount += e.amount;
     bucket.count += 1;
-    totals.set(e.bankAccountId, bucket);
+    totals.set(key, bucket);
   }
-  const ordered = [...totals.entries()].sort((a, b) => b[1].amount - a[1].amount);
+  const ordered = [...totals.values()].sort((a, b) => b.amount - a.amount);
   return {
     title: 'By payment source',
     columns: [col('Source', 2), numCol('Transactions'), numCol('Amount', 1.3), numCol('Share')],
-    rows: ordered.map(([id, { amount, count }]) => [
-      cell(context.accountName(id)),
+    rows: ordered.map(({ label, amount, count }) => [
+      cell(label),
       countCell(count),
       moneyCell(context.money(amount), amount),
       percentCell(total <= 0 ? '—' : formatPercent(amount / total), total <= 0 ? null : amount / total),

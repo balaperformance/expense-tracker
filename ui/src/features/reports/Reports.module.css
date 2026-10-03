@@ -55,9 +55,9 @@
   justify-content: center;
 }
 
-/* ---- Saved this month --------------------------------------------------- */
+/* ---- Month summary: balance, spent so far, or saved / overspent ------------ */
 
-/* A soft pool of the result's colour in the corner — green saved, rose overspent. */
+/* A soft pool of the result's colour in the corner — green saved, rose overspent, primary for a month still running. */
 .saved::after {
   content: '';
   position: absolute;
@@ -78,6 +78,14 @@
   gap: var(--sp-md);
 }
 
+/* The label, with the show/hide toggle when the figure is a balance. */
+.eyebrowRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  min-height: 24px;
+}
+
 .net {
   font-family: var(--font-serif);
   font-size: 32px;
@@ -92,7 +100,9 @@
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Income and spending side by side — or income alone when spending is the headline. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: var(--sp-sm);
   margin-top: auto;
   padding-top: var(--sp-lg);

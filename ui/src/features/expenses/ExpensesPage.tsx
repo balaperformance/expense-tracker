@@ -19,8 +19,8 @@ import {
   hasAnyFilter,
   type ExpenseFilter,
 } from '@/domain/expenseFilter';
-import { expenseTitle, type Expense } from '@/domain/models';
-import { useAccounts, useCapabilities, useExpenseList } from '@/hooks/data';
+import { cardLabel, expenseTitle, type Expense } from '@/domain/models';
+import { useAccounts, useCapabilities, useClaims, useCreditCards, useExpenseList } from '@/hooks/data';
 import { useDebounced } from '@/hooks/useDebounced';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { useDeleteExpense } from '@/hooks/mutations';
@@ -38,6 +38,12 @@ export function ExpensesPage() {
   const { toast, confirm } = useFeedback();
   const caps = useCapabilities();
   const accounts = useAccounts().data ?? [];
+  const cards = useCreditCards().data ?? [];
+  const claims = useClaims().data;
+  const paidFor = useMemo(
+    () => new Map((claims ?? []).flatMap((c) => (c.receivable.expenseId ? [[c.receivable.expenseId, c.receivable.person] as const] : []))),
+    [claims],
+  );
   const { expenseSearch: search, expenseFilter: filter } = useListState();
   const setSearch = (value: string) => updateListState({ expenseSearch: value });
   const setFilter = (next: Omit<ExpenseFilter, 'search'>) => updateListState({ expenseFilter: next });
@@ -55,11 +61,21 @@ export function ExpensesPage() {
     if (list.hasNextPage && !list.isFetchingNextPage) void list.fetchNextPage();
   }, list.hasNextPage);
 
-  /** Where the money came from: an account nickname, or the payment method / Cash. */
-  const sourceLabel = (expense: Expense) => {
+  /** Where the money came from: a card, an account nickname, or the payment method / Cash. */
+  const fundingLabel = (expense: Expense) => {
+    if (expense.creditCardId != null) {
+      const card = cards.find((o) => o.card.id === expense.creditCardId)?.card;
+      return card ? cardLabel(card) : 'Credit card';
+    }
     if (!caps.bankAccounts) return null;
     if (expense.bankAccountId == null) return expense.paymentMethod?.name ?? 'Cash';
     return accounts.find((b) => b.account.id === expense.bankAccountId)?.account.nickname ?? null;
+  };
+  /** A purchase paid on someone else's behalf says so: it is owed back, not the user's spending. */
+  const sourceLabel = (expense: Expense) => {
+    const person = paidFor.get(expense.id);
+    const funding = fundingLabel(expense);
+    return person ? [funding, `paid for ${person}`].filter(Boolean).join(' · ') : funding;
   };
 
   const confirmDelete = async (expense: Expense) => {

@@ -90,6 +90,13 @@ export function AppShell() {
             Accounts
           </NavLink>
           <NavLink
+            to="/cards"
+            className={({ isActive }) => [styles.railItem, isActive && styles.railItemOn].filter(Boolean).join(' ')}
+          >
+            <Icon name="card" size={21} />
+            Credit cards
+          </NavLink>
+          <NavLink
             to="/assistant"
             className={({ isActive }) => [styles.railItem, isActive && styles.railItemOn].filter(Boolean).join(' ')}
           >

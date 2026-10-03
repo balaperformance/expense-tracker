@@ -130,10 +130,6 @@ class ReceiptResult {
   /// The amount is the one field without which a scan has saved no typing.
   bool get hasUsableTotal => total.hasValue && (total.value ?? 0) > 0;
 
-  /// True when OCR read text but none of it looked like receipt data.
-  bool get readTextButFoundNothing =>
-      rawLineCount > 0 && !hasUsableTotal && !merchant.hasValue;
-
   bool get isEmpty =>
       !total.hasValue && !merchant.hasValue && !date.hasValue;
 

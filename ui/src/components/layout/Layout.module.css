@@ -270,10 +270,6 @@
   padding-bottom: calc(96px + var(--safe-bottom));
 }
 
-.contentFill {
-  padding-bottom: 0;
-}
-
 /* ---- Bottom action bar ------------------------------------------------ */
 
 .actionBar {

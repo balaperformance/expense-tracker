@@ -47,13 +47,6 @@ class Profile {
     );
   }
 
-  /// Only the writable columns; `created_at` is database-managed.
-  Map<String, dynamic> toMap() => <String, dynamic>{
-        'id': id,
-        'full_name': fullName,
-        'currency': currency,
-      };
-
   Profile copyWith({String? fullName, String? currency}) => Profile(
         id: id,
         fullName: fullName ?? this.fullName,

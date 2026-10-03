@@ -6,9 +6,10 @@ import { monthRange } from '@/lib/dates';
 import { EXPORT_ROW_LIMIT, MONTHLY_AGGREGATE_LIMIT, PAGE_SIZE } from '@/domain/defaults';
 import { sanitiseSearch } from '@/domain/expenseFilter';
 import { blankToNull, incomeFromRow, incomeTitle, type Income } from '@/domain/models';
+import type { MovementDetails } from '@/domain/statementImport/model';
 
 import { capabilities, resolveCapabilities } from './capabilities';
-import { db, ensureOk, rowOf, rowsOf } from './db';
+import { allRowsOf, db, ensureOk, monthlyTotals, rowOf, rowsOf } from './db';
 import { syncForIncome } from './ledger';
 
 const TABLE = 'income';
@@ -57,48 +58,59 @@ export async function fetchIncomeById(userId: string, id: string): Promise<Incom
 export async function fetchIncomeForMonth(userId: string, month: string): Promise<Income[]> {
   await resolveCapabilities();
   const range = monthRange(month);
-  const result = await db()
-    .from(TABLE)
-    .select(select())
-    .eq('user_id', userId)
-    .gte('income_date', range.start)
-    .lt('income_date', range.endExclusive)
-    .order('income_date', { ascending: false })
-    .limit(MONTHLY_AGGREGATE_LIMIT);
-  return rowsOf(result).map(incomeFromRow);
+  // Paged: one response is capped at the project's max-rows, below this limit.
+  const rows = await allRowsOf(
+    (from, to, withCount) =>
+      db()
+        .from(TABLE)
+        .select(select(), withCount ? { count: 'exact' } : undefined)
+        .eq('user_id', userId)
+        .gte('income_date', range.start)
+        .lt('income_date', range.endExclusive)
+        .order('income_date', { ascending: false })
+        .order('id')
+        .range(from, to),
+    MONTHLY_AGGREGATE_LIMIT,
+  );
+  return rows.map(incomeFromRow);
 }
 
 export async function fetchIncomeRange(userId: string, from: string, toExclusive: string): Promise<Income[]> {
   await resolveCapabilities();
-  const result = await db()
-    .from(TABLE)
-    .select(select())
-    .eq('user_id', userId)
-    .gte('income_date', from)
-    .lt('income_date', toExclusive)
-    .order('income_date', { ascending: true })
-    .order('created_at', { ascending: true })
-    .limit(EXPORT_ROW_LIMIT);
-  return rowsOf(result).map(incomeFromRow);
+  const rows = await allRowsOf(
+    (first, last, withCount) =>
+      db()
+        .from(TABLE)
+        .select(select(), withCount ? { count: 'exact' } : undefined)
+        .eq('user_id', userId)
+        .gte('income_date', from)
+        .lt('income_date', toExclusive)
+        .order('income_date', { ascending: true })
+        .order('created_at', { ascending: true })
+        .order('id')
+        .range(first, last),
+    EXPORT_ROW_LIMIT,
+  );
+  return rows.map(incomeFromRow);
 }
 
 export async function fetchIncomeMonthlyTotals(userId: string, from: string, toExclusive: string): Promise<Map<string, number>> {
-  const result = await db()
-    .from(TABLE)
-    .select('amount, income_date')
-    .eq('user_id', userId)
-    .gte('income_date', from)
-    .lt('income_date', toExclusive)
-    .limit(MONTHLY_AGGREGATE_LIMIT * 12);
-  const totals = new Map<string, number>();
-  for (const row of rowsOf(result)) {
-    const key = String(row.income_date).slice(0, 7);
-    totals.set(key, (totals.get(key) ?? 0) + (Number(row.amount) || 0));
-  }
-  return totals;
+  const rows = await allRowsOf(
+    (first, last, withCount) =>
+      db()
+        .from(TABLE)
+        .select('id, amount, income_date', withCount ? { count: 'exact' } : undefined)
+        .eq('user_id', userId)
+        .gte('income_date', from)
+        .lt('income_date', toExclusive)
+        .order('id')
+        .range(first, last),
+    MONTHLY_AGGREGATE_LIMIT * 12,
+  );
+  return monthlyTotals(rows, 'income_date');
 }
 
-async function syncLedger(income: Income): Promise<void> {
+async function syncLedger(income: Income, details?: MovementDetails | null): Promise<void> {
   const caps = capabilities();
   if (!caps.bankAccounts || !caps.incomeBankLink) return;
   await syncForIncome({
@@ -108,10 +120,12 @@ async function syncLedger(income: Income): Promise<void> {
     amount: income.amount,
     date: income.incomeDate,
     description: incomeTitle(income),
+    details,
   });
 }
 
-export async function createIncome(userId: string, draft: IncomeDraft): Promise<Income> {
+/** [details]: what an imported statement printed about the payment, kept on its ledger movement. */
+export async function createIncome(userId: string, draft: IncomeDraft, { details }: { details?: MovementDetails | null } = {}): Promise<Income> {
   await resolveCapabilities();
   const row = rowOf(
     await db()
@@ -121,7 +135,7 @@ export async function createIncome(userId: string, draft: IncomeDraft): Promise<
       .single(),
   );
   const created = incomeFromRow(row);
-  await syncLedger(created);
+  await syncLedger(created, details);
   return created;
 }
 

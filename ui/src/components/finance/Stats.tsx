@@ -13,44 +13,29 @@ type BalanceCardProps = {
   expense: number;
   currency: string;
   monthLabel: string;
+  /** Every bank and cash account's balance added up; null when there are no accounts. */
   bankTotal: number | null;
   bankTotalHidden: boolean;
   onToggleBankTotal: () => void;
 };
 
 /**
- * The dashboard's Net hero. The corner glow stays a neutral blue-gray
- * whichever way the month went: the figure's sign carries the direction, and
- * green belongs to Income alone.
+ * The dashboard's hero: what is available now, then the month so far. The
+ * month is still running — a salary paid at month-end has not arrived yet —
+ * so income received and spending sit side by side as figures to date and
+ * are never netted into a verdict on the month. Without accounts there is no
+ * balance, and the figure is the month's spending. The corner glow stays a
+ * neutral blue-gray: green belongs to Income alone.
  */
 export function BalanceCard({ income, expense, currency, monthLabel, bankTotal, bankTotalHidden, onToggleBankTotal }: BalanceCardProps) {
-  const net = income - expense;
-  const share = income > 0 ? expense / income : 0;
+  const monthBadge = <span className={styles.heroBadge}>{monthLabel}</span>;
   return (
     <Hero glow="var(--hero-glow)">
       <div className={styles.eyebrowRow}>
         <span className="t-eyebrow grow" style={{ color: 'var(--hero-accent)' }}>
-          Net this month
+          {bankTotal != null ? 'Available balance' : 'Spent this month'}
         </span>
-        <span className={styles.heroBadge}>{monthLabel}</span>
-      </div>
-      <div className={styles.net}>
-        <Money amount={net} currency={currency} signed={net !== 0} animate />
-      </div>
-      {income > 0 ? (
-        <div className={styles.spendBar} role="img" aria-label={`Spent ${Math.round(share * 100)} percent of income`}>
-          <span className={styles.barFill} style={{ width: `${Math.min(share, 1) * 100}%`, background: 'var(--expense)' }} />
-        </div>
-      ) : null}
-      <div className={styles.legs}>
-        <Leg label="Income" amount={income} currency={currency} tone="var(--income)" icon="moneyIn" />
-        <Leg label="Expenses" amount={expense} currency={currency} tone="var(--expense)" icon="moneyOut" />
-      </div>
-      {bankTotal != null ? (
-        <div className={styles.bankLine}>
-          <Icon name="bankSolid" size={16} color="var(--hero-accent)" />
-          <span className="grow">In bank accounts</span>
-          <Money amount={bankTotal} currency={currency} obscured={bankTotalHidden} />
+        {bankTotal != null ? (
           <IconButton
             icon={bankTotalHidden ? 'eye' : 'eyeOff'}
             label={bankTotalHidden ? 'Show balance' : 'Hide balance'}
@@ -59,8 +44,27 @@ export function BalanceCard({ income, expense, currency, monthLabel, bankTotal, 
             iconSize={18}
             onClick={onToggleBankTotal}
           />
+        ) : (
+          monthBadge
+        )}
+      </div>
+      <div className={styles.net}>
+        {bankTotal != null ? (
+          <Money amount={bankTotal} currency={currency} obscured={bankTotalHidden} animate />
+        ) : (
+          <Money amount={expense} currency={currency} animate />
+        )}
+      </div>
+      {bankTotal != null ? (
+        <div className={styles.bankLine}>
+          <span className="grow">So far this month</span>
+          {monthBadge}
         </div>
       ) : null}
+      <div className={styles.legs}>
+        <Leg label="Income received" amount={income} currency={currency} tone="var(--income)" icon="moneyIn" />
+        {bankTotal != null ? <Leg label="Spent this month" amount={expense} currency={currency} tone="var(--expense)" icon="moneyOut" /> : null}
+      </div>
     </Hero>
   );
 }

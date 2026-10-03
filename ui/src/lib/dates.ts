@@ -78,11 +78,6 @@ export function trailingMonths(anchor: IsoDate, count: number): IsoDate[] {
   return Array.from({ length: count }, (_, i) => addMonths(anchor, i - (count - 1)));
 }
 
-/** `yyyy-MM`. */
-export function monthKey(iso: IsoDate): string {
-  return iso.slice(0, 7);
-}
-
 /** Whole days from [from] to [to] (positive when [to] is later). */
 export function daysBetween(from: IsoDate, to: IsoDate): number {
   const ms = toDate(to).getTime() - toDate(from).getTime();

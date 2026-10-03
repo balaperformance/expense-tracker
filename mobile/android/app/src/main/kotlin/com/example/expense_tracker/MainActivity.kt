@@ -36,6 +36,9 @@ import java.util.concurrent.ConcurrentHashMap
  *   pickFile            system document picker → {token, name, size}
  *   call(name, args)    one engine function, JSON in and JSON out
  *   release(token)      forget a picked file
+ *
+ * It also hosts the push-notification bridge (PushBridge.kt): permission,
+ * the FCM token and the page a tapped notification opens.
  */
 class MainActivity : FlutterActivity() {
     private val channelName = "expense_tracker/statement_engine"
@@ -47,6 +50,8 @@ class MainActivity : FlutterActivity() {
     private val pending = HashMap<String, MethodChannel.Result>()
     private val queued = ArrayList<Runnable>()
 
+    private var push: PushBridge? = null
+
     private var pickResult: MethodChannel.Result? = null
     private var webView: WebView? = null
     private var engineReady = false
@@ -56,6 +61,27 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result -> handle(call, result) }
+        PushNotifications.ensureChannel(this)
+        // A notification tapped while the app was closed: its page waits for Dart to ask.
+        push = PushBridge(this, flutterEngine.dartExecutor.binaryMessenger).also {
+            it.handleIntent(intent, running = false)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // A notification tapped while the app was open or in the background.
+        push?.handleIntent(intent, running = true)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        push?.onPermissionResult(requestCode)
     }
 
     private fun handle(call: MethodCall, result: MethodChannel.Result) {

@@ -35,7 +35,6 @@ class PendingAction {
   final String summary;
   final DateTime? expiresAt;
 
-  bool get isExpense => tool == 'create_expense';
   bool get isIncome => tool == 'create_income';
   bool get isTransfer => tool == 'transfer_money';
 

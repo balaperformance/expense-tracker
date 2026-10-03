@@ -31,7 +31,16 @@ class LedgerRepository {
       'category_id, expense_id, income_id, transfer_group_id, '
       '${SchemaCapabilities.transfers ? 'counterparty_account_id, ' : ''}'
       '${SchemaCapabilities.creditCards ? 'credit_card_id, ' : ''}'
+      '${SchemaCapabilities.treatments ? 'receivable_id, ' : ''}'
+      '${SchemaCapabilities.statementDetails ? 'reference, upi_id, txn_time, ' : ''}'
       'created_at, categories(*)';
+
+  /// What a statement printed about a movement, as columns — nothing at all
+  /// until migration 007 can store it, so every write keeps working without.
+  static Map<String, dynamic> _detailsColumns(MovementDetails? details) =>
+      details == null || !SchemaCapabilities.statementDetails
+          ? const <String, dynamic>{}
+          : details.toColumns();
 
   /// Entries for one account, optionally bounded by a date window.
   Future<List<LedgerEntry>> fetchForAccount({
@@ -275,7 +284,8 @@ class LedgerRepository {
   // outstanding, so the two sides can never disagree, and it is not an
   // expense.
 
-  /// Pays a card bill from a bank account.
+  /// Pays a card bill from a bank account. [details]: what an imported
+  /// statement printed about the payment.
   Future<void> recordCardPayment({
     required String userId,
     required String accountId,
@@ -283,6 +293,7 @@ class LedgerRepository {
     required double amount,
     required DateTime date,
     required String description,
+    MovementDetails? details,
   }) async {
     try {
       await _client.from(_table).insert(<String, dynamic>{
@@ -297,7 +308,175 @@ class LedgerRepository {
         'income_id': null,
         'transfer_group_id': null,
         'credit_card_id': cardId,
+        ..._detailsColumns(details),
       });
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  // ---- Imported movements ----------------------------------------------------
+  //
+  // The statement import's write paths, the counterparts of the web app's
+  // services/ledger.ts: the same rows, the same columns.
+
+  /// A standalone credit or debit — a refund, a cash withdrawal, a transfer
+  /// with no tracked other side — with what its statement printed.
+  Future<LedgerEntry> recordMovement({
+    required String userId,
+    required String accountId,
+    required LedgerDirection direction,
+    required double amount,
+    required DateTime date,
+    String? description,
+    MovementDetails? details,
+  }) async {
+    try {
+      final Map<String, dynamic> row = await _client
+          .from(_table)
+          .insert(<String, dynamic>{
+            ...LedgerEntry(
+              id: '',
+              userId: userId,
+              accountId: accountId,
+              direction: direction,
+              amount: amount,
+              txnDate: date,
+              description: description,
+            ).toInsertMap(),
+            ..._detailsColumns(details),
+          })
+          .select(_select)
+          .single();
+      return LedgerEntry.fromMap(row);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Both legs of a transfer to another of the user's accounts, as one
+  /// insert (migration 003) — used when migration 005 is absent. The
+  /// statement's details belong to this account's leg only.
+  Future<void> recordTransferPair({
+    required String userId,
+    required String accountId,
+    required String counterpartyAccountId,
+    required LedgerDirection direction,
+    required double amount,
+    required DateTime date,
+    required String description,
+    required String counterpartDescription,
+    MovementDetails? details,
+  }) async {
+    try {
+      final String groupId = Uuid.v4();
+      final String txnDate = AppDateUtils.toDateString(date);
+      final Map<String, dynamic> detailColumns = _detailsColumns(details);
+      Map<String, dynamic> leg(String account, String other,
+              LedgerDirection legDirection, String text) =>
+          <String, dynamic>{
+            'user_id': userId,
+            'account_id': account,
+            'direction': legDirection.wire,
+            'amount': amount,
+            'txn_date': txnDate,
+            'description': text,
+            'transfer_group_id': groupId,
+            'counterparty_account_id': other,
+          };
+      await _client.from(_table).insert(<Map<String, dynamic>>[
+        <String, dynamic>{
+          ...leg(accountId, counterpartyAccountId, direction, description),
+          ...detailColumns,
+        },
+        <String, dynamic>{
+          ...leg(
+            counterpartyAccountId,
+            accountId,
+            direction == LedgerDirection.debit
+                ? LedgerDirection.credit
+                : LedgerDirection.debit,
+            counterpartDescription,
+          ),
+          // One insert: every row carries the same columns.
+          for (final String key in detailColumns.keys) key: null,
+        },
+      ]);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Saves a movement together with its treatment in one database
+  /// transaction (`record_bank_movement`, migration 005) — for an imported
+  /// transfer to one of the user's accounts, which adds the other leg or
+  /// links the row already there. [treatment] is the engine's payload, the
+  /// same JSON the web app sends. Returns the new movement's id.
+  Future<String> recordBankMovement({
+    required String accountId,
+    required LedgerDirection direction,
+    required double amount,
+    required DateTime date,
+    required String description,
+    required Map<String, Object?> treatment,
+  }) async {
+    try {
+      final Object? id = await _client.rpc<Object?>(
+        'record_bank_movement',
+        params: <String, dynamic>{
+          'p_account_id': accountId,
+          'p_direction': direction.wire,
+          'p_amount': amount,
+          'p_date': AppDateUtils.toDateString(date),
+          'p_description': description,
+          'p_treatment': treatment,
+        },
+      );
+      if (id is! String || id.isEmpty) {
+        throw const AppException('The movement could not be saved.');
+      }
+      return id;
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Records what the statement printed on a movement a database function
+  /// saved (it knows nothing of it). Nothing to do before migration 007.
+  Future<void> setMovementDetails({
+    required String userId,
+    required String entryId,
+    required MovementDetails details,
+  }) async {
+    final Map<String, dynamic> columns = _detailsColumns(details);
+    if (columns.isEmpty) return;
+    try {
+      await _client
+          .from(_table)
+          .update(columns)
+          .eq('id', entryId)
+          .eq('user_id', userId);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Ids of debits that are money lent (migration 005): never a plain
+  /// movement, so never taken as the other leg of an imported transfer.
+  Future<Set<String>> fetchLentEntryIds({required String userId}) async {
+    if (!SchemaCapabilities.treatments) return <String>{};
+    try {
+      final List<Map<String, dynamic>> rows =
+          await fetchAllPages(postgrestPages(() => _client
+              .from('receivables')
+              .select('id, ledger_entry_id')
+              .eq('user_id', userId)
+              .not('ledger_entry_id', 'is', null)
+              .order('id')));
+      return rows
+          .map((Map<String, dynamic> r) => r['ledger_entry_id'] as String?)
+          .whereType<String>()
+          .toSet();
     } catch (error) {
       throw ErrorMapper.map(error);
     }
@@ -392,6 +571,10 @@ class LedgerRepository {
   /// why the "no account" branch deletes any row a previous edit created.
   /// A unique index on `expense_id` guarantees at most one row per expense,
   /// so a retried insert cannot double-debit.
+  ///
+  /// [details] — what an imported statement printed about the payment — are
+  /// written with the movement; an edit that passes none leaves them as they
+  /// are.
   Future<void> syncForExpense({
     required String userId,
     required String expenseId,
@@ -400,6 +583,7 @@ class LedgerRepository {
     required DateTime date,
     String? description,
     String? categoryId,
+    MovementDetails? details,
   }) async {
     try {
       final List<Map<String, dynamic>> existing = await _client
@@ -427,6 +611,7 @@ class LedgerRepository {
         'txn_date': AppDateUtils.toDateString(date),
         'description': description,
         'category_id': categoryId,
+        ..._detailsColumns(details),
       };
 
       if (existing.isEmpty) {
@@ -456,6 +641,7 @@ class LedgerRepository {
     required double amount,
     required DateTime date,
     String? description,
+    MovementDetails? details,
   }) async {
     try {
       final List<Map<String, dynamic>> existing = await _client
@@ -481,6 +667,7 @@ class LedgerRepository {
         'amount': amount,
         'txn_date': AppDateUtils.toDateString(date),
         'description': description,
+        ..._detailsColumns(details),
       };
 
       if (existing.isEmpty) {

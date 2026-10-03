@@ -1,0 +1,44 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+/* Chosen tags first, then the ones that can be added. Scrolls rather than growing the form. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 112px;
+  overflow-y: auto;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--primary) calc(var(--wash) + 7%), var(--surface));
+  border: 0.75px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 100%;
+  transition: transform var(--dur-instant) ease-out;
+}
+
+.pill:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.pill:disabled {
+  opacity: 0.5;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

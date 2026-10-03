@@ -72,15 +72,10 @@ class ExportProvider extends AsyncProvider {
   ExportDataset? _preview;
   ExportSource? _source;
   bool _exporting = false;
-  ExportResult? _lastResult;
 
   ExportRequest get request => _request;
   ExportDataset? get preview => _preview;
   bool get exporting => _exporting;
-  ExportResult? get lastResult => _lastResult;
-
-  /// True when the chosen period genuinely holds nothing.
-  bool get isEmptyResult => isReady && (_preview?.hasRows == false);
 
   /// True when the query hit its row cap, so the report is partial.
   bool get isTruncated => _source?.truncated ?? false;
@@ -108,7 +103,6 @@ class ExportProvider extends AsyncProvider {
     );
     _preview = null;
     _source = null;
-    _lastResult = null;
     safeNotify();
   }
 
@@ -164,7 +158,6 @@ class ExportProvider extends AsyncProvider {
   void _invalidatePreview() {
     _preview = null;
     _source = null;
-    _lastResult = null;
     safeNotify();
   }
 
@@ -296,7 +289,6 @@ class ExportProvider extends AsyncProvider {
         format: _request.format,
         fileName: fileName,
       );
-      _lastResult = result;
 
       await _service.share(result, origin: shareOrigin);
       return result;
@@ -340,7 +332,6 @@ class ExportProvider extends AsyncProvider {
   void reset() {
     _preview = null;
     _source = null;
-    _lastResult = null;
     _failure = null;
     _exporting = false;
     safeNotify();

@@ -24,6 +24,9 @@ const entry = (id: string, direction: 'debit' | 'credit', amount: number, date: 
   incomeId: null,
   transferGroupId: null,
   counterpartyAccountId: null,
+  creditCardId: null,
+  receivableId: null,
+  claim: null,
   createdAt: created ?? null,
   category: null,
 });
@@ -180,6 +183,7 @@ describe('analytics', () => {
     categoryId,
     paymentMethodId: null,
     bankAccountId: null,
+    creditCardId: null,
     merchant: null,
     description: null,
     notes: null,

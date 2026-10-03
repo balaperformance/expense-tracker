@@ -67,6 +67,20 @@ class Formatters {
   static String percent(double ratio) =>
       '${(ratio * 100).clamp(0, 999).toStringAsFixed(0)}%';
 
+  static final DateFormat _clock = DateFormat('h:mm a');
+
+  /// "13:05" (or "13:05:00", as Postgres prints a time) → "1:05 PM". Text
+  /// that is not a time comes back unchanged.
+  static String clockTime(String hhmm) {
+    final RegExpMatch? match =
+        RegExp(r'^(\d{1,2}):(\d{2})(?::\d{2})?$').firstMatch(hhmm.trim());
+    if (match == null) return hhmm;
+    final int hour = int.parse(match.group(1)!);
+    final int minute = int.parse(match.group(2)!);
+    if (hour > 23 || minute > 59) return hhmm;
+    return _clock.format(DateTime(2000, 1, 1, hour, minute));
+  }
+
   /// Time-of-day greeting for the dashboard header.
   static String greeting([DateTime? now]) {
     final int hour = (now ?? DateTime.now()).hour;

@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/bank_account.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/bank_account_provider.dart';
 import '../../providers/budget_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/income_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/reports_provider.dart';
+import '../../services/push/notification_route.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/common/glass_nav_bar.dart';
 import '../../widgets/common/app_buttons.dart';
+import '../accounts/account_statement_screen.dart';
+import '../accounts/accounts_screen.dart';
+import '../cards/card_statement_screen.dart';
+import '../cards/credit_cards_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../expenses/expense_form_screen.dart';
 import '../expenses/expenses_screen.dart';
@@ -37,6 +46,80 @@ class _HomeShellState extends State<HomeShell> {
 
   static const int _dashboard = 0;
   static const int _expenses = 1;
+  static const int _reports = 3;
+
+  NotificationProvider? _notifications;
+  AppLifecycleListener? _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // A tapped push notification opens the page it names — whether the app
+      // was closed (the launch path), in the background or open (the stream).
+      final NotificationProvider notifications =
+          context.read<NotificationProvider>();
+      _notifications = notifications..addListener(_onNotification);
+      notifications.collectLaunchPath();
+      _onNotification();
+    });
+    // Coming back to the app renews an enabled phone's registration (its
+    // token and time zone), at most once an hour.
+    _lifecycle = AppLifecycleListener(
+      onResume: () => _notifications?.sync(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _notifications?.removeListener(_onNotification);
+    _lifecycle?.dispose();
+    super.dispose();
+  }
+
+  void _onNotification() {
+    final String? path = _notifications?.takePendingPath();
+    if (path != null && mounted) _openFromNotification(path);
+  }
+
+  /// The page a notification names, on top of the home tabs.
+  Future<void> _openFromNotification(String path) async {
+    final NotificationRoute route = NotificationRoute.parse(path);
+    final NavigatorState navigator = Navigator.of(context);
+    navigator.popUntil((Route<dynamic> r) => r.isFirst);
+    switch (route.destination) {
+      case NotificationDestination.home:
+        setState(() => _index = _dashboard);
+      case NotificationDestination.reports:
+        setState(() => _index = _reports);
+      case NotificationDestination.addExpense:
+        await _addExpense();
+      case NotificationDestination.account:
+        final String? userId = context.read<AuthProvider>().userId;
+        final BankAccountProvider accounts = context.read<BankAccountProvider>();
+        if (userId != null && accounts.accounts.isEmpty) {
+          await accounts.load(userId: userId);
+        }
+        if (!mounted) return;
+        BankAccount? account;
+        for (final BankAccount a in accounts.accounts) {
+          if (a.id == route.id) account = a;
+        }
+        final BankAccount? found = account;
+        await navigator.push(MaterialPageRoute<void>(
+          builder: (_) => found != null
+              ? AccountStatementScreen(account: found)
+              : const AccountsScreen(),
+        ));
+      case NotificationDestination.card:
+        await navigator.push(MaterialPageRoute<void>(
+          builder: (_) => SchemaCapabilities.creditCards && route.id != null
+              ? CardStatementScreen(cardId: route.id!)
+              : const CreditCardsScreen(),
+        ));
+    }
+  }
 
   /// One outline family throughout, so five icons read as one set rather
   /// than five separate metaphors.

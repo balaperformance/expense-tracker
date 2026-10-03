@@ -5,7 +5,7 @@
  */
 import { bankAccountFromRow, type BankAccount, type BankAccountBalance } from '@/domain/models';
 
-import { db, ensureOk, nowIso, rowsOf } from './db';
+import { allRowsOf, db, ensureOk, nowIso, rowsOf } from './db';
 
 const TABLE = 'bank_accounts';
 const SELECT = 'id, user_id, bank_name, nickname, last4, opening_balance, is_active, created_at';
@@ -15,24 +15,36 @@ export async function fetchAccounts(userId: string): Promise<BankAccount[]> {
   return rowsOf(result).map(bankAccountFromRow);
 }
 
-/** Every account balance, derived from the ledger in two requests. */
+/**
+ * Every account balance, derived from the whole ledger. The ledger is read
+ * page by page — one response is capped at the project's max-rows, and a
+ * balance summed over a truncated list would be silently wrong. Sums are
+ * kept in whole cents.
+ */
 export async function fetchAccountBalances(userId: string): Promise<BankAccountBalance[]> {
   const [accounts, movements] = await Promise.all([
     fetchAccounts(userId),
-    db().from('account_transactions').select('account_id, direction, amount').eq('user_id', userId),
+    allRowsOf((from, to, withCount) =>
+      db()
+        .from('account_transactions')
+        .select('id, account_id, direction, amount', withCount ? { count: 'exact' } : undefined)
+        .eq('user_id', userId)
+        .order('id')
+        .range(from, to),
+    ),
   ]);
   const credits = new Map<string, number>();
   const debits = new Map<string, number>();
-  for (const row of rowsOf(movements)) {
+  for (const row of movements) {
     const accountId = String(row.account_id);
-    const amount = Number(row.amount) || 0;
+    const cents = Math.round((Number(row.amount) || 0) * 100);
     const bucket = row.direction === 'credit' ? credits : debits;
-    bucket.set(accountId, (bucket.get(accountId) ?? 0) + amount);
+    bucket.set(accountId, (bucket.get(accountId) ?? 0) + cents);
   }
   return accounts.map((account) => ({
     account,
-    totalCredits: credits.get(account.id) ?? 0,
-    totalDebits: debits.get(account.id) ?? 0,
+    totalCredits: (credits.get(account.id) ?? 0) / 100,
+    totalDebits: (debits.get(account.id) ?? 0) / 100,
   }));
 }
 

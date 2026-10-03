@@ -18,6 +18,7 @@ import 'providers/dashboard_provider.dart';
 import 'providers/expense_provider.dart';
 import 'providers/export_provider.dart';
 import 'providers/income_provider.dart';
+import 'providers/notification_provider.dart';
 import 'providers/payment_method_provider.dart';
 import 'providers/reports_provider.dart';
 import 'providers/settings_provider.dart';
@@ -32,11 +33,14 @@ import 'repositories/expense_repository.dart';
 import 'repositories/export_repository.dart';
 import 'repositories/income_repository.dart';
 import 'repositories/ledger_repository.dart';
+import 'repositories/notification_repository.dart';
 import 'repositories/payment_method_repository.dart';
 import 'repositories/profile_repository.dart';
+import 'repositories/tag_repository.dart';
 import 'screens/auth/auth_gate.dart';
 import 'services/ai/ai_chat_service.dart';
 import 'services/preferences_service.dart';
+import 'services/push/push_platform.dart';
 import 'services/receipt/mlkit_receipt_scanner.dart';
 import 'services/receipt/receipt_scanner_service.dart';
 import 'services/statement_import/statement_engine.dart';
@@ -143,6 +147,7 @@ class ExpenseTrackerApp extends StatelessWidget {
             expenses: expenseRepository,
             income: incomeRepository,
             ledger: ledgerRepository,
+            tags: TagRepository(client),
           ),
         ),
         ChangeNotifierProvider<CreditCardProvider>(
@@ -183,6 +188,24 @@ class ExpenseTrackerApp extends StatelessWidget {
         ChangeNotifierProvider<AiChatProvider>(
           create: (BuildContext context) =>
               AiChatProvider(context.read<AiChatService>()),
+        ),
+        // Push notifications: produced by the push-notify Edge Function and
+        // delivered over Firebase Cloud Messaging (MainActivity / PushBridge).
+        // Created eagerly so a tapped notification's page and the sign-out
+        // cleanup are in place from the first frame.
+        ChangeNotifierProvider<NotificationProvider>(
+          lazy: false,
+          create: (BuildContext context) {
+            final NotificationProvider notifications = NotificationProvider(
+              platform: MethodChannelPushPlatform(),
+              repository: NotificationRepository(client),
+              preferences: preferences,
+            );
+            context
+                .read<AuthProvider>()
+                .addBeforeSignOut(notifications.releaseForSignOut);
+            return notifications;
+          },
         ),
       ],
       child: Consumer<SettingsProvider>(

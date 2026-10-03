@@ -5,7 +5,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'dev-dist', 'node_modules', 'public'] },
+  // The Edge Function's Deno entry files are type-checked by Deno; its core/ is linted here.
+  { ignores: ['dist', 'dev-dist', 'node_modules', 'public', 'supabase/functions/*/*.ts'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, ...tseslint.configs.strictTypeChecked],

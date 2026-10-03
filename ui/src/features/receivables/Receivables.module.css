@@ -1,0 +1,95 @@
+.totalRow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+}
+
+.total {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  line-height: 1.14;
+  letter-spacing: -0.4px;
+  font-weight: 500;
+}
+
+.person {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+  padding: 0 2px var(--sp-sm);
+}
+
+.claim {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+
+.claimHead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  width: 100%;
+  text-align: left;
+  color: inherit;
+}
+
+.claimText {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.claimFigures {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.repayments {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.repayments li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+}
+
+.repayments li span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list {
+  display: grid;
+  gap: var(--card-gap);
+}
+
+@media (min-width: 900px) {
+  .list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

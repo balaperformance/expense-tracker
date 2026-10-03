@@ -69,6 +69,7 @@ const expense = (id: string, amount: number, date: string, extra: Partial<Expens
   categoryId: 'food',
   paymentMethodId: null,
   bankAccountId: null,
+  creditCardId: null,
   merchant: null,
   description: null,
   notes: null,

@@ -10,6 +10,8 @@ import '../models/payment_method.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/income_repository.dart';
 import '../repositories/ledger_repository.dart';
+import '../repositories/tag_repository.dart';
+import '../services/schema_capabilities.dart';
 import '../services/statement_import/statement_engine.dart';
 import 'async_state.dart';
 
@@ -24,6 +26,9 @@ class ImportRow {
   final Map<String, Object?> flags;
 
   String get id => json['id']! as String;
+
+  /// The statement in this session the row was read from.
+  String? get sourceStatementId => json['sourceStatementId'] as String?;
   DateTime get date => AppDateUtils.parseDate(json['transactionDate']! as String);
   String get isoDate => json['transactionDate']! as String;
   String get description => (json['description'] as String?) ?? '';
@@ -45,6 +50,53 @@ class ImportRow {
           .whereType<String>()
           .toList();
 
+  /// The account the row goes into: the statement's own, or — on a statement
+  /// covering several accounts — the one it names. Empty until chosen when
+  /// that account could not be matched to one of the user's.
+  String get bankAccountId => (json['bankAccountId'] as String?) ?? '';
+
+  /// 'matched', 'unmatched' or 'chosen' on a multi-account statement.
+  String? get accountStatus => json['accountStatus'] as String?;
+
+  /// The account the statement names for this row, as printed ("HDFC Bank - 59").
+  String? get sourceAccount => json['sourceAccount'] as String?;
+
+  /// A row of a statement covering several accounts can move to another one.
+  bool get movable => sourceAccount != null;
+
+  /// The statement printed a time of day (Paytm); null when it left it blank.
+  bool get hasTime => json.containsKey('transactionTime');
+  String? get transactionTime => json['transactionTime'] as String?;
+
+  /// The statement has a Notes column (Paytm): its note goes to the expense's
+  /// notes. Absent for bank statements, which keep their import marker.
+  bool get hasNotes => json.containsKey('notes');
+  String? get notes => json['notes'] as String?;
+
+  /// The statement's own tags on the row, without the "#".
+  List<String> get tags =>
+      ((json['tags'] as List<Object?>?) ?? const <Object?>[])
+          .whereType<String>()
+          .toList();
+
+  /// The other side's UPI ID, when printed.
+  String? get upiId => json['upiId'] as String?;
+
+  Map<String, Object?>? get _target => json['transferTarget'] is Map
+      ? (json['transferTarget']! as Map).cast<String, Object?>()
+      : null;
+
+  /// For a transfer: the other side — 'account', 'card' or 'cash' — or null
+  /// when unknown (it is then imported as balance only).
+  String? get transferTargetType => _target?['type'] as String?;
+  String? get transferAccountId =>
+      transferTargetType == 'account' ? _target!['accountId'] as String? : null;
+  String? get transferCardId =>
+      transferTargetType == 'card' ? _target!['cardId'] as String? : null;
+
+  /// An expense paid on someone else's behalf (only ever set on the web).
+  bool get reimbursable => json['reimbursable'] == true;
+
   bool get blocking => flags['blocking'] == true;
   bool get uncategorized => flags['uncategorized'] == true;
   bool get attention => flags['attention'] == true;
@@ -52,6 +104,12 @@ class ImportRow {
   String? get duplicateBadge => flags['duplicateBadge'] as String?;
   String? get duplicateText => flags['duplicateText'] as String?;
   bool get isDuplicate => json['duplicate'] != null;
+
+  /// What the row still lacks before it can be imported as chosen — 'account'
+  /// on a multi-account statement whose account could not be matched,
+  /// 'transferTarget' for a transfer with no other side — and how to say so.
+  String? get problem => flags['problem'] as String?;
+  String? get problemText => flags['problemText'] as String?;
 }
 
 /// One statement read in this session.
@@ -77,6 +135,11 @@ class ImportedStatement {
           .map((Object? w) => (w as Map<String, Object?>)['message'] as String?)
           .whereType<String>()
           .toList();
+
+  /// The statement covers several of the user's accounts (a payment app's UPI
+  /// statement): each row went to the account it names, not to the one chosen
+  /// for the upload.
+  bool get accountPerRow => json['accountPerRow'] == true;
 }
 
 /// A statement waiting for its password.
@@ -87,6 +150,32 @@ class PendingPassword {
   final bool incorrect;
 }
 
+/// What a plan writes, by kind — the engine's `PlanCounts`.
+class ImportCounts {
+  const ImportCounts(this.json);
+
+  final Map<String, Object?> json;
+
+  int _n(String key) => (json[key] as num?)?.toInt() ?? 0;
+
+  int get expenses => _n('expenses');
+
+  /// Expenses paid on someone else's behalf — not personal spending.
+  int get paidFor => _n('paidFor');
+  int get income => _n('income');
+
+  /// Balance only: refunds, card bills, cash and transfers with no tracked side.
+  int get movements => _n('movements');
+
+  /// Transfers between two of the user's own accounts.
+  int get transfers => _n('transfers');
+  int get lent => _n('lent');
+  int get repaid => _n('repaid');
+
+  int get total =>
+      expenses + paidFor + income + movements + transfers + lent + repaid;
+}
+
 /// Counts of what one import wrote.
 class ImportOutcome {
   ImportOutcome();
@@ -94,13 +183,22 @@ class ImportOutcome {
   int expenses = 0;
   int income = 0;
   int movements = 0;
+
+  /// Transfers between the user's own accounts (both legs, or linked).
+  int transfers = 0;
+
+  /// Loans, repayments and purchases paid for someone (web treatments).
+  int other = 0;
   int skipped = 0;
+
+  /// Rows saved, but without all their tags or statement details.
+  int partial = 0;
   final List<String> failures = <String>[];
 
   /// Operations not attempted because writes kept failing.
   int notAttempted = 0;
 
-  int get written => expenses + income + movements;
+  int get written => expenses + income + movements + transfers + other;
 }
 
 /// The plan the user confirms before anything is written.
@@ -117,8 +215,22 @@ class ImportPreview {
       ((json['skipped'] as List<Object?>?) ?? const <Object?>[])
           .cast<Map<String, Object?>>();
 
+  /// How many of each kind, from the engine.
+  ImportCounts get counts => ImportCounts(
+      (json['counts'] as Map<String, Object?>?) ?? const <String, Object?>{});
+
   Iterable<Map<String, Object?>> ofType(String type) =>
       operations.where((Map<String, Object?> op) => op['type'] == type);
+
+  /// Operations per account, in the order the accounts first appear.
+  Map<String, int> get perAccount {
+    final Map<String, int> counts = <String, int>{};
+    for (final Map<String, Object?> op in operations) {
+      final String id = (op['bankAccountId'] as String?) ?? '';
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  }
 
   static double total(Iterable<Map<String, Object?>> ops) {
     int cents = 0;
@@ -132,7 +244,11 @@ class ImportPreview {
 /// Statement import, the phone's counterpart of the web Import statement
 /// screen: the same engine reads, classifies, de-duplicates and plans; this
 /// provider holds the session and performs the confirmed writes through the
-/// app's own repositories, exactly what adding each row by hand would do.
+/// app's own repositories, exactly what the web import writes.
+///
+/// A payment app's statement (Paytm) covers several accounts: each row goes to
+/// the account it names, duplicates are checked on every account the session
+/// touches, and a row whose account could not be matched waits for the user.
 ///
 /// Nothing is written until [execute] runs after the user confirms.
 class StatementImportProvider extends AsyncProvider {
@@ -141,15 +257,18 @@ class StatementImportProvider extends AsyncProvider {
     required ExpenseRepository expenses,
     required IncomeRepository income,
     required LedgerRepository ledger,
+    required TagRepository tags,
   })  : _engine = engine,
         _expenses = expenses,
         _income = income,
-        _ledger = ledger;
+        _ledger = ledger,
+        _tags = tags;
 
   final StatementEngine _engine;
   final ExpenseRepository _expenses;
   final IncomeRepository _income;
   final LedgerRepository _ledger;
+  final TagRepository _tags;
 
   /// How far around a statement's dates recorded rows are checked.
   static const int nearbyDays = 2;
@@ -179,6 +298,7 @@ class StatementImportProvider extends AsyncProvider {
   ImportOutcome? _outcome;
 
   BankAccount? get account => _account;
+  List<BankAccount> get accounts => List<BankAccount>.unmodifiable(_accounts);
   List<ImportedStatement> get statements =>
       List<ImportedStatement>.unmodifiable(_statements);
   List<ImportRow> get rows => _items
@@ -197,6 +317,10 @@ class StatementImportProvider extends AsyncProvider {
   (int, int)? get importing => _importing;
   ImportOutcome? get outcome => _outcome;
   bool get hasRows => _items.isNotEmpty;
+
+  /// A statement in this session covers several accounts: rows go to the
+  /// accounts it names rather than to [account].
+  bool get multiAccount => _statements.any((ImportedStatement s) => s.accountPerRow);
 
   @override
   bool get isEmptyData => _items.isEmpty;
@@ -223,9 +347,11 @@ class StatementImportProvider extends AsyncProvider {
     safeNotify();
   }
 
-  void clearProblem() {
-    _problem = null;
-    safeNotify();
+  BankAccount? accountById(String id) {
+    for (final BankAccount a in _accounts) {
+      if (a.id == id) return a;
+    }
+    return null;
   }
 
   /// Picks one statement file and reads it.
@@ -300,7 +426,14 @@ class StatementImportProvider extends AsyncProvider {
 
       List<Map<String, Object?>> existing = <Map<String, Object?>>[];
       try {
-        existing = await _existingFor(<ImportedStatement>[..._statements, statement]);
+        // Every account the session's rows are on: a Paytm statement spans several.
+        existing = await _existingFor(
+          <ImportedStatement>[..._statements, statement],
+          <String>[
+            ..._accountsOf(_items),
+            ..._accountsOf(transactions.whereType<Map<String, Object?>>()),
+          ],
+        );
       } catch (_) {
         // Still reviewable — overlaps between these files are caught — but
         // importing waits until the check against recorded rows succeeds.
@@ -338,9 +471,17 @@ class StatementImportProvider extends AsyncProvider {
     }
   }
 
-  /// Recorded movements on the account around every statement in the session.
+  static Iterable<String> _accountsOf(Iterable<Map<String, Object?>> rows) =>
+      rows
+          .map((Map<String, Object?> r) => r['bankAccountId'] as String?)
+          .whereType<String>()
+          .where((String id) => id.isNotEmpty);
+
+  /// Recorded movements around every statement in the session, on the
+  /// upload's account and every account [accountIds] names.
   Future<List<Map<String, Object?>>> _existingFor(
     List<ImportedStatement> statements,
+    Iterable<String> accountIds,
   ) async {
     final Object? range = await _engine.call('sessionRange', <String, Object?>{
       'statements': statements
@@ -351,20 +492,29 @@ class StatementImportProvider extends AsyncProvider {
     return _existingBetween(
       AppDateUtils.parseDate(range['from']! as String),
       AppDateUtils.parseDate(range['to']! as String),
+      <String>{_account!.id, ...accountIds},
     );
   }
 
   Future<List<Map<String, Object?>>> _existingBetween(
     DateTime from,
     DateTime to,
+    Set<String> accountIds,
   ) async {
-    final List<LedgerEntry> entries = await _ledger.fetchForAccount(
-      userId: _userId!,
-      accountId: _account!.id,
-      from: DateTime(from.year, from.month, from.day - nearbyDays),
-      toExclusive: DateTime(to.year, to.month, to.day + nearbyDays + 1),
+    final List<List<LedgerEntry>> lists = await Future.wait(
+      accountIds.where((String id) => id.isNotEmpty).map(
+            (String accountId) => _ledger.fetchForAccount(
+              userId: _userId!,
+              accountId: accountId,
+              from: DateTime(from.year, from.month, from.day - nearbyDays),
+              toExclusive: DateTime(to.year, to.month, to.day + nearbyDays + 1),
+            ),
+          ),
     );
-    return entries.map(EngineJson.existing).toList();
+    return <Map<String, Object?>>[
+      for (final List<LedgerEntry> entries in lists)
+        ...entries.map(EngineJson.existing),
+    ];
   }
 
   Future<void> _refreshView() async {
@@ -401,29 +551,36 @@ class StatementImportProvider extends AsyncProvider {
         <String, Object?>{'type': 'setSelected', 'ids': ids.toList(), 'selected': selected},
       );
 
-  Future<void> edit(String id, Map<String, Object?> patch) => reduce(
-        <String, Object?>{'type': 'edit', 'id': id, 'patch': patch},
-      );
+  /// Edits one row. A row moved to another account is checked again against
+  /// that account's recorded movements; if that check fails, importing waits.
+  Future<void> edit(String id, Map<String, Object?> patch) async {
+    await reduce(<String, Object?>{'type': 'edit', 'id': id, 'patch': patch});
+    if (patch.containsKey('bankAccountId')) await recheck(quiet: true);
+  }
 
   Future<void> remove(String id) =>
       reduce(<String, Object?>{'type': 'remove', 'id': id});
 
-  /// Kinds valid for a direction, from the engine.
+  /// Kinds valid for a direction, from the engine. Loans and reimbursements
+  /// are recorded on the web app, so the phone does not offer them.
   Future<List<String>> kindsFor(bool debit) async {
     final Object? kinds = await _engine.call(
       'kindsFor',
-      <String, Object?>{'type': debit ? 'debit' : 'credit'},
+      <String, Object?>{'type': debit ? 'debit' : 'credit', 'treatments': false},
     );
     return (kinds as List<Object?>? ?? const <Object?>[]).whereType<String>().toList();
   }
 
-  /// Re-runs the check against recorded transactions after it failed.
-  Future<void> recheck() async {
+  /// Re-runs the check against recorded transactions on every account the
+  /// session's rows are on. [quiet]: after a row moved to another account —
+  /// a failure then only holds the import back.
+  Future<void> recheck({bool quiet = false}) async {
     if (_statements.isEmpty) return;
     _rechecking = true;
     safeNotify();
     try {
-      final List<Map<String, Object?>> existing = await _existingFor(_statements);
+      final List<Map<String, Object?>> existing =
+          await _existingFor(_statements, _accountsOf(_items));
       final List<Object?> next = (await _engine.call('recheck', <String, Object?>{
         'items': _items,
         'existing': existing,
@@ -432,13 +589,29 @@ class StatementImportProvider extends AsyncProvider {
       await _refreshView();
       _checkFailed = false;
     } catch (error) {
-      _problem =
-          'Still could not check for recorded transactions. ${ErrorMapper.map(error).message}';
+      if (quiet) {
+        _checkFailed = true;
+      } else {
+        _problem =
+            'Still could not check for recorded transactions. ${ErrorMapper.map(error).message}';
+      }
     } finally {
       _rechecking = false;
       safeNotify();
     }
   }
+
+  /// What the database can store, so the plan writes each row exactly as the
+  /// web import would on the same database.
+  Map<String, Object?> get _planOptions => <String, Object?>{
+        'linkAccounts': SchemaCapabilities.treatments,
+        'pairAccounts': SchemaCapabilities.transfers,
+        'storeDetails': SchemaCapabilities.statementDetails,
+        'storeTags': SchemaCapabilities.tags,
+        'accountNames': <String, String>{
+          for (final BankAccount a in _accounts) a.id: a.nickname,
+        },
+      };
 
   /// The exact writes, for the user to confirm. Null with [problem] set when
   /// nothing can be imported yet.
@@ -450,6 +623,7 @@ class StatementImportProvider extends AsyncProvider {
         'items': _items,
         'categories': _categories.map(EngineJson.category).toList(),
         'paymentMethods': paymentMethods.map(EngineJson.paymentMethod).toList(),
+        'options': _planOptions,
       }))! as Map<String, Object?>);
       if (plan.operations.isEmpty) {
         final String? reason = plan.skipped.isEmpty
@@ -480,19 +654,28 @@ class StatementImportProvider extends AsyncProvider {
     safeNotify();
     final ImportOutcome outcome = ImportOutcome();
     try {
-      final List<DateTime> dates = preview.operations
-          .map((Map<String, Object?> op) => AppDateUtils.parseDate(op['date']! as String))
-          .toList()
-        ..sort();
-      final List<Map<String, Object?>> fresh =
-          await _existingBetween(dates.first, dates.last);
+      // Re-check against the ledger as it is now, on every account written to.
+      final Map<String, List<DateTime>> byAccount = <String, List<DateTime>>{};
+      for (final Map<String, Object?> op in preview.operations) {
+        (byAccount[op['bankAccountId']! as String] ??= <DateTime>[])
+            .add(AppDateUtils.parseDate(op['date']! as String));
+      }
+      final List<Map<String, Object?>> fresh = <Map<String, Object?>>[];
+      for (final MapEntry<String, List<DateTime>> entry in byAccount.entries) {
+        final List<DateTime> dates = entry.value..sort();
+        fresh.addAll(await _existingBetween(dates.first, dates.last, <String>{entry.key}));
+      }
       final ImportPreview finalPlan = ImportPreview((await _engine.call('finalPlan', <String, Object?>{
         'plan': preview.json,
         'items': _items,
         'fresh': fresh,
       }))! as Map<String, Object?>);
       outcome.skipped = finalPlan.skipped.length;
+      final Map<String, String> matches =
+          await _autoMatches(userId, finalPlan.operations);
 
+      final Map<String, String> saved = <String, String>{};
+      final List<Map<String, Object?>> written = <Map<String, Object?>>[];
       int consecutive = 0;
       final List<Map<String, Object?>> ops = finalPlan.operations;
       for (int i = 0; i < ops.length; i++) {
@@ -500,24 +683,25 @@ class StatementImportProvider extends AsyncProvider {
           outcome.notAttempted = ops.length - i;
           break;
         }
+        final Map<String, Object?> op = ops[i];
         try {
-          await _write(userId, ops[i]);
+          final (String? entryId, bool complete) =
+              await _write(userId, op, saved, matches);
+          if (entryId != null) saved[op['itemId']! as String] = entryId;
+          if (!complete) outcome.partial++;
           consecutive = 0;
-          switch (ops[i]['type']) {
-            case 'expense':
-              outcome.expenses++;
-            case 'income':
-              outcome.income++;
-            default:
-              outcome.movements++;
-          }
+          written.add(op);
         } catch (error) {
-          consecutive++;
+          // A row that pays back another row of this import fails on its own,
+          // not the connection.
+          final String? settles = op['settlesItemId'] as String?;
+          if (!(settles != null && !saved.containsKey(settles))) consecutive++;
           outcome.failures.add(ErrorMapper.map(error).message);
         }
         _importing = (i + 1, ops.length);
         safeNotify();
       }
+      await _tally(outcome, written);
       _outcome = outcome;
       return outcome;
     } catch (error) {
@@ -529,36 +713,122 @@ class StatementImportProvider extends AsyncProvider {
     }
   }
 
-  /// One planned write, through the app's normal write paths.
-  Future<void> _write(String userId, Map<String, Object?> op) async {
+  /// What was written, by kind — the engine's counting, the web's wording.
+  Future<void> _tally(ImportOutcome outcome, List<Map<String, Object?>> written) async {
+    if (written.isEmpty) return;
+    ImportCounts counts;
+    try {
+      counts = ImportCounts((await _engine.call(
+        'counts',
+        <String, Object?>{'operations': written},
+      ))! as Map<String, Object?>);
+    } catch (_) {
+      // The rows are saved either way; count them by type instead.
+      counts = ImportCounts(<String, Object?>{
+        'expenses': written.where((Map<String, Object?> o) => o['type'] == 'expense').length,
+        'income': written.where((Map<String, Object?> o) => o['type'] == 'income').length,
+        'movements': written.where((Map<String, Object?> o) => o['type'] == 'movement').length,
+        'transfers': written
+            .where((Map<String, Object?> o) => o['type'] == 'transfer' || o['type'] == 'treatment')
+            .length,
+      });
+    }
+    outcome
+      ..expenses = counts.expenses
+      ..income = counts.income
+      ..movements = counts.movements
+      ..transfers = counts.transfers
+      ..other = counts.paidFor + counts.lent + counts.repaid;
+  }
+
+  /// Transfers whose other leg is already on that account (both statements
+  /// imported): linked instead of adding a second leg. Only a single plain
+  /// match is used — the engine's rule; this reads the ledger it needs.
+  Future<Map<String, String>> _autoMatches(
+    String userId,
+    List<Map<String, Object?>> operations,
+  ) async {
+    final List<Object?> windows = ((await _engine.call(
+          'autoMatchWindows',
+          <String, Object?>{'operations': operations},
+        )) as List<Object?>?) ??
+        const <Object?>[];
+    if (windows.isEmpty) return <String, String>{};
+    final Set<String> lent = await _ledger.fetchLentEntryIds(userId: userId);
+    final List<Map<String, Object?>> entries = <Map<String, Object?>>[];
+    for (final Object? window in windows) {
+      final Map<String, Object?> w = window! as Map<String, Object?>;
+      final List<LedgerEntry> rows = await _ledger.fetchForAccount(
+        userId: userId,
+        accountId: w['accountId']! as String,
+        from: AppDateUtils.parseDate(w['from']! as String),
+        toExclusive: AppDateUtils.parseDate(w['toExclusive']! as String),
+      );
+      entries.addAll(rows.map(
+          (LedgerEntry e) => EngineJson.ledgerEntry(e, lent: lent.contains(e.id))));
+    }
+    final Object? found = await _engine.call('autoMatches', <String, Object?>{
+      'operations': operations,
+      'entries': entries,
+    });
+    if (found is! Map) return <String, String>{};
+    return <String, String>{
+      for (final MapEntry<Object?, Object?> e in found.entries)
+        e.key! as String: e.value! as String,
+    };
+  }
+
+  /// One planned write, through the app's normal write paths. Returns the
+  /// saved movement's id when a later row may refer back to it, and whether
+  /// its tags and statement details were saved too.
+  Future<(String?, bool)> _write(
+    String userId,
+    Map<String, Object?> op,
+    Map<String, String> saved,
+    Map<String, String> matches,
+  ) async {
     final String accountId = op['bankAccountId']! as String;
     final double amount = (op['amount']! as num).toDouble();
     final DateTime date = AppDateUtils.parseDate(op['date']! as String);
     final String? description = op['description'] as String?;
+    final MovementDetails? details = MovementDetails.fromJson(op['details']);
+    final List<String> tags = ((op['tags'] as List<Object?>?) ?? const <Object?>[])
+        .whereType<String>()
+        .toList();
+    final LedgerDirection direction =
+        LedgerDirectionWire.parse(op['direction'] as String?);
     switch (op['type']) {
       case 'expense':
-        await _expenses.create(Expense(
-          id: '',
-          userId: userId,
-          amount: amount,
-          expenseDate: date,
-          categoryId: op['categoryId'] as String?,
-          paymentMethodId: op['paymentMethodId'] as String?,
-          bankAccountId: accountId,
-          merchant: op['merchant'] as String?,
-          description: description,
-          notes: op['notes'] as String?,
-        ));
+        final Expense expense = await _expenses.create(
+          Expense(
+            id: '',
+            userId: userId,
+            amount: amount,
+            expenseDate: date,
+            categoryId: op['categoryId'] as String?,
+            paymentMethodId: op['paymentMethodId'] as String?,
+            bankAccountId: accountId,
+            merchant: op['merchant'] as String?,
+            description: description,
+            notes: op['notes'] as String?,
+          ),
+          details: details,
+        );
+        return (null, await _withTags(TagKind.expense, expense.id, tags));
       case 'income':
-        await _income.create(Income(
-          id: '',
-          userId: userId,
-          amount: amount,
-          incomeDate: date,
-          source: op['source'] as String?,
-          description: description,
-          bankAccountId: accountId,
-        ));
+        final Income income = await _income.create(
+          Income(
+            id: '',
+            userId: userId,
+            amount: amount,
+            incomeDate: date,
+            source: op['source'] as String?,
+            description: description,
+            bankAccountId: accountId,
+          ),
+          details: details,
+        );
+        return (null, await _withTags(TagKind.income, income.id, tags));
       case 'movement':
         final String? cardId = op['creditCardId'] as String?;
         if (cardId != null) {
@@ -571,26 +841,90 @@ class StatementImportProvider extends AsyncProvider {
             amount: amount,
             date: date,
             description: description ?? 'Card bill payment',
-          );
-        } else if (op['direction'] == 'credit') {
-          await _ledger.deposit(
-            userId: userId,
-            accountId: accountId,
-            amount: amount,
-            date: date,
-            description: description,
+            details: details,
           );
         } else {
-          await _ledger.withdraw(
+          await _ledger.recordMovement(
             userId: userId,
             accountId: accountId,
+            direction: direction,
             amount: amount,
             date: date,
             description: description,
+            details: details,
           );
         }
+        return (null, true);
+      case 'transfer':
+        await _ledger.recordTransferPair(
+          userId: userId,
+          accountId: accountId,
+          counterpartyAccountId: op['counterpartyAccountId']! as String,
+          direction: direction,
+          amount: amount,
+          date: date,
+          description: description ?? '',
+          counterpartDescription:
+              (op['counterpartDescription'] as String?) ?? description ?? '',
+          details: details,
+        );
+        return (null, true);
+      case 'treatment':
+        final String? settlesItemId = op['settlesItemId'] as String?;
+        String? settleEntryId;
+        if (settlesItemId != null) {
+          settleEntryId = saved[settlesItemId];
+          if (settleEntryId == null) {
+            throw const AppException(
+                'What this pays back could not be saved, so it was left out.');
+          }
+        }
+        final Map<String, Object?> payload = ((await _engine.call(
+          'treatmentPayload',
+          <String, Object?>{
+            'request': op['request'],
+            'settleEntryId': settleEntryId,
+            'matchEntryId': matches[op['itemId']],
+          },
+        ))! as Map<String, Object?>);
+        final String entryId = await _ledger.recordBankMovement(
+          accountId: accountId,
+          direction: direction,
+          amount: amount,
+          date: date,
+          description: description ?? '',
+          treatment: payload,
+        );
+        // The database function saves the movement and its treatment; the
+        // statement's details follow it.
+        bool complete = true;
+        if (details != null) {
+          try {
+            await _ledger.setMovementDetails(
+                userId: userId, entryId: entryId, details: details);
+          } catch (_) {
+            complete = false;
+          }
+        }
+        // Tags only ever ride on a purchase paid for someone, which the phone
+        // does not record; were there any, they could not be attached here.
+        if (tags.isNotEmpty) complete = false;
+        return (entryId, complete);
       default:
         throw const AppException('Unknown import row.');
+    }
+  }
+
+  /// Tags are their own write, after the row they belong to: a failure leaves
+  /// the row saved (it is reported, not retried, so nothing is written twice).
+  Future<bool> _withTags(TagKind kind, String id, List<String> tags) async {
+    if (tags.isEmpty) return true;
+    if (!SchemaCapabilities.tags || id.isEmpty) return false;
+    try {
+      await _tags.setTags(kind: kind, id: id, names: tags);
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

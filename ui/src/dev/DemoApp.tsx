@@ -100,6 +100,7 @@ for (const [mi, month] of trailingMonths(now, 6).entries()) {
       categoryId: c.id,
       paymentMethodId: accountId ? null : (upi?.id ?? null),
       bankAccountId: accountId,
+      creditCardId: null,
       merchant,
       description: null,
       notes: null,
@@ -132,16 +133,16 @@ const income: Income[] = trailingMonths(now, 6).flatMap((month, i) => [
 const ledger: LedgerEntry[] = [
   ...expenses.filter((e) => e.bankAccountId).map((e): LedgerEntry => ({
     id: `led-${e.id}`, userId: USER_ID, accountId: e.bankAccountId ?? '', direction: 'debit', amount: e.amount, txnDate: e.expenseDate,
-    description: e.merchant, categoryId: e.categoryId, expenseId: e.id, incomeId: null, transferGroupId: null, counterpartyAccountId: null,
-    createdAt: e.createdAt, category: e.category,
+    description: e.merchant, categoryId: e.categoryId, expenseId: e.id, incomeId: null, transferGroupId: null, counterpartyAccountId: null, creditCardId: null,
+    receivableId: null, claim: null, createdAt: e.createdAt, category: e.category,
   })),
   ...income.filter((i) => i.bankAccountId).map((i): LedgerEntry => ({
     id: `led-${i.id}`, userId: USER_ID, accountId: i.bankAccountId ?? '', direction: 'credit', amount: i.amount, txnDate: i.incomeDate,
-    description: i.source, categoryId: null, expenseId: null, incomeId: i.id, transferGroupId: null, counterpartyAccountId: null,
-    createdAt: i.createdAt, category: null,
+    description: i.source, categoryId: null, expenseId: null, incomeId: i.id, transferGroupId: null, counterpartyAccountId: null, creditCardId: null,
+    receivableId: null, claim: null, createdAt: i.createdAt, category: null,
   })),
-  { id: 'tr-1', userId: USER_ID, accountId: 'acc-1', direction: 'debit', amount: 25000, txnDate: addDays(now, -3), description: 'Transfer to Savings', categoryId: null, expenseId: null, incomeId: null, transferGroupId: 'g1', counterpartyAccountId: 'acc-2', createdAt: stamp(addDays(now, -3), 1), category: null },
-  { id: 'tr-2', userId: USER_ID, accountId: 'acc-2', direction: 'credit', amount: 25000, txnDate: addDays(now, -3), description: 'Transfer from Salary', categoryId: null, expenseId: null, incomeId: null, transferGroupId: 'g1', counterpartyAccountId: 'acc-1', createdAt: stamp(addDays(now, -3), 1), category: null },
+  { id: 'tr-1', userId: USER_ID, accountId: 'acc-1', direction: 'debit', amount: 25000, txnDate: addDays(now, -3), description: 'Transfer to Savings', categoryId: null, expenseId: null, incomeId: null, transferGroupId: 'g1', counterpartyAccountId: 'acc-2', creditCardId: null, receivableId: null, claim: null, createdAt: stamp(addDays(now, -3), 1), category: null },
+  { id: 'tr-2', userId: USER_ID, accountId: 'acc-2', direction: 'credit', amount: 25000, txnDate: addDays(now, -3), description: 'Transfer from Salary', categoryId: null, expenseId: null, incomeId: null, transferGroupId: 'g1', counterpartyAccountId: 'acc-1', creditCardId: null, receivableId: null, claim: null, createdAt: stamp(addDays(now, -3), 1), category: null },
 ];
 for (const balance of accounts) {
   const mine = ledger.filter((l) => l.accountId === balance.account.id);
@@ -184,7 +185,7 @@ function seededClient(): QueryClient {
       queries: { staleTime: Infinity, gcTime: Infinity, retry: false, refetchOnWindowFocus: false, refetchOnMount: false },
     },
   });
-  const caps = { merchant: true, bankAccounts: true, expenseBankLink: true, incomeBankLink: true, transfers: true };
+  const caps = { merchant: true, bankAccounts: true, expenseBankLink: true, incomeBankLink: true, transfers: true, creditCards: true, treatments: true, tags: true, statementDetails: false, notifications: false };
   overrideCapabilities(caps);
   const set = (key: readonly unknown[], data: unknown) => client.setQueryData(key, data);
   set(['bootstrap', USER_ID], true);
@@ -193,10 +194,20 @@ function seededClient(): QueryClient {
   set(keys.categories(USER_ID), categories);
   set(keys.paymentMethods(USER_ID), methods);
   set([...keys.accounts(USER_ID), true], accounts);
+  // No sample cards: the Credit cards screens open on their empty state.
+  set([...keys.creditCards(USER_ID), true], []);
+  // Nothing lent or paid for anyone: the "Owed to you" screen opens on its empty state.
+  set([...keys.claims(USER_ID), true], []);
+  // A few tags so the tag field has suggestions; the first expense carries two of them.
+  const sampleTags = ['bikespending', 'carspending', 'myfamfood', 'myownspending'].map((name, i) => ({ id: `tag-${i}`, name }));
+  set([...keys.tags(USER_ID), true], sampleTags);
+  for (const e of expenses.slice(0, 20)) set(keys.transactionTags(USER_ID, 'expense', e.id), e === expenses[0] ? ['tag-1', 'tag-3'] : []);
   set(keys.dashboard(USER_ID, firstOfMonth(now)), monthRaw(now));
   for (let i = 0; i < 6; i++) set(keys.reports(USER_ID, addMonths(now, -i)), monthRaw(addMonths(now, -i)));
   set(keys.budgets(USER_ID, firstOfMonth(now)), buildBudgetProgress(budgets, inMonth(expenses, (e) => e.expenseDate, now)));
   set(keys.expenses(USER_ID, EMPTY_EXPENSE_FILTER), { pages: [expenses.slice(0, 20)], pageParams: [0] });
+  // Quick add on a new expense reads the same sample purchases.
+  set(keys.frequentExpenses(USER_ID, now), { expenses, paidFor: new Set<string>() });
   set(keys.income(USER_ID, ''), { pages: [income.slice(0, 20)], pageParams: [0] });
   for (const e of expenses.slice(0, 20)) set(keys.expense(USER_ID, e.id), e);
   for (const balance of accounts) {

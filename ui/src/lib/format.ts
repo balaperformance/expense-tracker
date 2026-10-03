@@ -111,6 +111,22 @@ export function relativeDay(iso: IsoDate, now: Date = new Date()): string {
   return dayMonthYear(iso);
 }
 
+/** `1st`, `2nd`, `3rd`, `11th`, `22nd` — a day of the month in words. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
 /** `42%` — clamped to 0–999 like the Flutter formatter. */
 export function formatPercent(ratio: number): string {
   const value = Math.min(Math.max(ratio * 100, 0), 999);
@@ -122,6 +138,14 @@ export function greeting(now: Date = new Date()): string {
   if (hour < 12) return 'Good morning';
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
+}
+
+/** "14:06" → `2:06 PM`; anything that is not "HH:mm" comes back unchanged. */
+export function formatTime(hhmm: string): string {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm);
+  if (!m) return hhmm;
+  const hour = Number(m[1]);
+  return `${String(hour % 12 || 12)}:${m[2] ?? '00'} ${hour < 12 ? 'AM' : 'PM'}`;
 }
 
 /** `2026-09-24 18:05` */

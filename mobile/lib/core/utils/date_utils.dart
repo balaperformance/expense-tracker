@@ -64,7 +64,4 @@ class AppDateUtils {
     final DateTime parsed = DateTime.parse(value);
     return DateTime(parsed.year, parsed.month, parsed.day);
   }
-
-  static bool isSameMonth(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month;
 }

@@ -14,6 +14,7 @@ import '../../providers/statement_import_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/income_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/payment_method_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -171,6 +172,11 @@ class _AuthGateState extends State<AuthGate> {
           _bootstrappedUserId = userId;
         }
       });
+      // Push notifications: this phone's state and the user's switches, and an
+      // enabled phone's registration renewed. Never holds up the shell.
+      if (failure == null) {
+        context.read<NotificationProvider>().attach(userId);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _bootstrapError = error.toString());
@@ -203,6 +209,8 @@ class _AuthGateState extends State<AuthGate> {
     context.read<ReportsProvider>().reset();
     // The conversation is the user's; the next account must not read it.
     context.read<AiChatProvider>().reset();
+    // The phone stops showing the previous account's notifications at once.
+    context.read<NotificationProvider>().reset();
     setState(() {
       _bootstrappedUserId = null;
       _bootstrapError = null;

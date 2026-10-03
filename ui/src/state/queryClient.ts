@@ -38,11 +38,44 @@ export const keys = {
   income: (userId: string, search: string) => ['income', userId, search] as const,
   incomeItem: (userId: string, id: string) => ['incomeItem', userId, id] as const,
   statement: (userId: string, accountId: string, period: string) => ['statement', userId, accountId, period] as const,
+  creditCards: (userId: string) => ['creditCards', userId] as const,
+  cardStatement: (userId: string, cardId: string) => ['cardStatement', userId, cardId] as const,
   exportPreview: (userId: string, request: unknown) => ['export', userId, request] as const,
+  /** Money lent and purchases paid for someone, with what is still owed. */
+  claims: (userId: string) => ['claims', userId] as const,
+  transferMatches: (userId: string, request: unknown) => ['transferMatches', userId, request] as const,
+  purchases: (userId: string, beforeDate: string) => ['purchases', userId, beforeDate] as const,
+  /** Recent purchases behind Quick add on a new expense. */
+  frequentExpenses: (userId: string, day: string) => ['frequentExpenses', userId, day] as const,
+  /** Every tag the user has — the suggestions on the expense and income forms. */
+  tags: (userId: string) => ['tags', userId] as const,
+  /** The tags on one expense or income row. */
+  transactionTags: (userId: string, kind: string, id: string) => ['transactionTags', userId, kind, id] as const,
+  /** The four notification switches. Not money-bearing, so a write elsewhere never refetches them. */
+  notificationPrefs: (userId: string) => ['notificationPrefs', userId] as const,
 };
 
 /** Money-bearing query families. A write to any table can move several of them. */
-const FINANCE_ROOTS = ['accounts', 'dashboard', 'reports', 'budgets', 'expenses', 'expense', 'income', 'incomeItem', 'statement', 'export'];
+const FINANCE_ROOTS = [
+  'accounts',
+  'dashboard',
+  'reports',
+  'budgets',
+  'expenses',
+  'expense',
+  'income',
+  'incomeItem',
+  'statement',
+  'creditCards',
+  'cardStatement',
+  'export',
+  'claims',
+  'transferMatches',
+  'purchases',
+  'frequentExpenses',
+  'tags',
+  'transactionTags',
+];
 
 /**
  * Marks every financial figure stale after a write. Only queries on screen

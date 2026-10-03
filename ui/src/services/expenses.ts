@@ -6,19 +6,24 @@ import { MONTHLY_AGGREGATE_LIMIT, EXPORT_ROW_LIMIT, PAGE_SIZE } from '@/domain/d
 import { sanitiseSearch, sortAscending, sortColumn, type ExpenseFilter } from '@/domain/expenseFilter';
 import { blankToNull, expenseFromRow, expenseTitle, type Expense } from '@/domain/models';
 import { smsReferenceNote } from '@/domain/sms/smsDraft';
+import type { MovementDetails } from '@/domain/statementImport/model';
 
 import { capabilities, phase2Ready, resolveCapabilities } from './capabilities';
-import { db, ensureOk, nowIso, rowOf, rowsOf } from './db';
+import { allRowsOf, db, ensureOk, monthlyTotals, nowIso, rowOf, rowsOf } from './db';
 import { syncForExpense } from './ledger';
 
 const TABLE = 'expenses';
 
 /** Optional columns are selected only when their migration has run. */
-function select(): string {
+function optionalColumns(): string {
   const caps = capabilities();
+  return `${caps.merchant ? ', merchant' : ''}${caps.expenseBankLink ? ', bank_account_id' : ''}${caps.creditCards ? ', credit_card_id' : ''}`;
+}
+
+function select(): string {
   return (
     'id, user_id, amount, category_id, payment_method_id, expense_date, description, notes, created_at, updated_at' +
-    `${caps.merchant ? ', merchant' : ''}${caps.expenseBankLink ? ', bank_account_id' : ''}` +
+    optionalColumns() +
     ', categories(*), payment_methods(*)'
   );
 }
@@ -29,13 +34,17 @@ export type ExpenseDraft = {
   categoryId: string | null;
   paymentMethodId: string | null;
   bankAccountId: string | null;
-  merchant: string | null;
+  /** A card purchase: never also bank-funded, so bankAccountId is ignored when this is set. */
+  creditCardId: string | null;
+  /** Left out by the forms, which no longer ask for it: an existing merchant is kept as it is. */
+  merchant?: string | null;
   description: string | null;
   notes: string | null;
 };
 
 function writable(draft: ExpenseDraft): Record<string, unknown> {
   const caps = capabilities();
+  const cardId = caps.creditCards ? draft.creditCardId : null;
   const map: Record<string, unknown> = {
     amount: draft.amount,
     expense_date: draft.expenseDate,
@@ -44,8 +53,10 @@ function writable(draft: ExpenseDraft): Record<string, unknown> {
     description: blankToNull(draft.description),
     notes: blankToNull(draft.notes),
   };
-  if (caps.merchant) map.merchant = blankToNull(draft.merchant);
-  if (caps.expenseBankLink) map.bank_account_id = draft.bankAccountId;
+  if (caps.merchant && draft.merchant !== undefined) map.merchant = blankToNull(draft.merchant);
+  // One funding source: a card purchase must not also debit a bank account.
+  if (caps.expenseBankLink) map.bank_account_id = cardId ? null : draft.bankAccountId;
+  if (caps.creditCards) map.credit_card_id = cardId;
   return map;
 }
 
@@ -84,15 +95,21 @@ export async function fetchById(userId: string, id: string): Promise<Expense | n
 export async function fetchForMonth(userId: string, month: string): Promise<Expense[]> {
   await resolveCapabilities();
   const range = monthRange(month);
-  const result = await db()
-    .from(TABLE)
-    .select(select())
-    .eq('user_id', userId)
-    .gte('expense_date', range.start)
-    .lt('expense_date', range.endExclusive)
-    .order('expense_date', { ascending: false })
-    .limit(MONTHLY_AGGREGATE_LIMIT);
-  return rowsOf(result).map(expenseFromRow);
+  // Paged: one response is capped at the project's max-rows, below this limit.
+  const rows = await allRowsOf(
+    (from, to, withCount) =>
+      db()
+        .from(TABLE)
+        .select(select(), withCount ? { count: 'exact' } : undefined)
+        .eq('user_id', userId)
+        .gte('expense_date', range.start)
+        .lt('expense_date', range.endExclusive)
+        .order('expense_date', { ascending: false })
+        .order('id')
+        .range(from, to),
+    MONTHLY_AGGREGATE_LIMIT,
+  );
+  return rows.map(expenseFromRow);
 }
 
 /** An arbitrary day range, oldest first — for export. */
@@ -103,39 +120,86 @@ export async function fetchRange(
   categoryIds: readonly string[] = [],
 ): Promise<Expense[]> {
   await resolveCapabilities();
-  let query = db()
-    .from(TABLE)
-    .select(select())
-    .eq('user_id', userId)
-    .gte('expense_date', from)
-    .lt('expense_date', toExclusive);
-  if (categoryIds.length) query = query.in('category_id', [...categoryIds]);
-  const result = await query
-    .order('expense_date', { ascending: true })
-    .order('created_at', { ascending: true })
-    .limit(EXPORT_ROW_LIMIT);
-  return rowsOf(result).map(expenseFromRow);
+  const rows = await allRowsOf((first, last, withCount) => {
+    let query = db()
+      .from(TABLE)
+      .select(select(), withCount ? { count: 'exact' } : undefined)
+      .eq('user_id', userId)
+      .gte('expense_date', from)
+      .lt('expense_date', toExclusive);
+    if (categoryIds.length) query = query.in('category_id', [...categoryIds]);
+    return query
+      .order('expense_date', { ascending: true })
+      .order('created_at', { ascending: true })
+      .order('id')
+      .range(first, last);
+  }, EXPORT_ROW_LIMIT);
+  return rows.map(expenseFromRow);
 }
 
-/** `yyyy-MM` → total over a contiguous range: one request for a whole trend chart. */
-export async function fetchMonthlyTotals(userId: string, from: string, toExclusive: string): Promise<Map<string, number>> {
+/**
+ * Expenses from [from] up to [toExclusive], newest first, at most [limit] —
+ * the purchases offered when choosing what a reimbursement pays back.
+ * [lean] reads only what Quick add needs: no notes, category or method rows.
+ */
+export async function fetchRecent(userId: string, from: string, toExclusive: string, limit: number, { lean = false } = {}): Promise<Expense[]> {
+  await resolveCapabilities();
   const result = await db()
     .from(TABLE)
-    .select('amount, expense_date')
+    .select(lean ? `id, user_id, amount, category_id, payment_method_id, expense_date, description, created_at${optionalColumns()}` : select())
     .eq('user_id', userId)
     .gte('expense_date', from)
     .lt('expense_date', toExclusive)
-    .limit(MONTHLY_AGGREGATE_LIMIT * 12);
-  const totals = new Map<string, number>();
-  for (const row of rowsOf(result)) {
-    const key = String(row.expense_date).slice(0, 7);
-    totals.set(key, (totals.get(key) ?? 0) + (Number(row.amount) || 0));
-  }
-  return totals;
+    .order('expense_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return rowsOf(result).map(expenseFromRow);
 }
 
-/** Mirrors an expense into the ledger; cash produces no movement. */
-async function syncLedger(expense: Expense): Promise<void> {
+/**
+ * `yyyy-MM` → total over a contiguous range: one request for a whole trend chart.
+ * [excludeIds] leaves out expenses that are not personal spending (paid for someone else).
+ */
+export async function fetchMonthlyTotals(
+  userId: string,
+  from: string,
+  toExclusive: string,
+  excludeIds: ReadonlySet<string> = new Set(),
+): Promise<Map<string, number>> {
+  const rows = await allRowsOf(
+    (first, last, withCount) =>
+      db()
+        .from(TABLE)
+        .select('id, amount, expense_date', withCount ? { count: 'exact' } : undefined)
+        .eq('user_id', userId)
+        .gte('expense_date', from)
+        .lt('expense_date', toExclusive)
+        .order('id')
+        .range(first, last),
+    MONTHLY_AGGREGATE_LIMIT * 12,
+  );
+  return monthlyTotals(excludeIds.size ? rows.filter((row) => !excludeIds.has(String(row.id))) : rows, 'expense_date');
+}
+
+/**
+ * Every purchase on one card — or on any card when [cardId] is null — over the
+ * whole history, since a card's outstanding is the sum of all of them.
+ */
+export async function fetchForCreditCard(userId: string, cardId: string | null): Promise<Expense[]> {
+  await resolveCapabilities();
+  if (!capabilities().creditCards) return [];
+  const rows = await allRowsOf((from, to, withCount) => {
+    const query = db()
+      .from(TABLE)
+      .select(select(), withCount ? { count: 'exact' } : undefined)
+      .eq('user_id', userId);
+    return (cardId ? query.eq('credit_card_id', cardId) : query.not('credit_card_id', 'is', null)).order('id').range(from, to);
+  });
+  return rows.map(expenseFromRow);
+}
+
+/** Mirrors an expense into the ledger; cash and card purchases produce no movement. */
+async function syncLedger(expense: Expense, details?: MovementDetails | null): Promise<void> {
   if (!phase2Ready(capabilities())) return;
   await syncForExpense({
     userId: expense.userId,
@@ -145,10 +209,12 @@ async function syncLedger(expense: Expense): Promise<void> {
     date: expense.expenseDate,
     description: expenseTitle(expense),
     categoryId: expense.categoryId,
+    details,
   });
 }
 
-export async function createExpense(userId: string, draft: ExpenseDraft): Promise<Expense> {
+/** [details]: what an imported statement printed about the payment, kept on its ledger movement. */
+export async function createExpense(userId: string, draft: ExpenseDraft, { details }: { details?: MovementDetails | null } = {}): Promise<Expense> {
   await resolveCapabilities();
   const row = rowOf(
     await db()
@@ -158,7 +224,7 @@ export async function createExpense(userId: string, draft: ExpenseDraft): Promis
       .single(),
   );
   const created = expenseFromRow(row);
-  await syncLedger(created);
+  await syncLedger(created, details);
   return created;
 }
 
@@ -196,12 +262,14 @@ export async function findPossibleDuplicate({
   date,
   reference,
   bankAccountId,
+  creditCardId = null,
 }: {
   userId: string;
   amount: number;
   date: string;
   reference: string | null;
   bankAccountId: string | null;
+  creditCardId?: string | null;
 }): Promise<Expense | null> {
   try {
     await resolveCapabilities();
@@ -217,7 +285,10 @@ export async function findPossibleDuplicate({
     }
     let query = db().from(TABLE).select(select()).eq('user_id', userId).eq('amount', amount).eq('expense_date', date);
     if (capabilities().expenseBankLink) {
-      query = bankAccountId == null ? query.is('bank_account_id', null) : query.eq('bank_account_id', bankAccountId);
+      query = bankAccountId == null || creditCardId != null ? query.is('bank_account_id', null) : query.eq('bank_account_id', bankAccountId);
+    }
+    if (capabilities().creditCards) {
+      query = creditCardId == null ? query.is('credit_card_id', null) : query.eq('credit_card_id', creditCardId);
     }
     const [hit] = rowsOf(await query.limit(1));
     return hit ? expenseFromRow(hit) : null;

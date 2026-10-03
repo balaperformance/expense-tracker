@@ -3,14 +3,17 @@ import { useParams } from 'react-router';
 
 import { Page } from '@/components/layout/Page';
 import { AccountChips } from '@/components/finance/Pickers';
+import { TagField } from '@/components/finance/TagField';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Chip, ChipGroup } from '@/components/ui/Chip';
 import { Centered, EmptyState, InlineError, ListSkeleton, Notice } from '@/components/ui/Feedback';
 import { AmountField, DateField, FieldLabel, TextArea, TextField } from '@/components/ui/Fields';
 import { Card } from '@/components/ui/Surface';
 import type { Income } from '@/domain/models';
-import { useAccounts, useCapabilities, useIncomeItem } from '@/hooks/data';
+import { addTag } from '@/domain/tags';
+import { useAccounts, useCapabilities, useIncomeItem, useTags, useTransactionTags } from '@/hooks/data';
 import { useGoBack } from '@/hooks/useGoBack';
+import { useTagInput } from '@/hooks/useTagInput';
 import { useDeleteIncome, useSaveIncome } from '@/hooks/mutations';
 import { errorMessage } from '@/lib/errors';
 import { dayMonthYear, formatCurrency } from '@/lib/format';
@@ -24,8 +27,10 @@ const COMMON_SOURCES = ['Salary', 'Freelance', 'Business', 'Interest', 'Dividend
 export function IncomeFormPage() {
   const { id } = useParams();
   const existing = useIncomeItem(id);
+  const tagsOf = useTransactionTags('income', id);
   if (id) {
-    if (existing.isPending) {
+    // Wait for the tags too: saving before knowing them would clear them.
+    if (existing.isPending || tagsOf.isPending) {
       return (
         <Page title="Edit income" back="/income" narrow>
           <ListSkeleton rows={3} />
@@ -41,12 +46,13 @@ export function IncomeFormPage() {
         </Page>
       );
     }
-    return <IncomeForm key={existing.data.id} income={existing.data} />;
+    return <IncomeForm key={existing.data.id} income={existing.data} initialTags={tagsOf.names} />;
   }
-  return <IncomeForm />;
+  return <IncomeForm initialTags={[]} />;
 }
 
-function IncomeForm({ income }: { income?: Income }) {
+/** [initialTags] is null when the income's tags could not be read, so they are neither shown nor changed. */
+function IncomeForm({ income, initialTags }: { income?: Income; initialTags: readonly string[] | null }) {
   const goBack = useGoBack('/income');
   const { symbol, currency } = useSettings();
   const { toast, confirm } = useFeedback();
@@ -54,6 +60,9 @@ function IncomeForm({ income }: { income?: Income }) {
   const accounts = (useAccounts().data ?? []).map((b) => b.account);
   const save = useSaveIncome();
   const remove = useDeleteIncome();
+  const knownTags = useTags().data ?? [];
+  const tagInput = useTagInput(initialTags ?? []);
+  const showTags = caps.tags && initialTags != null;
   const editing = income != null;
 
   const [amount, setAmount] = useState(income ? amountToInput(income.amount) : '');
@@ -71,11 +80,14 @@ function IncomeForm({ income }: { income?: Income }) {
     setError(null);
     if (validateAmount(amount)) return;
     try {
-      await save.mutateAsync({
+      const result = await save.mutateAsync({
         id: income?.id,
         draft: { amount: parseAmount(amount) ?? 0, incomeDate: date, source, description, bankAccountId },
+        // Typed but not confirmed with Enter counts too. Left alone when the tags are unavailable.
+        tags: showTags ? addTag(tagInput.tags, tagInput.draft, knownTags) : undefined,
       });
       toast('success', editing ? 'Income updated' : 'Income added');
+      if (result.tagError) toast('error', `The income was saved, but its tags were not: ${result.tagError}`);
       goBack();
     } catch (failure) {
       setError(errorMessage(failure, 'Could not save the income.'));
@@ -161,7 +173,10 @@ function IncomeForm({ income }: { income?: Income }) {
       <div>
         <FieldLabel text="Details" hint="Optional" />
         <Card>
-          <TextArea value={description} onChange={setDescription} placeholder="Description" aria-label="Description" icon="text" disabled={busy} />
+          <div className="stack gap-sm">
+            <TextArea value={description} onChange={setDescription} placeholder="Description" aria-label="Description" icon="text" disabled={busy} />
+            {showTags ? <TagField input={tagInput} known={knownTags} disabled={busy} /> : null}
+          </div>
         </Card>
       </div>
 

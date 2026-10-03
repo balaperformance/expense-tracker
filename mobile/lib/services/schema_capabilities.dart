@@ -20,6 +20,9 @@ class SchemaCapabilities {
   /// PostgREST: relation not found in the exposed schema.
   static const String _undefinedTable = 'PGRST205';
 
+  /// Postgres: relation does not exist (older PostgREST versions).
+  static const String _undefinedTableLegacy = '42P01';
+
   static bool _resolved = false;
 
   static bool _merchant = false;
@@ -28,6 +31,10 @@ class SchemaCapabilities {
   static bool _incomeBankLink = false;
   static bool _transfers = false;
   static bool _creditCards = false;
+  static bool _treatments = false;
+  static bool _tags = false;
+  static bool _statementDetails = false;
+  static bool _notifications = false;
 
   static bool get resolved => _resolved;
 
@@ -53,6 +60,28 @@ class SchemaCapabilities {
   /// four, so the feature is on only when every part is present.
   static bool get creditCards => _creditCards;
 
+  /// `receivables`, `account_transactions.receivable_id` and the treatment
+  /// functions (migration 005, shared with the web app). With it, a
+  /// transfer to one of the user's accounts is saved through
+  /// `record_bank_movement`, which can also link the other account's row
+  /// when both statements were imported. 005 builds on 004, so it counts only
+  /// with it — exactly as the web app decides.
+  static bool get treatments => _treatments;
+
+  /// `tags`, `expense_tags`, `income_tags` (migration 006): an imported row's
+  /// tags are written as tags rather than into its notes.
+  static bool get tags => _tags;
+
+  /// `account_transactions.reference`, `upi_id`, `txn_time` (migration 007):
+  /// what a statement printed about a movement is kept on the movement, so a
+  /// re-import is recognised by its reference.
+  static bool get statementDetails => _statementDetails;
+
+  /// `notification_preferences` (migration 008) and `mobile_push_tokens`
+  /// (migration 009): push notifications on the phone. Both are needed — the
+  /// switches are shared with the web app, the device table is the phone's.
+  static bool get notifications => _notifications;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -69,6 +98,10 @@ class SchemaCapabilities {
       if (!_merchant) 'expenses.merchant',
       if (!_transfers) 'account_transactions.counterparty_account_id',
       if (!_creditCards) 'credit card tables and columns (004)',
+      if (!_treatments) 'transfer linking, loans and reimbursements (005)',
+      if (!_tags) 'tags (006)',
+      if (!_statementDetails) 'statement references and UPI details (007)',
+      if (!_notifications) 'push notifications (008, 009)',
     ];
     return missing.join(', ');
   }
@@ -88,10 +121,27 @@ class SchemaCapabilities {
               _probe(client, 'income', 'bank_account_id'),
               _probe(
                   client, 'account_transactions', 'counterparty_account_id'),
+              // 5–8: credit cards (004).
               _probe(client, 'credit_cards', 'id'),
               _probe(client, 'credit_card_transactions', 'id'),
               _probe(client, 'expenses', 'credit_card_id'),
               _probe(client, 'account_transactions', 'credit_card_id'),
+              // 9–10: treatments (005).
+              _probe(client, 'receivables',
+                  'id, kind, person, ledger_entry_id, expense_id'),
+              _probe(client, 'account_transactions', 'receivable_id'),
+              // 11–13: tags (006).
+              _probe(client, 'tags', 'id, name'),
+              _probe(client, 'expense_tags', 'expense_id, tag_id'),
+              _probe(client, 'income_tags', 'income_id, tag_id'),
+              // 14: statement details (007).
+              _probe(client, 'account_transactions',
+                  'reference, upi_id, txn_time'),
+              // 15–16: push notifications (008 shared, 009 the phone's).
+              _probe(client, 'notification_preferences',
+                  'user_id, daily_reminder, spending_summary, low_balance, '
+                      'card_due, timezone'),
+              _probe(client, 'mobile_push_tokens', 'id, token'),
             ]));
 
     _merchant = results[0];
@@ -99,7 +149,11 @@ class SchemaCapabilities {
     _expenseBankLink = results[2];
     _incomeBankLink = results[3];
     _transfers = results[4];
-    _creditCards = results.sublist(5).every((bool present) => present);
+    _creditCards = results.sublist(5, 9).every((bool present) => present);
+    _treatments = _creditCards && results[9] && results[10];
+    _tags = results.sublist(11, 14).every((bool present) => present);
+    _statementDetails = results[14];
+    _notifications = results[15] && results[16];
     _resolved = true;
   }
 
@@ -117,7 +171,9 @@ class SchemaCapabilities {
       await client.from(table).select(column).limit(1);
       return true;
     } on PostgrestException catch (error) {
-      if (error.code == _undefinedColumn || error.code == _undefinedTable) {
+      if (error.code == _undefinedColumn ||
+          error.code == _undefinedTable ||
+          error.code == _undefinedTableLegacy) {
         return false;
       }
       rethrow;
@@ -133,6 +189,10 @@ class SchemaCapabilities {
     bool? incomeBankLink,
     bool? transfers,
     bool? creditCards,
+    bool? treatments,
+    bool? tags,
+    bool? statementDetails,
+    bool? notifications,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -140,6 +200,10 @@ class SchemaCapabilities {
     _incomeBankLink = incomeBankLink ?? _incomeBankLink;
     _transfers = transfers ?? _transfers;
     _creditCards = creditCards ?? _creditCards;
+    _treatments = treatments ?? _treatments;
+    _tags = tags ?? _tags;
+    _statementDetails = statementDetails ?? _statementDetails;
+    _notifications = notifications ?? _notifications;
     _resolved = true;
   }
 
@@ -151,5 +215,9 @@ class SchemaCapabilities {
     _incomeBankLink = false;
     _transfers = false;
     _creditCards = false;
+    _treatments = false;
+    _tags = false;
+    _statementDetails = false;
+    _notifications = false;
   }
 }
