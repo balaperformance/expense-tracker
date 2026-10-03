@@ -1,0 +1,66 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+Thumbs.db
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code
+.vscode/
+
+# Flutter / Dart / Pub
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+.packages
+/build/
+**/doc/api/
+
+# Flutter iOS generated files
+**/ios/Flutter/.last_build_id
+ios/Flutter/ephemeral/
+ios/Pods/
+ios/.symlinks/
+
+# Flutter build artifacts
+app.*.symbols
+app.*.map.json
+
+# Android build artifacts
+/android/app/debug
+/android/app/profile
+/android/app/release
+/android/.gradle/
+
+# Android local / signing files
+android/local.properties
+android/key.properties
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Supabase secrets / local files
+supabase/functions/.env
+supabase/functions/**/.env
+supabase/.env
+supabase/.temp/
+
+# OS files
+.DS_Store
+Thumbs.db
