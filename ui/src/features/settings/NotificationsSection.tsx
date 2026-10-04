@@ -18,7 +18,7 @@ const LOW_BALANCE_THRESHOLD = 500;
 const SWITCHES: ReadonlyArray<{ pref: NotificationPref; icon: IconName; title: string; subtitle: (symbol: string) => string }> = [
   { pref: 'daily', icon: 'time', title: 'Daily expense reminder', subtitle: () => 'Today’s spending, around 10 PM' },
   { pref: 'summary', icon: 'insights', title: 'Spending summary', subtitle: () => 'On the 16th and the last day of the month' },
-  { pref: 'lowBalance', icon: 'bank', title: 'Low bank balance', subtitle: (symbol) => `When an account drops below ${symbol}${LOW_BALANCE_THRESHOLD}` },
+  { pref: 'lowBalance', icon: 'bank', title: 'Low bank balance', subtitle: (symbol) => `When an account is below ${symbol}${LOW_BALANCE_THRESHOLD}` },
   { pref: 'cardDue', icon: 'cardSolid', title: 'Credit card due reminder', subtitle: () => 'The day before a bill is due' },
 ];
 

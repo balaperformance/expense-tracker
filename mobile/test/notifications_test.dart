@@ -191,13 +191,86 @@ void main() {
     });
   });
 
+  group('on by default', () {
+    test('signing in asks Android once, registers this phone with its time '
+        'zone, and shows only this account\'s notifications', () async {
+      final NotificationProvider notifications = provider();
+      await notifications.attach('u1');
+      expect(platform.calls.where((String c) => c == 'requestPermission'), hasLength(1));
+      expect(repository.registered.single, <String, Object?>{
+        'token': 'token-1',
+        'timezone': 'Asia/Kolkata',
+        'appVersion': '1.0.0',
+        'device': 'Test Phone',
+      });
+      expect(platform.users.last, 'u1');
+      expect(notifications.enabledHere, isTrue);
+    });
+
+    test('where Android already allows them, nothing is asked', () async {
+      platform.deviceStatus =
+          const PushDeviceStatus(available: true, permission: 'granted');
+      final NotificationProvider notifications = provider();
+      await notifications.attach('u1');
+      expect(platform.calls, isNot(contains('requestPermission')));
+      expect(notifications.enabledHere, isTrue);
+    });
+
+    test('a refusal at sign-in is not asked again by the app itself', () async {
+      platform.answer = 'denied';
+      final NotificationProvider notifications = provider();
+      await notifications.attach('u1');
+      expect(repository.registered, isEmpty);
+      expect(notifications.permission, 'denied');
+
+      notifications.reset();
+      platform.deviceStatus =
+          const PushDeviceStatus(available: true, permission: 'notDetermined');
+      await notifications.attach('u1');
+      expect(platform.calls.where((String c) => c == 'requestPermission'), hasLength(1));
+    });
+
+    test('stays off after Turn off, across sign-outs, until Turn on', () async {
+      final NotificationProvider notifications = provider();
+      await notifications.attach('u1');
+      await notifications.disable();
+      await notifications.releaseForSignOut();
+      notifications.reset();
+
+      await notifications.attach('u1');
+      expect(notifications.enabledHere, isFalse);
+      expect(repository.registered, hasLength(1));
+
+      expect(await notifications.enable(), EnableResult.enabled);
+      notifications.reset();
+      await notifications.attach('u2');
+      expect(notifications.enabledHere, isTrue, reason: 'Turn on cleared the choice');
+    });
+
+    test('nothing happens without Firebase or before the migrations exist',
+        () async {
+      platform.deviceStatus =
+          const PushDeviceStatus(available: false, permission: 'granted');
+      await provider().attach('u1');
+      SchemaCapabilities.debugReset();
+      platform.deviceStatus =
+          const PushDeviceStatus(available: true, permission: 'granted');
+      await provider().attach('u1');
+      expect(repository.registered, isEmpty);
+      expect(platform.calls, isNot(contains('getToken')));
+    });
+  });
+
   group('turning notifications on and off', () {
+    // From a phone where the user turned them off: only Turn on asks.
+    setUp(() => preferences.setPushOff(true));
+
     test('asks once, registers this phone with its time zone, and shows only '
         'this account\'s notifications', () async {
       final NotificationProvider notifications = provider();
       await notifications.attach('u1');
       expect(platform.calls, isNot(contains('requestPermission')),
-          reason: 'opening the app never asks');
+          reason: 'opening the app never asks once turned off');
 
       expect(await notifications.enable(), EnableResult.enabled);
       expect(platform.calls.where((String c) => c == 'requestPermission'), hasLength(1));
@@ -262,6 +335,8 @@ void main() {
   });
 
   group('keeping a phone registered', () {
+    setUp(() => preferences.setPushOff(true));
+
     test('coming back renews it at most once an hour', () async {
       final NotificationProvider notifications = provider();
       await notifications.attach('u1');
@@ -310,6 +385,8 @@ void main() {
   });
 
   group('one account per phone', () {
+    setUp(() => preferences.setPushOff(true));
+
     test('signing out removes the token while the session exists, and never '
         'throws', () async {
       final NotificationProvider notifications = provider();
@@ -324,7 +401,7 @@ void main() {
     });
 
     test('after a session ends the phone shows nothing; the same user signing '
-        'back in renews it, another user starts with it off', () async {
+        'back in renews it, another user gets their own, on by default', () async {
       final NotificationProvider notifications = provider();
       await notifications.attach('u1');
       await notifications.enable();
@@ -334,13 +411,14 @@ void main() {
       expect(platform.users.last, isNull);
 
       await notifications.attach('u2');
-      expect(repository.registered, hasLength(1), reason: 'not for another account');
-      expect(notifications.enabledHere, isFalse);
+      expect(platform.users.last, 'u2', reason: 'never u1\'s notifications');
+      expect(preferences.pushUser, 'u2');
+      expect(notifications.enabledHere, isTrue);
 
       notifications.reset();
       await notifications.attach('u1');
-      expect(repository.registered, hasLength(2));
       expect(platform.users.last, 'u1');
+      expect(preferences.pushUser, 'u1');
       expect(notifications.enabledHere, isTrue);
     });
   });
@@ -419,13 +497,14 @@ void main() {
     for (final double width in <double>[320, 360, 411]) {
       testWidgets('offers Turn on and the four switches at $width dp',
           (WidgetTester tester) async {
+        await preferences.setPushOff(true);
         await pump(tester, width, (NotificationProvider n) => n.attach('u1'));
         expect(find.text('Turn on notifications'), findsOneWidget);
         expect(find.text('Turn on'), findsOneWidget);
         expect(find.text('Daily expense reminder'), findsOneWidget);
         expect(find.text('Spending summary'), findsOneWidget);
         expect(find.text('Low bank balance'), findsOneWidget);
-        expect(find.text('When an account drops below ₹500'), findsOneWidget);
+        expect(find.text('When an account is below ₹500'), findsOneWidget);
         expect(find.text('Credit card due reminder'), findsOneWidget);
         expect(find.byType(Switch), findsNWidgets(4));
         expect(tester.takeException(), isNull);

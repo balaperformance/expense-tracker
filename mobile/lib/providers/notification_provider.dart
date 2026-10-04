@@ -32,7 +32,9 @@ enum EnableResult { enabled, denied, dismissed, unavailable }
 /// and sends it to every device they have — browsers over Web Push, phones
 /// over Firebase Cloud Messaging — once per event. This provider only:
 ///
-///  * asks for permission when the user taps Turn on, and never by itself;
+///  * turns notifications on by default at sign-in — silently when Android
+///    already allows them, otherwise by asking once — unless the user pressed
+///    Turn off on this phone; after that only Turn on asks;
 ///  * registers this phone's token (and its time zone) for the signed-in user,
 ///    and keeps it registered when the app comes back;
 ///  * tells the phone whose notifications it may show, so another account's
@@ -101,8 +103,9 @@ class NotificationProvider extends AsyncProvider {
   @override
   bool get isEmptyData => !_prefsLoaded;
 
-  /// After sign-in: this phone's state, the user's switches, and — when
-  /// notifications were on here for this user — their registration renewed.
+  /// After sign-in: this phone's state, the user's switches, and the phone
+  /// registered for the user — renewed when it already was, otherwise turned
+  /// on by default (see [_enableByDefault]).
   Future<void> attach(String userId) async {
     _userId = userId;
     await refreshStatus();
@@ -110,6 +113,28 @@ class NotificationProvider extends AsyncProvider {
     if (_preferences.pushUser == userId) {
       await _safely(() => _platform.setUser(userId));
       await sync(force: true);
+    } else {
+      await _enableByDefault();
+    }
+  }
+
+  /// Notifications are on unless the user turned them off on this phone.
+  /// Android's permission is asked for at most once by the app on its own
+  /// (Android 13 and later; earlier versions allow them without asking).
+  Future<void> _enableByDefault() async {
+    if (_preferences.pushOff ||
+        _support != PushSupport.ready ||
+        !SchemaCapabilities.notifications) {
+      return;
+    }
+    if (_permission != 'granted') {
+      if (_permission == 'denied' || _preferences.pushAsked) return;
+      await _preferences.setPushAsked();
+    }
+    try {
+      await enable();
+    } catch (_) {
+      // Not worth interrupting a sign-in for: Settings still offers Turn on.
     }
   }
 
@@ -160,6 +185,7 @@ class NotificationProvider extends AsyncProvider {
       await _register(token);
       await _platform.setUser(userId);
       await _preferences.setPush(userId: userId, token: token);
+      await _preferences.setPushOff(false);
       _lastSync = _clock();
       return EnableResult.enabled;
     } finally {
@@ -178,6 +204,7 @@ class NotificationProvider extends AsyncProvider {
     final String? token = _preferences.pushToken;
     try {
       await _preferences.setPush(userId: null, token: null);
+      await _preferences.setPushOff(true);
       await _safely(() => _platform.setUser(null));
       try {
         if (token != null) {
@@ -286,8 +313,8 @@ class NotificationProvider extends AsyncProvider {
 
   /// After the session ends: nothing of the previous account stays — not its
   /// switches, and not the phone's permission to show its notifications. The
-  /// choice to have them on this phone is kept, so signing back in as the
-  /// same user renews it; another user starts with them off.
+  /// next account to sign in gets them on by default, unless Turn off was
+  /// pressed on this phone.
   void reset() {
     _userId = null;
     _prefs = NotificationPrefs.defaults;

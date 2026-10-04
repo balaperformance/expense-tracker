@@ -82,8 +82,10 @@ export class SupabaseStore implements NotifyStore {
         allRows((from, to) => this.client.from('profiles').select('id, currency').in('id', ids).order('id').range(from, to)),
       ]);
       const currency = new Map(profiles.map((p) => [text(p, 'id'), text(p, 'currency')]));
-      for (const row of prefs) {
-        const userId = text(row, 'user_id');
+      const saved = new Map(prefs.map((p) => [text(p, 'user_id'), p]));
+      // A device with no saved switches gets them all on, as the table's defaults say.
+      for (const userId of ids) {
+        const row: Row = saved.get(userId) ?? {};
         users.push({
           userId,
           timezone: text(row, 'timezone') || 'UTC',

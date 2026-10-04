@@ -73,7 +73,7 @@ class NotificationsSection extends StatelessWidget {
         NotificationPref.daily => "Today's spending, around 10 PM",
         NotificationPref.summary => 'On the 16th and the last day of the month',
         NotificationPref.lowBalance =>
-          'When an account drops below $symbol$_lowBalanceThreshold',
+          'When an account is below $symbol$_lowBalanceThreshold',
         NotificationPref.cardDue => 'The day before a bill is due',
       };
 

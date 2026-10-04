@@ -12,6 +12,8 @@ export const StorageKeys = {
   currency: 'et.currency',
   /** '1' once the user turned push notifications on for this device; cleared when they turn them off. */
   pushEnabled: 'et.pushEnabled',
+  /** '1' when the user pressed Turn off on this device: notifications are on by default otherwise. */
+  pushOff: 'et.pushOff',
 } as const;
 
 export function readPref(key: string): string | null {

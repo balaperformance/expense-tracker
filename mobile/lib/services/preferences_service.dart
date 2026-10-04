@@ -70,6 +70,23 @@ class PreferencesService {
     }
   }
 
+  static const String _pushOffKey = 'pref_push_off';
+  static const String _pushAskedKey = 'pref_push_asked';
+
+  /// The user pressed Turn off on this phone. Notifications are on by
+  /// default otherwise; signing out is not turning them off.
+  bool get pushOff => _prefs.getBool(_pushOffKey) ?? false;
+
+  Future<void> setPushOff(bool value) => value
+      ? _prefs.setBool(_pushOffKey, true)
+      : _prefs.remove(_pushOffKey);
+
+  /// Android's permission was asked for once by the app on its own, at
+  /// sign-in; it is never asked for by itself again.
+  bool get pushAsked => _prefs.getBool(_pushAskedKey) ?? false;
+
+  Future<void> setPushAsked() => _prefs.setBool(_pushAskedKey, true);
+
   String? get cachedCurrency => _prefs.getString(_currencyKey);
 
   Future<void> setCachedCurrency(String code) =>

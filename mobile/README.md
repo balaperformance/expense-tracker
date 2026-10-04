@@ -40,6 +40,12 @@ offers expense, income, refund and transfer.
 
 ## Push notifications
 
+> **Not supported in the APK at this time.** Notifications are supported on
+> the installed web app (PWA) on iPhone/iPad, Android and desktop, over Web
+> Push — install it from Chrome on Android to get them there. The APK's
+> Firebase Cloud Messaging code below is kept but dormant: without the
+> Firebase setup it shows no notification settings and requests nothing.
+
 Four notifications, the same as the web app's, each with an on/off switch in
 **Settings → Notifications** (shared with the web app):
 

@@ -11,8 +11,9 @@
  *                16th → spending 1st–15th; last day → the whole month
  *   card due     from 09:00 local on the day before a bill's due date, once
  *                per card + due date, and only while the bill is unpaid
- *   low balance  whenever an active account moves from >= the threshold to
- *                below it; again only after it has recovered
+ *   low balance  once per spell below the threshold for each active account,
+ *                including one already low when first seen; again only after
+ *                it has recovered
  *
  * Every event has a deterministic key (see the `*Key` helpers). The key is
  * CLAIMED with a unique insert before anything is sent, so overlapping runs
@@ -209,9 +210,13 @@ async function runUser(user: NotifyUser, now: Date, store: NotifyStore, sender: 
 }
 
 /**
- * Watches every active account. The state is kept up to date even while the
- * switch is off, so turning it on never reports a drop that happened earlier;
- * the first look at an account only records where it stands.
+ * One alert per spell below the threshold, for every active account, while
+ * the switch is on. The state records the spell already alerted: `isLow`
+ * with `episode` > 0 means "alerted, still low". So an account that is
+ * already low the first time it is seen is alerted, and so is a spell that
+ * began while the switch was off, once it is turned on. A row `isLow` with
+ * episode 0 was written by an earlier version on its first look, without an
+ * alert — it is alerted now.
  */
 async function runLowBalance(user: NotifyUser, store: NotifyStore, sender: PushSender, sent: Record<NotificationKind, number>) {
   const [balances, states] = await Promise.all([store.accountBalances(user.userId), store.lowBalanceStates(user.userId)]);
@@ -219,26 +224,20 @@ async function runLowBalance(user: NotifyUser, store: NotifyStore, sender: PushS
     if (!account.isActive) continue;
     const low = account.balanceCents < LOW_BALANCE_CENTS;
     const previous = states.get(account.id);
-    if (!previous) {
-      await store.setLowBalanceState(user.userId, account.id, { isLow: low, episode: 0 });
-      continue;
-    }
-    if (previous.isLow === low) continue;
+    const episode = previous?.episode ?? 0;
     if (!low) {
-      await store.setLowBalanceState(user.userId, account.id, { isLow: false, episode: previous.episode });
+      // Recovered: the next drop is a new spell.
+      if (previous?.isLow) await store.setLowBalanceState(user.userId, account.id, { isLow: false, episode });
       continue;
     }
+    const alerted = previous?.isLow === true && episode > 0;
+    if (alerted || !user.prefs.lowBalance) continue;
 
-    const episode = previous.episode + 1;
-    const next: LowBalanceState = { isLow: true, episode };
-    if (!user.prefs.lowBalance) {
-      await store.setLowBalanceState(user.userId, account.id, next);
-      continue;
-    }
-    const outcome = await deliver(store, sender, user, 'lowBalance', lowBalanceKey(account.id, episode), () =>
+    const next: LowBalanceState = { isLow: true, episode: episode + 1 };
+    const outcome = await deliver(store, sender, user, 'lowBalance', lowBalanceKey(account.id, next.episode), () =>
       Promise.resolve(lowBalanceMessage(account, user.currency)),
     );
-    if (outcome.retry) continue; // the state stays "not low", so the next run finds the same drop
+    if (outcome.retry) continue; // nothing recorded, so the next run tries the same spell again
     if (outcome.sent) sent.lowBalance += 1;
     await store.setLowBalanceState(user.userId, account.id, next);
   }

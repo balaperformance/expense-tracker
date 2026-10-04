@@ -106,12 +106,18 @@ export async function enablePush(): Promise<EnableResult> {
   subscription ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey() });
   await registerSubscription(subscription);
   writePref(StorageKeys.pushEnabled, '1');
+  writePref(StorageKeys.pushOff, null);
   return 'enabled';
 }
 
-/** Turns notifications off for this device: unsubscribes the browser and removes the project's record of it. */
-export async function disablePush(): Promise<void> {
+/**
+ * Turns notifications off for this device: unsubscribes the browser and
+ * removes the project's record of it. [byUser] remembers the choice, so the
+ * device is not switched back on by itself; a sign-out is not that choice.
+ */
+export async function disablePush({ byUser = true } = {}): Promise<void> {
   writePref(StorageKeys.pushEnabled, null);
+  if (byUser) writePref(StorageKeys.pushOff, '1');
   const subscription = await currentSubscription();
   if (!subscription) return;
   const { endpoint } = subscription;
@@ -122,10 +128,11 @@ export async function disablePush(): Promise<void> {
 }
 
 /**
- * Keeps an enabled device registered: refreshes its time zone and last-seen
- * time, and re-subscribes silently if the browser dropped the subscription or
- * the key changed. Does nothing for a device the user has not turned on, and
- * never prompts.
+ * Keeps the device registered: refreshes its time zone and last-seen time,
+ * and subscribes silently when notifications are allowed but this device has
+ * no live subscription — after a sign-in, a dropped subscription or a key
+ * change. Notifications are on by default: only the user's own Turn off on
+ * this device keeps it unsubscribed. Never prompts.
  */
 export async function syncPushSubscription(): Promise<void> {
   if (pushSupport() !== 'ok' || Notification.permission !== 'granted') return;
@@ -134,13 +141,13 @@ export async function syncPushSubscription(): Promise<void> {
     await registerSubscription(subscription);
     return;
   }
-  if (readPref(StorageKeys.pushEnabled) === '1') await enablePush();
+  if (readPref(StorageKeys.pushOff) !== '1') await enablePush();
 }
 
 /** Signing out must stop this device receiving that account's notifications. Best effort: never blocks the sign-out. */
 export async function releasePushForSignOut(): Promise<void> {
   try {
-    await disablePush();
+    await disablePush({ byUser: false });
   } catch {
     // The browser side is done first in disablePush; a failed server cleanup leaves a row that
     // the sender switches off on its first 404/410.

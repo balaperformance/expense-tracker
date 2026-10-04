@@ -1,14 +1,20 @@
 # `push-notify` — push notifications, server side
 
 Four notifications, generated on the server so they arrive whether or not the
-app is open — on the web app (Web Push) and on the Android app (Firebase Cloud
-Messaging), from one run and under one event key:
+app is open, from one run and under one event key.
+
+**Supported platforms: the installed web app (PWA) on iPhone/iPad, Android and
+desktop**, all over standard Web Push with the project's VAPID keys. No
+Firebase project, `google-services.json` or `FCM_SERVICE_ACCOUNT` is needed.
+The Android APK's Firebase Cloud Messaging channel is built but **dormant**:
+it is not supported at this time and stays off unless all of its setup below
+is done.
 
 | Notification | When (the user's own clock) | Text |
 |---|---|---|
 | Daily reminder | 22:00–22:59, once a day | `Today's spending: ₹X. Don't forget to add any missing expenses.` (₹0 on a quiet day) |
 | Spending summary | 20:00–20:59 on the **16th** (spending 1st–15th) and on the **last day** (the whole month) | `Spending update: ₹X spent so far this month.` / `… spent this month.` |
-| Low bank balance | when an active account goes from ≥ ₹500 to < ₹500; again only after it has recovered | `Low balance: HDFC Savings is ₹420.` |
+| Low bank balance | once per spell below ₹500 for each active account (including one already low when first seen); again only after it has recovered to ₹500 or more | `Low balance: HDFC Savings is ₹420.` |
 | Credit card due | from 09:00 on the day before a bill's due date, while it is unpaid | `Credit card reminder: HDFC Visa payment is due tomorrow.` |
 
 ```
@@ -48,16 +54,19 @@ runs and repeated runs find the key taken and do nothing. A claim is handed
 back only when every device failed for a reason that may pass (network, 5xx),
 so the next run tries again.
 
-The low-balance watch keeps one row per account (`low_balance_state`): the
-first look only records where the account stands, so nothing is reported for
-a balance that was already low when notifications were enabled.
+The low-balance watch keeps one row per account (`low_balance_state`) and
+alerts once per spell below ₹500 while the switch is on: an account that is
+already low when first seen is alerted, as is a spell that began while the
+switch was off, once it is turned on. It alerts again only after the balance
+has recovered to ₹500 or more. (Rows an earlier version wrote on its first
+look — `is_low` with episode 0, never alerted — are alerted on the next run.)
 
 A subscription the push service reports gone (404/410) is switched off
 (`disabled_at`); a browser that registers again is switched back on. A phone
 token FCM reports gone (UNREGISTERED, a sender mismatch, an invalid token) is
 switched off the same way in `mobile_push_tokens`.
 
-## Phones (Firebase Cloud Messaging)
+## Phones (Firebase Cloud Messaging) — dormant, not supported at this time
 
 The Android app registers its FCM token with `register_mobile_push_token`
 (`mobile/supabase/009_mobile_push_tokens.sql`), which also records the
@@ -103,7 +112,7 @@ channel is optional: configure Web Push, FCM or both.
 
 Then, in the app: **Settings → Notifications → Turn on**.
 
-### Adding the Android app (FCM)
+### Adding the Android app (FCM) — dormant, not needed for the PWA
 
 1. Run `mobile/supabase/009_mobile_push_tokens.sql` (after 008).
 2. In the Firebase console, add an Android app with package
@@ -141,9 +150,9 @@ npx deno check --no-config --node-modules-dir=none supabase/functions/push-notif
 | Where | Name | What |
 |---|---|---|
 | Function | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Web Push signing |
-| Function | `FCM_SERVICE_ACCOUNT` | the Firebase service-account key (JSON) — sends to phones |
+| Function | `FCM_SERVICE_ACCOUNT` | optional, dormant: the Firebase service-account key (JSON) for the Android APK — not used by the PWA |
 | Function | `PUSH_NOTIFY_SECRET` | proves the caller is the schedule |
 | Vault | `push_notify_url`, `push_notify_secret` | where the schedule calls, and the same secret |
 | Web build | `VITE_VAPID_PUBLIC_KEY` | the **public** key only |
-| Android build | `android/app/google-services.json` | the Firebase project's **public** app config |
+| Android build | `android/app/google-services.json` | optional, dormant: the Firebase project's **public** app config |
 | Platform | `SUPABASE_URL`, service-role key | injected automatically |

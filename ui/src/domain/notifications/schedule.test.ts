@@ -364,9 +364,20 @@ describe('the low-balance alert', () => {
     expect(sender.sent[0]?.message.url).toBe('/accounts/hdfc');
   });
 
-  it('does not notify the first time it sees an account, even a low one', async () => {
-    const { sender } = await simulate([[debit(900)]]); // already ₹100 at the first look
-    expect(sender.sent).toHaveLength(0);
+  it('alerts an account that is already low the first time it is seen, once', async () => {
+    const { sender, store } = await simulate([[debit(900)], [debit(900)], [debit(900)]]); // ₹100 from the start
+    expect(sender.bodies()).toEqual(['Low balance: HDFC Savings is ₹100.']);
+    expect(store.states.get('u1|hdfc')).toEqual({ isLow: true, episode: 1 });
+  });
+
+  it('alerts a low account an earlier version recorded on its first look without alerting', async () => {
+    const store = new FakeStore([user('u1')], { u1: { accounts: [hdfc], ledger: [debit(900)] } });
+    store.states.set('u1|hdfc', { isLow: true, episode: 0 });
+    const sender = new FakeSender();
+    await runNotifications(at(0), store, sender);
+    await runNotifications(at(15), store, sender);
+    expect(sender.bodies()).toEqual(['Low balance: HDFC Savings is ₹100.']);
+    expect(store.states.get('u1|hdfc')).toEqual({ isLow: true, episode: 1 });
   });
 
   it('does not repeat while the balance stays low, however many checks run', async () => {
@@ -400,25 +411,33 @@ describe('the low-balance alert', () => {
     expect(sender.bodies()).toEqual(['Low balance: HDFC Savings is ₹420.']);
   });
 
+  it('alerts every account that is low, each once', async () => {
+    const savings = account('sav', 'Savings Account', 365.74);
+    const salary = account('sal', 'Salary Account', 267.6);
+    const { sender } = await simulate([[], [], []], {}, [savings, salary]);
+    expect(sender.bodies()).toEqual(['Low balance: Savings Account is ₹365.74.', 'Low balance: Salary Account is ₹267.60.']);
+  });
+
   it('ignores closed accounts', async () => {
     const { sender } = await simulate([[], [debit(580)]], {}, [account('hdfc', 'HDFC Savings', 1000, false)]);
     expect(sender.sent).toHaveLength(0);
   });
 
-  it('keeps watching while the switch is off, so turning it on reports nothing old', async () => {
-    const store = new FakeStore([user('u1', 'Asia/Kolkata', { lowBalance: false })], { u1: { accounts: [hdfc], ledger: [] } });
+  it('sends nothing while the switch is off, and the current spell once it is turned on', async () => {
+    const off = new FakeStore([user('u1', 'Asia/Kolkata', { lowBalance: false })], { u1: { accounts: [hdfc], ledger: [] } });
     const sender = new FakeSender();
-    await runNotifications(at(0), store, sender);
-    store.data.u1 = { accounts: [hdfc], ledger: [debit(580)] };
-    await runNotifications(at(15), store, sender);
+    await runNotifications(at(0), off, sender);
+    off.data.u1 = { accounts: [hdfc], ledger: [debit(580)] };
+    await runNotifications(at(15), off, sender);
+    await runNotifications(at(30), off, sender);
     expect(sender.sent).toHaveLength(0);
-    expect(store.states.get('u1|hdfc')).toEqual({ isLow: true, episode: 1 });
 
-    // Switched on while still low: no alert for a drop that already happened.
-    const on = new FakeStore([user('u1')], { u1: { accounts: [hdfc], ledger: [debit(580)] } });
-    on.states.set('u1|hdfc', { isLow: true, episode: 1 });
-    await runNotifications(at(30), on, sender);
-    expect(sender.sent).toHaveLength(0);
+    // Switched on while still low: the spell has not been alerted yet, so it is — once.
+    const on = new FakeStore([user('u1')], off.data);
+    for (const [key, state] of off.states) on.states.set(key, state);
+    await runNotifications(at(45), on, sender);
+    await runNotifications(at(60), on, sender);
+    expect(sender.bodies()).toEqual(['Low balance: HDFC Savings is ₹420.']);
   });
 
   it('tries again next run when no device could be reached, and does not lose the alert', async () => {
