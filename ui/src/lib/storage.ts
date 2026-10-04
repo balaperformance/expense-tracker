@@ -6,6 +6,8 @@
 
 export const StorageKeys = {
   theme: 'et.theme',
+  /** 'matte' for Matte & Sand; anything else is the current (Gothic Noir) palette. */
+  palette: 'et.palette',
   hideBalances: 'et.hideBalances',
   currency: 'et.currency',
   /** '1' once the user turned push notifications on for this device; cleared when they turn them off. */

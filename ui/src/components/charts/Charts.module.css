@@ -11,7 +11,7 @@
   position: absolute;
   inset: 0;
   transform: rotate(-90deg);
-  filter: drop-shadow(0 6px 10px rgb(60 44 44 / 0.14));
+  filter: drop-shadow(0 6px 10px var(--chart-shadow));
 }
 
 .donutTrack {
@@ -291,7 +291,7 @@
 
 .dotOn {
   width: 14px;
-  background: var(--primary);
+  background: var(--indicator);
 }
 
 .track {

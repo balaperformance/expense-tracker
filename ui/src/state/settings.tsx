@@ -18,21 +18,36 @@ import { keys } from './queryClient';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
+/** The visual design language, independent of light/dark. 'current' is Gothic Noir. */
+export type PalettePreference = 'current' | 'matte';
+
 function readTheme(): ThemePreference {
   const saved = readPref(StorageKeys.theme);
   return saved === 'light' || saved === 'dark' ? saved : 'system';
 }
 
+/** Everyone stays on the current palette until they choose Matte & Sand. */
+function readPalette(): PalettePreference {
+  return readPref(StorageKeys.palette) === 'matte' ? 'matte' : 'current';
+}
+
 const darkQuery = () => window.matchMedia('(prefers-color-scheme: dark)');
 
-function applyTheme(preference: ThemePreference): void {
+/** The page colour of each palette, for the browser chrome and iOS status bar area. */
+const PAGE_COLOR: Record<PalettePreference, { light: string; dark: string }> = {
+  current: { light: '#F5F4F4', dark: '#0B0909' },
+  matte: { light: '#FBFAF7', dark: '#111111' },
+};
+
+function applyAppearance(preference: ThemePreference, palette: PalettePreference): void {
   const dark = preference === 'dark' || (preference === 'system' && darkQuery().matches);
   const root = document.documentElement;
   root.dataset.theme = dark ? 'dark' : 'light';
+  root.dataset.palette = palette;
   root.style.colorScheme = dark ? 'dark' : 'light';
   // The browser chrome (and iOS status bar area) follows the page colour.
   for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
-    meta.content = dark ? '#0B0909' : '#F5F4F4';
+    meta.content = dark ? PAGE_COLOR[palette].dark : PAGE_COLOR[palette].light;
     meta.removeAttribute('media');
   }
 }
@@ -40,6 +55,8 @@ function applyTheme(preference: ThemePreference): void {
 type SettingsState = {
   theme: ThemePreference;
   setTheme: (theme: ThemePreference) => void;
+  palette: PalettePreference;
+  setPalette: (palette: PalettePreference) => void;
   balancesHidden: boolean;
   toggleBalancesHidden: () => void;
   profile: Profile | null;
@@ -48,7 +65,7 @@ type SettingsState = {
   symbol: string;
   updateName: (name: string) => Promise<void>;
   updateCurrency: (code: string) => Promise<void>;
-  /** Sign-out: user-scoped preferences go; the theme is the device's and stays. */
+  /** Sign-out: user-scoped preferences go; the theme and palette are the device's and stay. */
   resetUserScoped: () => void;
 };
 
@@ -58,6 +75,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const { userId, metadataName } = useAuth();
   const client = useQueryClient();
   const [theme, setThemeState] = useState<ThemePreference>(readTheme);
+  const [palette, setPaletteState] = useState<PalettePreference>(readPalette);
   // Hidden by default: the next person to reach this device must not
   // inherit a reveal the previous account switched on.
   const [balancesHidden, setBalancesHidden] = useState(() => readPref(StorageKeys.hideBalances) !== 'false');
@@ -67,13 +85,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [pendingCurrency, setPendingCurrency] = useState<string | null>(null);
 
   useEffect(() => {
-    applyTheme(theme);
+    applyAppearance(theme, palette);
     if (theme !== 'system') return;
     const query = darkQuery();
-    const onChange = () => applyTheme('system');
+    const onChange = () => applyAppearance('system', palette);
     query.addEventListener('change', onChange);
     return () => query.removeEventListener('change', onChange);
-  }, [theme]);
+  }, [theme, palette]);
 
   const profileQuery = useQuery({
     queryKey: keys.profile(userId ?? 'anonymous'),
@@ -96,6 +114,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const setTheme = useCallback((next: ThemePreference) => {
     setThemeState(next);
     writePref(StorageKeys.theme, next);
+  }, []);
+
+  const setPalette = useCallback((next: PalettePreference) => {
+    setPaletteState(next);
+    writePref(StorageKeys.palette, next);
   }, []);
 
   const toggleBalancesHidden = useCallback(() => {
@@ -135,6 +158,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     () => ({
       theme,
       setTheme,
+      palette,
+      setPalette,
       balancesHidden,
       toggleBalancesHidden,
       profile,
@@ -145,7 +170,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       updateCurrency,
       resetUserScoped,
     }),
-    [theme, setTheme, balancesHidden, toggleBalancesHidden, profile, currency, updateName, updateCurrency, resetUserScoped],
+    [theme, setTheme, palette, setPalette, balancesHidden, toggleBalancesHidden, profile, currency, updateName, updateCurrency, resetUserScoped],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

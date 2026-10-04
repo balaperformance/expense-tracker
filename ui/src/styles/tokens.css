@@ -11,6 +11,11 @@
  *
  * Semantics are fixed across themes: green is money in, rose is money out,
  * amber is budget pressure, slate is a transfer, dark taupe is the brand.
+ *
+ * Two palettes share this file. Gothic Noir ("Current") is the default and
+ * owns the bare :root blocks. Matte & Sand redefines the same tokens under
+ * <html data-palette="matte"> at the bottom of the file. The palette is
+ * independent of light/dark: <html data-theme> still picks the mode.
  */
 
 :root {
@@ -63,15 +68,35 @@
   --shadow: 0 0.5px 1px rgb(42 31 31 / 0.05), 0 3px 8px -2px rgb(42 31 31 / 0.07), 0 14px 30px -12px rgb(60 44 44 / 0.2);
   --shadow-strong: 0 1px 2px rgb(42 31 31 / 0.06), 0 12px 24px -8px rgb(42 31 31 / 0.18), 0 30px 56px -20px rgb(60 44 44 / 0.34);
   --rail-fill: linear-gradient(180deg, rgb(255 255 255 / 0.82), rgb(255 255 255 / 0.46));
+  --rail-shadow: rgb(60 44 44 / 0.35);
+  --chart-shadow: rgb(60 44 44 / 0.14);
+
+  /* ---- Controls ------------------------------------------------------ */
+  /* The lit top edge on brand-filled controls, and how a primary button lifts on hover. */
+  --btn-sheen: rgb(255 255 255 / 0.14);
+  --btn-sheen-strong: rgb(255 255 255 / 0.16);
+  --primary-hover-bright: 1.07;
+  --primary-hover-ring: transparent;
+  /* The icon on the active rail / nav item; currentColor keeps it the item's ink. */
+  --nav-active-icon: currentColor;
+  /* How far category colours are pulled toward --muted (0% = their own colour). */
+  --category-mute: 0%;
+  /* Decorative radial glows (hero, sign-in). 0 hides them. */
+  --glow-opacity: 1;
 
   /* ---- Hero ---------------------------------------------------------- */
   --hero-from: #000000;
   --hero-to: #1c1616;
   --hero-edge: rgb(255 255 255 / 0.07);
+  --hero-rim: rgb(255 255 255 / 0.22);
+  --hero-tile: rgb(255 255 255 / 0.06);
   --hero-ink: #f7f5f5;
   --hero-track: rgb(247 245 245 / 0.18);
   --hero-glow: #9aa8ba;
   --hero-accent: #988686;
+  /* The brand mark and profile avatar: a small block of the hero's black. */
+  --mark-from: #000000;
+  --mark-to: #1c1616;
 
   /* ---- Charts -------------------------------------------------------- */
   --chart-1: #a63a50; /* garnet */
@@ -153,6 +178,23 @@
 }
 
 /*
+ * Tokens derived from the brand colour. Declared on .theme-dark as well so a
+ * dark-set region (the hero) resolves them against its own --primary.
+ */
+:root,
+.theme-dark {
+  --tonal-bg: color-mix(in srgb, var(--primary) var(--wash), transparent);
+  --tonal-bg-hover: color-mix(in srgb, var(--primary) calc(var(--wash) + 6%), transparent);
+  --tonal-ink: var(--primary);
+  --tonal-border: transparent;
+  --caption-bg: color-mix(in srgb, var(--primary) 8%, transparent);
+  --caption-ink: var(--primary);
+  --indicator: var(--primary);
+  --focus: var(--primary);
+  --bank-avatar-fill: linear-gradient(135deg, var(--primary), var(--accent));
+}
+
+/*
  * Dark theme. Genuinely different values rather than an inversion: the
  * brand moves to taupe (dark taupe is 2.2:1 on the dark surface), money
  * tones brighten, and panes lift off the page instead of sinking into it.
@@ -214,6 +256,198 @@
   --chart-label-on-emphasis: #f0a3b0;
 
   color-scheme: dark;
+}
+
+/* =========================================================================
+ * Matte & Sand palette — <html data-palette="matte">.
+ *
+ * Matte black for the balance card, the active nav item and primary
+ * controls; warm ivory as the canvas; sand only for small marks (the active
+ * nav icon, badges, the hairline on a hovered button). No glows, no glass
+ * sheen, no gradients beyond a near-flat black. Money tones are deepened so
+ * they read as text on ivory; charts get the lighter fills.
+ * ========================================================================= */
+:root[data-palette='matte'] {
+  /* ---- Palette sources ---------------------------------------------- */
+  --palette-black: #121212;
+  --palette-light-gray: #ebe3d1;
+  --palette-taupe: #9a9286;
+  --palette-dark-taupe: #232220;
+
+  /* ---- Surfaces & ink (light) --------------------------------------- */
+  --bg: #fbfaf7;
+  --bg-glow-a: transparent;
+  --bg-glow-b: transparent;
+  --surface: #fefdfb;
+  --surface-2: #f9f8f4;
+  --sunken: #ebe7de;
+  --border: #ded7ca;
+  --text: #171717;
+  --muted: #6b665e;
+  --primary: #121212;
+  --primary-hi: #1c1c1b;
+  --primary-lo: #121212;
+  --on-primary: #f4efe4;
+  --accent: #9a7f4f;
+  --scrim: rgb(18 18 18 / 0.45);
+
+  /* ---- Brand --------------------------------------------------------- */
+  --brand-gradient: linear-gradient(160deg, #1c1c1b 0%, #121212 100%);
+  --brand-glow: rgb(18 18 18 / 0.26);
+
+  /* ---- Money tones --------------------------------------------------- */
+  --income: #3f7d61;
+  --expense: #b04a40;
+  --warning: #9c6f26;
+  --transfer: #66625b;
+  --on-error: #ffffff;
+  --wash: 11%;
+
+  /* ---- Panes --------------------------------------------------------- */
+  --glass-fill: rgb(254 253 251 / 0.97);
+  --glass-fill-strong: rgb(254 253 251 / 0.99);
+  --glass-edge-top: transparent;
+  --glass-edge: #e3ddd1;
+  --card-fill: #fefdfb;
+  --card-edge: #e3ddd1;
+  --shadow-soft: 0 1px 2px rgb(23 20 15 / 0.04);
+  --shadow: 0 1px 2px rgb(23 20 15 / 0.04), 0 6px 18px -12px rgb(23 20 15 / 0.14);
+  --shadow-strong: 0 2px 4px rgb(23 20 15 / 0.05), 0 18px 36px -18px rgb(23 20 15 / 0.24);
+  --rail-fill: #f9f8f4;
+  --rail-shadow: transparent;
+  --chart-shadow: rgb(23 20 15 / 0.1);
+
+  /* ---- Controls ------------------------------------------------------ */
+  --btn-sheen: rgb(255 255 255 / 0.05);
+  --btn-sheen-strong: rgb(255 255 255 / 0.06);
+  --primary-hover-bright: 1.35;
+  --primary-hover-ring: rgb(212 196 161 / 0.55);
+  --nav-active-icon: #d4c4a1;
+  --category-mute: 42%;
+  --glow-opacity: 0;
+  --tonal-bg: #ebe3d1;
+  --tonal-bg-hover: #e4d9c3;
+  --tonal-ink: #171717;
+  --tonal-border: rgb(154 127 79 / 0.22);
+  --caption-bg: #ebe3d1;
+  --caption-ink: #5c5241;
+  --indicator: #9a7f4f;
+  --focus: #9a7f4f;
+  --bank-avatar-fill: linear-gradient(160deg, #1c1c1b 0%, #121212 100%);
+
+  /* ---- Hero ---------------------------------------------------------- */
+  --hero-from: #191918;
+  --hero-to: #131313;
+  --hero-edge: rgb(212 196 161 / 0.14);
+  --hero-rim: rgb(212 196 161 / 0.18);
+  --hero-tile: #232220;
+  --hero-ink: #efe9dd;
+  --hero-track: rgb(239 233 221 / 0.12);
+  --hero-glow: transparent;
+  --hero-accent: #d4c4a1;
+  --mark-from: #191918;
+  --mark-to: #121212;
+
+  /* ---- Charts -------------------------------------------------------- */
+  --chart-1: #2b2a28; /* graphite */
+  --chart-2: #cdb78c; /* sand */
+  --chart-3: #9a9286; /* taupe */
+  --chart-4: #8c6f42; /* muted bronze */
+  --chart-5: #64727c; /* slate, the one cool accent */
+  --chart-6: #c9c1b4;
+  --chart-other: #d6cfc2;
+  --chart-emphasis: #c45b52;
+  --chart-emphasis-hi: #d67b72;
+  --chart-idle: rgb(196 91 82 / 0.24);
+  --chart-expense: #c45b52;
+  --chart-expense-hi: #d67b72;
+  --chart-income: #6fa58a;
+  --chart-income-hi: #8dbba3;
+  --chart-label-on-emphasis: #8e3a33;
+}
+
+/* Matte & Sand, dark: black stays the canvas and ivory becomes the primary. */
+:root[data-palette='matte'][data-theme='dark'],
+:root[data-palette='matte'] .theme-dark {
+  --bg: #111111;
+  --bg-glow-a: transparent;
+  --bg-glow-b: transparent;
+  --surface: #1a1a19;
+  --surface-2: #1f1f1e;
+  --sunken: #262523;
+  --border: #3a3733;
+  --text: #ede8dd;
+  --muted: #a39d92;
+  --primary: #ebe5d8;
+  --primary-hi: #f1ece1;
+  --primary-lo: #e2dacb;
+  --on-primary: #141414;
+  --accent: #d4c4a1;
+  --scrim: rgb(0 0 0 / 0.6);
+  --brand-gradient: linear-gradient(160deg, #f1ece1 0%, #e6dfd1 100%);
+  --brand-glow: rgb(0 0 0 / 0.5);
+
+  --income: #86bfa2;
+  --expense: #e08378;
+  --warning: #d9ab5e;
+  --transfer: #a19b91;
+  --on-error: #141414;
+  --wash: 16%;
+
+  --glass-fill: rgb(26 26 25 / 0.92);
+  --glass-fill-strong: rgb(26 26 25 / 0.97);
+  --glass-edge-top: transparent;
+  --glass-edge: rgb(237 232 221 / 0.08);
+  --card-fill: #1a1a19;
+  --card-edge: #2e2c29;
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow: 0 8px 20px -10px rgb(0 0 0 / 0.6);
+  --shadow-strong: 0 16px 36px -14px rgb(0 0 0 / 0.7);
+  --rail-fill: #151514;
+
+  --btn-sheen: rgb(255 255 255 / 0.3);
+  --btn-sheen-strong: rgb(255 255 255 / 0.3);
+  --primary-hover-bright: 1.03;
+  --primary-hover-ring: rgb(212 196 161 / 0.8);
+  --nav-active-icon: #9a7f4f;
+  --category-mute: 38%;
+  --tonal-bg: #2a2722;
+  --tonal-bg-hover: #332f28;
+  --tonal-ink: #ede8dd;
+  --tonal-border: rgb(212 196 161 / 0.2);
+  --caption-bg: rgb(212 196 161 / 0.12);
+  --caption-ink: #d4c4a1;
+  --indicator: #d4c4a1;
+  --focus: #d4c4a1;
+  --bank-avatar-fill: linear-gradient(160deg, #f1ece1 0%, #e6dfd1 100%);
+
+  --chart-1: #ddd5c6;
+  --chart-2: #c9b387;
+  --chart-3: #8e867a;
+  --chart-4: #b08a52;
+  --chart-5: #8b9aa5;
+  --chart-6: #5c574f;
+  --chart-other: #3a3733;
+  --chart-emphasis: #e08378;
+  --chart-emphasis-hi: #eba198;
+  --chart-idle: rgb(224 131 120 / 0.3);
+  --chart-expense: #e08378;
+  --chart-expense-hi: #eba198;
+  --chart-income: #86bfa2;
+  --chart-income-hi: #a6d2bb;
+  --chart-label-on-emphasis: #f0b0a8;
+
+  color-scheme: dark;
+}
+
+/* The balance card and brand mark lift off a black canvas in dark mode. */
+:root[data-palette='matte'][data-theme='dark'] {
+  --hero-from: #1f1e1c;
+  --hero-to: #1a1918;
+  --hero-edge: #3a3733;
+  --hero-tile: #2b2926;
+  --mark-from: #1f1e1c;
+  --mark-to: #1a1918;
 }
 
 @media (min-width: 768px) {

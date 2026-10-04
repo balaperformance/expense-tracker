@@ -6,12 +6,16 @@ import { useIsDark } from '@/hooks/useIsDark';
 
 import styles from './Finance.module.css';
 
-/** A category's icon on a wash of its own colour, lifted for dark mode. */
+/**
+ * A category's icon on a wash of its own colour, lifted for dark mode. The
+ * palette's --category-mute pulls it toward the muted ink (0% leaves it as is).
+ */
 export function CategoryAvatar({ icon, color, size = 34 }: { icon: string | null | undefined; color: string | null | undefined; size?: number }) {
   const dark = useIsDark();
   const tint = readableOn(color, dark);
+  const tone = `color-mix(in srgb, ${tint} calc(100% - var(--category-mute)), var(--muted))`;
   return (
-    <span className={styles.avatar} style={{ width: size, height: size, '--tone': tint } as CSSProperties} aria-hidden>
+    <span className={styles.avatar} style={{ width: size, height: size, '--tone': tone } as CSSProperties} aria-hidden>
       <CategoryGlyph icon={icon} size={Math.round(size * 0.48)} />
     </span>
   );

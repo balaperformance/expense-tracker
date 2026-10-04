@@ -225,8 +225,8 @@ a.row:active {
 .cardHead .sectionCaption {
   padding: 3px 8px;
   border-radius: var(--r-pill);
-  background: color-mix(in srgb, var(--primary) 8%, transparent);
-  color: var(--primary);
+  background: var(--caption-bg);
+  color: var(--caption-ink);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -259,7 +259,7 @@ a.row:active {
   right: 18px;
   height: 1px;
   z-index: 1;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.22), transparent);
+  background: linear-gradient(90deg, transparent, var(--hero-rim), transparent);
   pointer-events: none;
 }
 
@@ -275,4 +275,5 @@ a.row:active {
   border-radius: 50%;
   pointer-events: none;
   z-index: 0;
+  opacity: var(--glow-opacity);
 }

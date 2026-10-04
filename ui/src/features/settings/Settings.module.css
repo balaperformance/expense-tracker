@@ -18,7 +18,7 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, #000, #1c1616);
+  background: linear-gradient(135deg, var(--mark-from), var(--mark-to));
   color: var(--hero-accent);
   font-family: var(--font-serif);
   font-size: 18.5px;

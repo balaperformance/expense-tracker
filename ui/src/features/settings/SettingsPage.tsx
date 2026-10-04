@@ -18,7 +18,7 @@ import { SUPPORTED_CURRENCIES } from '@/lib/format';
 import { signOut } from '@/services/auth';
 import { useAuth } from '@/state/auth';
 import { useFeedback } from '@/state/feedback';
-import { useSettings, type ThemePreference } from '@/state/settings';
+import { useSettings, type PalettePreference, type ThemePreference } from '@/state/settings';
 
 import { ChangePasswordSheet } from './ChangePasswordSheet';
 import { NotificationsSection } from './NotificationsSection';
@@ -172,18 +172,32 @@ export function SettingsPage() {
           <div>
             <SectionHeader title="Appearance" />
             <Card>
-              <div className="stack gap-sm">
-                <span className="t-label-md">Theme</span>
-                <Segmented<ThemePreference>
-                  label="Theme"
-                  value={settings.theme}
-                  onChange={settings.setTheme}
-                  options={[
-                    { value: 'system', label: 'System', icon: 'themeAuto' },
-                    { value: 'light', label: 'Light', icon: 'themeLight' },
-                    { value: 'dark', label: 'Dark', icon: 'themeDark' },
-                  ]}
-                />
+              <div className="stack gap-md">
+                <div className="stack gap-sm">
+                  <span className="t-label-md">Palette</span>
+                  <Segmented<PalettePreference>
+                    label="Palette"
+                    value={settings.palette}
+                    onChange={settings.setPalette}
+                    options={[
+                      { value: 'matte', label: 'Matte & Sand' },
+                      { value: 'current', label: 'Current' },
+                    ]}
+                  />
+                </div>
+                <div className="stack gap-sm">
+                  <span className="t-label-md">Mode</span>
+                  <Segmented<ThemePreference>
+                    label="Mode"
+                    value={settings.theme}
+                    onChange={settings.setTheme}
+                    options={[
+                      { value: 'system', label: 'System', icon: 'themeAuto' },
+                      { value: 'light', label: 'Light', icon: 'themeLight' },
+                      { value: 'dark', label: 'Dark', icon: 'themeDark' },
+                    ]}
+                  />
+                </div>
               </div>
             </Card>
           </div>

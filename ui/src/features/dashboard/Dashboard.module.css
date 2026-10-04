@@ -62,7 +62,7 @@
 
 .dotOn {
   width: 14px;
-  background: var(--primary);
+  background: var(--indicator);
 }
 
 .chartsCard {

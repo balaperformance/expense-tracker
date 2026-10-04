@@ -17,6 +17,7 @@
   border-radius: 50%;
   background: radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, transparent), transparent 68%);
   pointer-events: none;
+  opacity: var(--glow-opacity);
 }
 
 :global([data-theme='dark']) .glow {

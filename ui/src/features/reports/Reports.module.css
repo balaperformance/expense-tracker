@@ -68,6 +68,7 @@
   border-radius: 50%;
   background: radial-gradient(circle, color-mix(in srgb, var(--tone) 16%, transparent), transparent 70%);
   pointer-events: none;
+  opacity: var(--glow-opacity);
 }
 
 .savedHead {
