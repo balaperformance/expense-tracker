@@ -112,6 +112,15 @@ channel is optional: configure Web Push, FCM or both.
 
 Then, in the app: **Settings → Notifications → Turn on**.
 
+### The in-app history (the header bell)
+
+Run `ui/supabase/010_in_app_notifications.sql` (after 008), then redeploy the
+function (step 4). From then on the sender keeps each message's text on its
+`notification_log` row just before sending, and the web app lists them under
+the bell on its main screens, newest first, with read/unread state. Rows sent
+earlier show by their kind alone. Until 010 is run the bell stays hidden and
+delivery is unchanged; if keeping the text ever fails, the push still goes out.
+
 ### Adding the Android app (FCM) — dormant, not needed for the PWA
 
 1. Run `mobile/supabase/009_mobile_push_tokens.sql` (after 008).

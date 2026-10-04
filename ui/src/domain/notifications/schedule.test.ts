@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { accountBalances, type AccountRow, type LedgerRow } from '../../../supabase/functions/push-notify/core/balances.ts';
 import { cardsDueTomorrow, type CardEntryRow, type CardRow } from '../../../supabase/functions/push-notify/core/cards.ts';
@@ -88,6 +88,17 @@ class FakeStore implements NotifyStore {
 
   release(userId: string, key: string) {
     this.claimed.delete(`${userId}|${key}`);
+    this.saved.delete(`${userId}|${key}`);
+    return Promise.resolve();
+  }
+
+  /** What the in-app history would show, by `user|key`. */
+  readonly saved = new Map<string, PushMessage>();
+  failSaving = false;
+
+  saveMessage(userId: string, key: string, message: PushMessage) {
+    if (this.failSaving) return Promise.reject(new Error('column missing'));
+    this.saved.set(`${userId}|${key}`, message);
     return Promise.resolve();
   }
 }
@@ -520,6 +531,46 @@ describe('delivery', () => {
     expect(isRetryableStatus(429)).toBe(true);
     expect(isRetryableStatus(400)).toBe(false);
     expect(isRetryableStatus(410)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// In-app history
+// ---------------------------------------------------------------------------
+
+describe('the in-app history', () => {
+  it('keeps the exact message that was sent, under its event key', async () => {
+    const store = new FakeStore([user('u1')]);
+    const sender = new FakeSender();
+    await runNotifications(ist('2026-10-03T22:00'), store, sender);
+    expect(store.saved.get(`u1|${dailyKey('2026-10-03')}`)).toEqual(sender.sent[0]?.message);
+  });
+
+  it('keeps a message no device could take, so the app still shows it', async () => {
+    const store = new FakeStore([user('u1')]);
+    const sender = new FakeSender();
+    sender.results = [{ delivered: 0, removed: 1, retryable: 0 }];
+    await runNotifications(ist('2026-10-03T22:00'), store, sender);
+    expect(store.saved.has(`u1|${dailyKey('2026-10-03')}`)).toBe(true);
+  });
+
+  it('drops the message with the claim when the send will be retried', async () => {
+    const store = new FakeStore([user('u1')]);
+    const sender = new FakeSender();
+    sender.results = [{ delivered: 0, removed: 0, retryable: 1 }];
+    await runNotifications(ist('2026-10-03T22:00'), store, sender);
+    expect(store.saved.size).toBe(0);
+  });
+
+  it('never holds up delivery when the history cannot be written', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const store = new FakeStore([user('u1')]);
+    store.failSaving = true;
+    const sender = new FakeSender();
+    const report = await runNotifications(ist('2026-10-03T22:00'), store, sender);
+    expect(report.sent.daily).toBe(1);
+    expect(report.failed).toBe(0);
+    quiet.mockRestore();
   });
 });
 

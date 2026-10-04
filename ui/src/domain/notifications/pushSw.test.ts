@@ -9,14 +9,16 @@ import source from '../../../public/push-sw.js?raw';
 
 type Listener = (event: unknown) => void;
 
-function loadWorker(windows: Array<{ url: string; navigate?: (url: string) => Promise<void>; focus: () => Promise<void> }> = []) {
+type FakeWindow = { url: string; navigate?: (url: string) => Promise<void>; focus: () => Promise<void>; postMessage?: (message: unknown) => void };
+
+function loadWorker(windows: FakeWindow[] = [], matchAll: () => Promise<FakeWindow[]> = () => Promise.resolve(windows)) {
   const listeners: Record<string, Listener> = {};
   const showNotification = vi.fn<(title: string, options?: unknown) => Promise<void>>(() => Promise.resolve());
   const openWindow = vi.fn(() => Promise.resolve());
   const self = {
     location: { origin: 'https://app.example' },
     registration: { showNotification },
-    clients: { matchAll: () => Promise.resolve(windows), openWindow },
+    clients: { matchAll, openWindow },
     addEventListener: (type: string, listener: Listener) => {
       listeners[type] = listener;
     },
@@ -64,6 +66,24 @@ describe('the push handler', () => {
       expect(showNotification).toHaveBeenCalledTimes(1);
       expect(showNotification.mock.calls[0]?.[0]).toBe('Expense Tracker');
     }
+  });
+
+  it('tells an open app window, so its notification bell refreshes', async () => {
+    const postMessage = vi.fn();
+    const elsewhere = vi.fn();
+    const { listeners } = loadWorker([
+      { url: 'https://app.example/', focus: vi.fn(), postMessage },
+      { url: 'https://other.example/', focus: vi.fn(), postMessage: elsewhere },
+    ]);
+    await dispatch(listeners.push, pushEvent({ title: 'Expense Tracker', body: 'x' }));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'push-received' });
+    expect(elsewhere).not.toHaveBeenCalled();
+  });
+
+  it('still shows the notification when the open windows cannot be listed', async () => {
+    const { listeners, showNotification } = loadWorker([], () => Promise.reject(new Error('no clients')));
+    await dispatch(listeners.push, pushEvent({ title: 'Expense Tracker', body: 'x' }));
+    expect(showNotification).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a link that leaves the app', async () => {

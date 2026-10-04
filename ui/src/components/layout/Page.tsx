@@ -5,6 +5,7 @@ import { APP_NAME } from '@/domain/defaults';
 import { useGoBack } from '@/hooks/useGoBack';
 
 import styles from './Layout.module.css';
+import { NotificationBell } from './NotificationBell';
 
 type PageProps = {
   title: ReactNode;
@@ -22,6 +23,8 @@ type PageProps = {
   titleClassName?: string;
   /** The browser/app-switcher title, when the visible title is not plain text. */
   documentTitle?: string;
+  /** The notification bell. On by default for top-level screens: no back control and no form bar. */
+  bell?: boolean;
 };
 
 function useScrolled(): boolean {
@@ -36,7 +39,7 @@ function useScrolled(): boolean {
 }
 
 /** A screen: sticky glass app bar, safe-area-aware content column, optional bottom bar. */
-export function Page({ title, eyebrow, back, actions, below, children, narrow, bar, titleClassName = 't-title-lg', documentTitle }: PageProps) {
+export function Page({ title, eyebrow, back, actions, below, children, narrow, bar, titleClassName = 't-title-lg', documentTitle, bell = back == null && bar == null }: PageProps) {
   const scrolled = useScrolled();
   const goBack = useGoBack(back ?? '/');
   const titleText = documentTitle ?? (typeof title === 'string' ? title : null);
@@ -54,7 +57,12 @@ export function Page({ title, eyebrow, back, actions, below, children, narrow, b
             {eyebrow ? <span className="t-eyebrow">{eyebrow}</span> : null}
             <h1 className={`${titleClassName} ${styles.title}`}>{title}</h1>
           </div>
-          {actions ? <div className={styles.actions}>{actions}</div> : null}
+          {actions || bell ? (
+            <div className={styles.actions}>
+              {actions}
+              {bell ? <NotificationBell /> : null}
+            </div>
+          ) : null}
         </div>
         {below ? <div className={styles.headerBelow}>{below}</div> : null}
       </header>

@@ -1,0 +1,86 @@
+/* The header bell and the notification history in its sheet. Colours come from the theme tokens only. */
+
+/* Set apart from the page's own header actions, as the dashboard spaces its glass buttons. */
+.bell {
+  margin-left: 6px;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-md);
+  width: 100%;
+  padding: 11px var(--sp-md);
+  text-align: left;
+  color: inherit;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+
+.itemUnread {
+  background: color-mix(in srgb, var(--primary) 4%, transparent);
+}
+
+.item:active {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+@media (hover: hover) {
+  .item:hover {
+    background: color-mix(in srgb, var(--text) 3.5%, transparent);
+  }
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  min-width: 0;
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemUnread .title {
+  font-weight: 600;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--indicator);
+}
+
+.body {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.time {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.25px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

@@ -15,6 +15,7 @@ import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_METHODS } from '@/domain/defaults';
 import { EMPTY_EXPENSE_FILTER } from '@/domain/expenseFilter';
 import type { BankAccountBalance, Budget, Expense, ExpenseCategory, Income, LedgerEntry, PaymentMethod } from '@/domain/models';
 import { buildBudgetProgress, sumBy } from '@/domain/analytics';
+import { inboxFromRows } from '@/domain/notifications/inbox';
 import { addDays, addMonths, firstOfMonth, monthRange, today, trailingMonths } from '@/lib/dates';
 import { overrideCapabilities } from '@/services/capabilities';
 import { AiChatProvider } from '@/state/aiChat';
@@ -179,13 +180,33 @@ const budgets: Budget[] = [
   { id: 'b-trans', userId: USER_ID, amount: 2600, month: firstOfMonth(now), categoryId: cat('Transport').id, createdAt: null, category: cat('Transport') },
 ];
 
+/** What the header bell lists: one of each kind the sender produces, two still unread. */
+function sampleInbox() {
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const row = (key: string, kind: string, hours: number, body: string, url: string, read: boolean) => ({
+    event_key: key,
+    kind,
+    sent_at: hoursAgo(hours),
+    title: 'Expense Tracker',
+    body,
+    url,
+    read_at: read ? hoursAgo(hours - 0.5) : null,
+  });
+  return inboxFromRows([
+    row('low:acc-2:1', 'lowBalance', 1, 'Low balance: Savings is ₹420.', '/accounts', false),
+    row('card:demo:1', 'cardDue', 5, 'Credit card reminder: HDFC Millennia payment is due tomorrow.', '/cards', false),
+    row('daily:1', 'daily', 14, "Today's spending: ₹1,008. Don't forget to add any missing expenses.", '/expenses/new', true),
+    row('summary:1', 'summary', 62, 'Spending update: ₹7,737 spent so far this month.', '/reports', true),
+  ]);
+}
+
 function seededClient(): QueryClient {
   const client = new QueryClient({
     defaultOptions: {
       queries: { staleTime: Infinity, gcTime: Infinity, retry: false, refetchOnWindowFocus: false, refetchOnMount: false },
     },
   });
-  const caps = { merchant: true, bankAccounts: true, expenseBankLink: true, incomeBankLink: true, transfers: true, creditCards: true, treatments: true, tags: true, statementDetails: false, notifications: false };
+  const caps = { merchant: true, bankAccounts: true, expenseBankLink: true, incomeBankLink: true, transfers: true, creditCards: true, treatments: true, tags: true, statementDetails: false, notifications: false, notificationInbox: true };
   overrideCapabilities(caps);
   const set = (key: readonly unknown[], data: unknown) => client.setQueryData(key, data);
   set(['bootstrap', USER_ID], true);
@@ -202,6 +223,7 @@ function seededClient(): QueryClient {
   const sampleTags = ['bikespending', 'carspending', 'myfamfood', 'myownspending'].map((name, i) => ({ id: `tag-${i}`, name }));
   set([...keys.tags(USER_ID), true], sampleTags);
   for (const e of expenses.slice(0, 20)) set(keys.transactionTags(USER_ID, 'expense', e.id), e === expenses[0] ? ['tag-1', 'tag-3'] : []);
+  set(keys.notificationInbox(USER_ID), sampleInbox());
   set(keys.dashboard(USER_ID, firstOfMonth(now)), monthRaw(now));
   for (let i = 0; i < 6; i++) set(keys.reports(USER_ID, addMonths(now, -i)), monthRaw(addMonths(now, -i)));
   set(keys.budgets(USER_ID, firstOfMonth(now)), buildBudgetProgress(budgets, inMonth(expenses, (e) => e.expenseDate, now)));

@@ -52,6 +52,7 @@ const EMPTY_CAPS: SchemaCapabilities = {
   tags: false,
   statementDetails: false,
   notifications: false,
+  notificationInbox: false,
 };
 
 export function useCapabilities(): SchemaCapabilities {

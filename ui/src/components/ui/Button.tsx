@@ -47,7 +47,7 @@ type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>
   label: string;
   glass?: boolean;
   small?: boolean;
-  badge?: number;
+  badge?: number | string;
   color?: string;
   iconSize?: number;
 };

@@ -70,6 +70,8 @@ export interface NotifyStore {
   /** Records [key] for the user; false when it was already recorded (so: already sent). */
   claim(userId: string, key: string, kind: NotificationKind): Promise<boolean>;
   release(userId: string, key: string): Promise<void>;
+  /** Keeps what a claimed notification says, for the app's in-app history (migration 010). */
+  saveMessage(userId: string, key: string, message: PushMessage): Promise<void>;
 }
 
 export interface PushSender {
@@ -148,6 +150,19 @@ export function summaryDue(clock: { date: IsoDate; hour: number }): { period: 'm
 // The run
 // ---------------------------------------------------------------------------
 
+/**
+ * Saves the message for the in-app history. The history is a convenience on
+ * top of delivery, so a failure here (the 010 columns missing, a database
+ * hiccup) is logged and the push goes out regardless.
+ */
+async function keepForHistory(store: NotifyStore, userId: string, key: string, message: PushMessage): Promise<void> {
+  try {
+    await store.saveMessage(userId, key, message);
+  } catch (error) {
+    console.error('push-notify: could not keep a message for the in-app history:', error instanceof Error ? error.message : 'unknown error');
+  }
+}
+
 /** Every device failed for a reason that may pass, and none got it: try again next run. */
 const shouldRetry = (result: SendResult) => result.delivered === 0 && result.retryable > 0;
 
@@ -162,7 +177,9 @@ async function deliver(
 ): Promise<{ sent: boolean; retry: boolean }> {
   if (!(await store.claim(user.userId, key, kind))) return { sent: false, retry: false };
   try {
-    const result = await sender.send(user.userId, await build());
+    const message = await build();
+    await keepForHistory(store, user.userId, key, message);
+    const result = await sender.send(user.userId, message);
     if (shouldRetry(result)) {
       await store.release(user.userId, key);
       return { sent: false, retry: true };

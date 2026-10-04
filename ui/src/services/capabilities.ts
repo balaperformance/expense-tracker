@@ -30,19 +30,30 @@ export type SchemaCapabilities = {
   statementDetails: boolean;
   /** `notification_preferences` and `push_subscriptions` (migration 008) */
   notifications: boolean;
+  /** The in-app history on `notification_log`: title, body, url, read_at (migration 010) */
+  notificationInbox: boolean;
 };
 
 const UNDEFINED_COLUMN = '42703';
 const UNDEFINED_TABLE = 'PGRST205';
 const UNDEFINED_TABLE_LEGACY = '42P01';
+/** A table the signed-in role may not read. Only the history probe takes it as "not there yet". */
+const INSUFFICIENT_PRIVILEGE = '42501';
 
 let resolved: SchemaCapabilities | null = null;
 let inflight: Promise<SchemaCapabilities> | null = null;
 
-async function probe(table: string, column: string): Promise<boolean> {
+/**
+ * [deniedMeansMissing]: before migration 010, notification_log belongs to the
+ * sender alone, and a project may deny the signed-in role any read of it.
+ */
+async function probe(table: string, column: string, { deniedMeansMissing = false } = {}): Promise<boolean> {
   const { error } = await getSupabase().from(table).select(column).limit(1);
   if (!error) return true;
   if (error.code === UNDEFINED_COLUMN || error.code === UNDEFINED_TABLE || error.code === UNDEFINED_TABLE_LEGACY) {
+    return false;
+  }
+  if (deniedMeansMissing && error.code === INSUFFICIENT_PRIVILEGE) {
     return false;
   }
   // Anything else (network, auth) is not evidence of a missing feature.
@@ -54,7 +65,7 @@ export function resolveCapabilities(force = false): Promise<SchemaCapabilities> 
   if (resolved && !force) return Promise.resolve(resolved);
   if (inflight && !force) return inflight;
   inflight = retryOnTransientAuth(async () => {
-    const [merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, card1, card2, card3, card4, tags1, tags2, tags3, statementDetails, notifications1, notifications2, ...treatmentParts] = await Promise.all([
+    const [merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, card1, card2, card3, card4, tags1, tags2, tags3, statementDetails, notifications1, notifications2, notificationInbox, ...treatmentParts] = await Promise.all([
       probe('expenses', 'merchant'),
       probe('bank_accounts', 'id'),
       probe('expenses', 'bank_account_id'),
@@ -70,6 +81,7 @@ export function resolveCapabilities(force = false): Promise<SchemaCapabilities> 
       probe('account_transactions', 'reference, upi_id, txn_time'),
       probe('notification_preferences', 'user_id, daily_reminder, spending_summary, low_balance, card_due, timezone'),
       probe('push_subscriptions', 'id, endpoint'),
+      probe('notification_log', 'event_key, kind, sent_at, title, body, url, read_at', { deniedMeansMissing: true }),
       probe('receivables', 'id, kind, person, ledger_entry_id, expense_id, due_date, note'),
       probe('account_transactions', 'receivable_id'),
     ]);
@@ -81,7 +93,7 @@ export function resolveCapabilities(force = false): Promise<SchemaCapabilities> 
     const tags = [tags1, tags2, tags3].every(Boolean);
     // One migration adds both tables, and they are only useful together.
     const notifications = notifications1 && notifications2;
-    return { merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, creditCards, treatments, tags, statementDetails, notifications };
+    return { merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, creditCards, treatments, tags, statementDetails, notifications, notificationInbox };
   })
     .then((caps) => {
       resolved = caps;
@@ -107,6 +119,7 @@ export function capabilities(): SchemaCapabilities {
       tags: false,
       statementDetails: false,
       notifications: false,
+      notificationInbox: false,
     }
   );
 }
@@ -126,6 +139,7 @@ export function missingSummary(caps: SchemaCapabilities): string {
     !caps.tags && 'tags (006)',
     !caps.statementDetails && 'statement references and UPI details (007)',
     !caps.notifications && 'push notifications (008)',
+    !caps.notificationInbox && 'in-app notification history (010)',
   ]
     .filter(Boolean)
     .join(', ');

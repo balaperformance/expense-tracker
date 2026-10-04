@@ -95,7 +95,7 @@ for (const [table, columns] of Object.entries(TABLES)) {
   }
 }
 
-// Optional tables and columns the app probes for (migrations 001–009).
+// Optional tables and columns the app probes for (migrations 001–010).
 const OPTIONAL = [
   ['expenses', 'merchant'],
   ['expenses', 'bank_account_id'],
@@ -115,6 +115,8 @@ const OPTIONAL = [
   ['push_subscriptions', 'id, user_id, endpoint, disabled_at'],
   // 009 (mobile/supabase): the Android app's push tokens.
   ['mobile_push_tokens', 'id, user_id, token, platform, disabled_at'],
+  // 010: the in-app notification history under the header bell.
+  ['notification_log', 'event_key, kind, sent_at, title, body, url, read_at'],
 ];
 for (const [table, column] of OPTIONAL) {
   const result = await request(`/rest/v1/${table}?select=${encodeURIComponent(column)}&limit=1`);

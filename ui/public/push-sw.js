@@ -40,8 +40,22 @@ self.addEventListener('push', (event) => {
     tag: typeof data.tag === 'string' && data.tag ? data.tag.slice(0, 80) : undefined,
     data: { path: safePath(data.url) },
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(Promise.all([self.registration.showNotification(title, options), tellOpenWindows()]));
 });
+
+/** An open app refreshes its notification list (the header bell) at once. Never stands in the way of the notification. */
+async function tellOpenWindows() {
+  try {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if (client.url.startsWith(self.location.origin) && typeof client.postMessage === 'function') {
+        client.postMessage({ type: 'push-received' });
+      }
+    }
+  } catch {
+    // Nothing to tell: the list refreshes when the app is next shown.
+  }
+}
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

@@ -14,7 +14,7 @@ import { accountBalances, type AccountBalance, type LedgerRow } from './core/bal
 import { cardsDueTomorrow, lastStatementDueDate, type CardDue, type CardEntryRow, type CardRow } from './core/cards.ts';
 import { addDays, type IsoDate } from './core/dates.ts';
 import type { MobileTokenStore } from './core/fcm.ts';
-import type { LowBalanceState, NotifyStore, NotifyUser, NotificationKind } from './core/run.ts';
+import type { LowBalanceState, NotifyStore, NotifyUser, NotificationKind, PushMessage } from './core/run.ts';
 import { personalSpendingCents, type ExpenseRow } from './core/spending.ts';
 
 type Row = Record<string, unknown>;
@@ -25,6 +25,7 @@ const PAGE = 1000;
 const CHUNK = 100;
 const LOG_RETENTION_DAYS = 120;
 const TABLE_MISSING = new Set(['PGRST205', '42P01']);
+const COLUMN_MISSING = new Set(['PGRST204', '42703']);
 const UNIQUE_VIOLATION = '23505';
 
 const text = (row: Row, key: string): string => (typeof row[key] === 'string' ? row[key] : '');
@@ -244,6 +245,18 @@ export class SupabaseStore implements NotifyStore {
 
   async release(userId: string, key: string): Promise<void> {
     await this.client.from('notification_log').delete().eq('user_id', userId).eq('event_key', key);
+  }
+
+  /** The text the in-app history shows. Before migration 010 the columns are not there, and that is not an error. */
+  async saveMessage(userId: string, key: string, message: PushMessage): Promise<void> {
+    const { error } = await this.client
+      .from('notification_log')
+      .update({ title: message.title, body: message.body, url: message.url })
+      .eq('user_id', userId)
+      .eq('event_key', key);
+    if (error && !(error.code && COLUMN_MISSING.has(error.code))) {
+      throw new Error(`could not keep the message (${error.code ?? 'unknown'})`);
+    }
   }
 
   /** Old keys are no longer needed once their date has passed. */

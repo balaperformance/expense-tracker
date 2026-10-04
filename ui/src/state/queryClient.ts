@@ -53,6 +53,8 @@ export const keys = {
   transactionTags: (userId: string, kind: string, id: string) => ['transactionTags', userId, kind, id] as const,
   /** The four notification switches. Not money-bearing, so a write elsewhere never refetches them. */
   notificationPrefs: (userId: string) => ['notificationPrefs', userId] as const,
+  /** The in-app notification history under the header bell. Written by the sender, not by the app's money writes. */
+  notificationInbox: (userId: string) => ['notificationInbox', userId] as const,
 };
 
 /** Money-bearing query families. A write to any table can move several of them. */
