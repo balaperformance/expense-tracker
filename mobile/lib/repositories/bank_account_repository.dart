@@ -60,34 +60,42 @@ class BankAccountRepository {
             .order('id'))),
       ]);
 
-      final List<BankAccount> accounts = results[0] as List<BankAccount>;
-      final List<Map<String, dynamic>> movements =
-          results[1] as List<Map<String, dynamic>>;
-
-      final Map<String, int> credits = <String, int>{};
-      final Map<String, int> debits = <String, int>{};
-
-      for (final Map<String, dynamic> row in movements) {
-        final String accountId = row['account_id'] as String;
-        final int cents =
-            (((row['amount'] as num?)?.toDouble() ?? 0) * 100).round();
-        if (row['direction'] == 'credit') {
-          credits[accountId] = (credits[accountId] ?? 0) + cents;
-        } else {
-          debits[accountId] = (debits[accountId] ?? 0) + cents;
-        }
-      }
-
-      return accounts
-          .map((BankAccount account) => BankAccountBalance(
-                account: account,
-                totalCredits: (credits[account.id] ?? 0) / 100,
-                totalDebits: (debits[account.id] ?? 0) / 100,
-              ))
-          .toList();
+      return balancesFrom(
+        results[0] as List<BankAccount>,
+        results[1] as List<Map<String, dynamic>>,
+      );
     } catch (error) {
       throw ErrorMapper.map(error);
     }
+  }
+
+  /// Each account's credits and debits from its ledger rows
+  /// (`account_id, direction, amount`), summed in whole cents.
+  static List<BankAccountBalance> balancesFrom(
+    List<BankAccount> accounts,
+    List<Map<String, dynamic>> movements,
+  ) {
+    final Map<String, int> credits = <String, int>{};
+    final Map<String, int> debits = <String, int>{};
+
+    for (final Map<String, dynamic> row in movements) {
+      final String accountId = row['account_id'] as String;
+      final int cents =
+          (((row['amount'] as num?)?.toDouble() ?? 0) * 100).round();
+      if (row['direction'] == 'credit') {
+        credits[accountId] = (credits[accountId] ?? 0) + cents;
+      } else {
+        debits[accountId] = (debits[accountId] ?? 0) + cents;
+      }
+    }
+
+    return accounts
+        .map((BankAccount account) => BankAccountBalance(
+              account: account,
+              totalCredits: (credits[account.id] ?? 0) / 100,
+              totalDebits: (debits[account.id] ?? 0) / 100,
+            ))
+        .toList();
   }
 
   Future<BankAccount> create(BankAccount account) async {

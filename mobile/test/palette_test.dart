@@ -109,7 +109,7 @@ void main() {
           reason: 'body ink is a warm near-black, not the hero black');
     });
 
-    test('the hero spend bar track is a soft white, not a money tone', () {
+    test('the hero track tint is a soft white, not a money tone', () {
       const Color track = AppColors.heroTrack;
       expect((track.red, track.green, track.blue),
           (AppColors.heroInk.red, AppColors.heroInk.green, AppColors.heroInk.blue));
@@ -118,7 +118,7 @@ void main() {
       expect(track, isNot(AppColors.incomeDark));
     });
 
-    test('the Net card glow is a cool neutral, not a money tone', () {
+    test('the balance card glow is a cool neutral, not a money tone', () {
       final HSLColor glow = HSLColor.fromColor(AppColors.heroGlow);
       expect(glow.saturation, lessThan(0.25), reason: 'a blue-gray');
       expect(glow.hue, inInclusiveRange(200, 230), reason: 'cool, not green');
@@ -129,7 +129,7 @@ void main() {
       ('ahead', 110000, 9600),
       ('behind', 1000, 9600),
     ]) {
-      testWidgets('Net card ($name): green only on Income',
+      testWidgets('Balance card ($name): green only on Income',
           (WidgetTester tester) async {
         await tester.pumpWidget(MaterialApp(
           theme: AppTheme.light,
@@ -158,7 +158,7 @@ void main() {
             hasLength(1),
             reason: 'only the Income figure is green');
         expect(inks, contains(AppColors.heroInk),
-            reason: 'the net figure is neutral ink');
+            reason: 'the hero figure is neutral ink');
       });
     }
 
@@ -515,7 +515,7 @@ void main() {
       expect(fills.whereType<RadialGradient>(), isEmpty,
           reason: 'Matte & Sand paints no glows');
 
-      final Text eyebrow = tester.widget(find.text('NET THIS MONTH'));
+      final Text eyebrow = tester.widget(find.text('SPENT THIS MONTH'));
       expect(eyebrow.style?.color, sand);
       final List<Color?> inks = tester
           .widgetList<Text>(find.descendant(

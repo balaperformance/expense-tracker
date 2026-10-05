@@ -225,7 +225,7 @@ void main() {
   });
 
   group('dashboard components', () {
-    testWidgets('balance card with a nine-figure net',
+    testWidgets('balance card with a nine-figure balance',
         (WidgetTester tester) async {
       await _rendersEverywhere(
         tester,
@@ -239,7 +239,7 @@ void main() {
       );
     });
 
-    testWidgets('balance card with a negative net', (WidgetTester tester) async {
+    testWidgets('balance card without accounts, spending past income', (WidgetTester tester) async {
       await _rendersEverywhere(
         tester,
         const BalanceCard(

@@ -111,7 +111,7 @@ void main() {
         (WidgetTester tester) async {
       await _pump(tester, card(hidden: true, onToggle: () {}));
 
-      expect(find.text('In bank accounts'), findsOneWidget);
+      expect(find.text('AVAILABLE BALANCE'), findsOneWidget);
       expect(find.textContaining('1,08,122'), findsNothing);
       expect(find.byTooltip('Show balance'), findsOneWidget);
     });
@@ -155,6 +155,91 @@ void main() {
               reason: '$width $brightness');
         }
       }
+    });
+  });
+
+  // The web's BalanceCard: the balance leads, and the month's income and
+  // spending are figures to date, never netted — a salary paid at month-end
+  // has not arrived yet.
+  group('BalanceCard shows what is available, as the web does', () {
+    testWidgets('with accounts, the figure is the balance, not the month net',
+        (WidgetTester tester) async {
+      await _pump(
+        tester,
+        const BalanceCard(
+          income: 2000,
+          expense: 38263,
+          currency: 'INR',
+          monthLabel: 'Oct',
+          bankTotal: 152340.5,
+        ),
+      );
+
+      expect(find.text('AVAILABLE BALANCE'), findsOneWidget);
+      expect(find.text('₹1,52,340.50'), findsOneWidget);
+      expect(find.text('So far this month'), findsOneWidget);
+      expect(find.text('OCT'), findsOneWidget);
+      expect(find.text('Income received'), findsOneWidget);
+      expect(find.text('Spent this month'), findsOneWidget);
+      // income − expense is nowhere on the card.
+      expect(find.textContaining('36,263'), findsNothing);
+      expect(find.text('NET THIS MONTH'), findsNothing);
+    });
+
+    testWidgets('an overdrawn total keeps its minus sign',
+        (WidgetTester tester) async {
+      await _pump(
+        tester,
+        const BalanceCard(
+          income: 0,
+          expense: 0,
+          currency: 'INR',
+          monthLabel: 'Oct',
+          bankTotal: -1250,
+        ),
+      );
+      expect(find.text('−₹1,250.00'), findsOneWidget);
+    });
+
+    testWidgets('hidden, the figure itself is masked',
+        (WidgetTester tester) async {
+      await _pump(
+        tester,
+        BalanceCard(
+          income: 2000,
+          expense: 38263,
+          currency: 'INR',
+          monthLabel: 'Oct',
+          bankTotal: 152340.5,
+          bankTotalHidden: true,
+          onToggleBankTotal: () {},
+        ),
+      );
+      expect(find.textContaining('1,52,340'), findsNothing);
+      // The month's figures are not secret.
+      expect(find.text('Income received'), findsOneWidget);
+    });
+
+    testWidgets('without accounts, the figure is the month’s spending',
+        (WidgetTester tester) async {
+      await _pump(
+        tester,
+        const BalanceCard(
+          income: 2000,
+          expense: 38263,
+          currency: 'INR',
+          monthLabel: 'Oct',
+        ),
+      );
+
+      expect(find.text('SPENT THIS MONTH'), findsOneWidget);
+      expect(find.text('₹38,263.00'), findsOneWidget);
+      expect(find.text('OCT'), findsOneWidget);
+      expect(find.text('Income received'), findsOneWidget);
+      expect(find.text('Spent this month'), findsNothing);
+      expect(find.text('So far this month'), findsNothing);
+      expect(find.byTooltip('Show balance'), findsNothing);
+      expect(find.byTooltip('Hide balance'), findsNothing);
     });
   });
 

@@ -64,7 +64,7 @@ class AppTypography {
   static TextStyle section(TextTheme text) =>
       text.titleLarge!.copyWith(fontSize: 18, height: 1.25);
 
-  /// Small tracked caps above a figure — "NET THIS MONTH". Callers pass the
+  /// Small tracked caps above a figure — "AVAILABLE BALANCE". Callers pass the
   /// text already upper-cased; the style only adds the tracking.
   static TextStyle eyebrow(TextTheme text, {Color? color}) =>
       text.labelSmall!.copyWith(

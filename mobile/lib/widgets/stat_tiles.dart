@@ -83,10 +83,14 @@ class StatTile extends StatelessWidget {
   }
 }
 
-/// The dashboard's financial snapshot, on the black [HeroSurface].
+/// The dashboard's hero, on the black [HeroSurface]: what is available now,
+/// then the month so far.
 ///
-/// One dominant figure, two supporting legs, and the bank total when
-/// accounts exist.
+/// The month is still running — a salary paid at month-end has not arrived
+/// yet — so income received and spending sit side by side as figures to date
+/// and are never netted into a verdict on the month. Without accounts there is
+/// no balance, and the figure is the month's spending. The web's
+/// `BalanceCard`.
 class BalanceCard extends StatelessWidget {
   const BalanceCard({
     super.key,
@@ -104,7 +108,9 @@ class BalanceCard extends StatelessWidget {
   final String currency;
   final String monthLabel;
 
-  /// Total across bank accounts, shown as a footer line when accounts exist.
+  /// Every bank and cash account's balance added up — the total the Accounts
+  /// screen shows; null when there are no accounts. Credit-card outstanding
+  /// is not money available, so it is never part of it.
   final double? bankTotal;
 
   /// Masks [bankTotal] behind dots until the eye is tapped.
@@ -115,21 +121,19 @@ class BalanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double net = income - expense;
-
     // Builder so the content reads the hero's dark theme, not the page's.
     return HeroSurface(
       glow: PaletteTokens.of(context).heroGlow,
-      child: Builder(
-        builder: (BuildContext context) => _content(context, net),
-      ),
+      child: Builder(builder: _content),
     );
   }
 
-  Widget _content(BuildContext context, double net) {
+  Widget _content(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     // The hero's own ink and accent — taupe on Gothic Noir, sand on Matte.
     final PaletteTokens hero = PaletteTokens.of(context);
+    final double? balance = bankTotal;
+    final Widget monthBadge = _HeroBadge(label: monthLabel);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,23 +142,30 @@ class BalanceCard extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: Text(
-                'NET THIS MONTH',
+                balance != null ? 'AVAILABLE BALANCE' : 'SPENT THIS MONTH',
                 style: AppTypography.eyebrow(
                   theme.textTheme,
                   color: hero.heroAccent,
                 ),
               ),
             ),
-            _HeroBadge(label: monthLabel),
+            if (balance == null)
+              monthBadge
+            else if (onToggleBankTotal != null)
+              _RevealButton(
+                hidden: bankTotalHidden,
+                onPressed: onToggleBankTotal!,
+              ),
           ],
         ),
         const SizedBox(height: AppSpacing.xs),
         MoneyText(
-          net,
+          balance ?? expense,
           currency: currency,
-          signed: net != 0,
-          // Neutral ink, not a money tone: the sign says which way the
-          // month went, and green stays reserved for Income.
+          // Neutral ink, not a money tone, and a sign only when an account
+          // is overdrawn: green stays reserved for Income.
+          signed: balance != null && balance < 0,
+          obscured: balance != null && bankTotalHidden,
           fit: true,
           // The hero figure on the whole app, and the one place a counting
           // transition is worth its frames.
@@ -164,12 +175,18 @@ class BalanceCard extends StatelessWidget {
             color: hero.heroInk,
           ),
         ),
-        if (income > 0) ...<Widget>[
-          const SizedBox(height: AppSpacing.sm),
-          _SpendBar(
-            share: expense / income,
-            spent: ToneColors.expense(context),
-            track: hero.heroTrack,
+        if (balance != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.sm + 2),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  'So far this month',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              monthBadge,
+            ],
           ),
         ],
         const SizedBox(height: AppSpacing.md),
@@ -177,7 +194,7 @@ class BalanceCard extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: _Leg(
-                label: 'Income',
+                label: 'Income received',
                 amount: income,
                 currency: currency,
                 tone: ToneColors.income(context),
@@ -185,49 +202,20 @@ class BalanceCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
+            // Without accounts the figure above is already the spending.
             Expanded(
-              child: _Leg(
-                label: 'Expenses',
-                amount: expense,
-                currency: currency,
-                tone: ToneColors.expense(context),
-                icon: Icons.north_east_rounded,
-              ),
+              child: balance == null
+                  ? const SizedBox.shrink()
+                  : _Leg(
+                      label: 'Spent this month',
+                      amount: expense,
+                      currency: currency,
+                      tone: ToneColors.expense(context),
+                      icon: Icons.north_east_rounded,
+                    ),
             ),
           ],
         ),
-        if (bankTotal != null) ...<Widget>[
-          const SizedBox(height: AppSpacing.sm + 2),
-          Row(
-            children: <Widget>[
-              Icon(
-                Icons.account_balance_rounded,
-                size: AppSpacing.iconSm,
-                color: hero.heroAccent,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  'In bank accounts',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ),
-              MoneyText(
-                bankTotal!,
-                currency: currency,
-                obscured: bankTotalHidden,
-                style: theme.textTheme.titleSmall,
-              ),
-              if (onToggleBankTotal != null) ...<Widget>[
-                const SizedBox(width: AppSpacing.xs),
-                _RevealButton(
-                  hidden: bankTotalHidden,
-                  onPressed: onToggleBankTotal!,
-                ),
-              ],
-            ],
-          ),
-        ],
       ],
     );
   }
@@ -289,47 +277,6 @@ class _RevealButton extends StatelessWidget {
       color: Theme.of(context).colorScheme.onSurfaceVariant,
       icon: Icon(
         hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-      ),
-    );
-  }
-}
-
-/// How much of the month's income has gone: a thin two-tone bar under the
-/// hero figure. Rose for spent over a soft white track for what is left,
-/// at 5px of height.
-class _SpendBar extends StatelessWidget {
-  const _SpendBar({
-    required this.share,
-    required this.spent,
-    required this.track,
-  });
-
-  final double share;
-  final Color spent;
-  final Color track;
-
-  @override
-  Widget build(BuildContext context) {
-    final double clamped = share.clamp(0.0, 1.0);
-
-    return Semantics(
-      label: 'Spent ${(share * 100).round()} percent of income',
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        child: SizedBox(
-          height: 5,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              ColoredBox(color: track),
-              FractionallySizedBox(
-                alignment: Alignment.centerLeft,
-                widthFactor: clamped,
-                child: ColoredBox(color: spent),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

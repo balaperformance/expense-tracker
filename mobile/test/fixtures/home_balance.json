@@ -1,0 +1,39 @@
+{
+  "_about": "One month of data for the Home hero. Read by test/home_balance_test.dart and run through the web's own code to check both apps show the same figures. Salary for the month before landed on its last day; this month only a small refund-style income has arrived so far.",
+  "accounts": [
+    { "id": "a-salary", "user_id": "u1", "bank_name": "HDFC Bank", "nickname": "Salary Account", "last4": "3751", "opening_balance": 50000, "is_active": true, "created_at": "2026-01-01T00:00:00Z", "kind": "bank" },
+    { "id": "a-savings", "user_id": "u1", "bank_name": "SBI", "nickname": "Savings", "last4": "1102", "opening_balance": 20000, "is_active": true, "created_at": "2026-01-02T00:00:00Z", "kind": "bank" },
+    { "id": "a-old", "user_id": "u1", "bank_name": "ICICI Bank", "nickname": "Old account", "last4": null, "opening_balance": 5000, "is_active": false, "created_at": "2026-01-03T00:00:00Z", "kind": "bank" },
+    { "id": "a-cash", "user_id": "u1", "bank_name": "Cash", "nickname": "Cash", "last4": null, "opening_balance": 1500, "is_active": true, "created_at": "2026-01-04T00:00:00Z", "kind": "cash" }
+  ],
+  "movements": [
+    { "id": "m01", "_what": "last month's salary, paid on its last day", "account_id": "a-salary", "direction": "credit", "amount": 120000 },
+    { "id": "m02", "_what": "income this month", "account_id": "a-salary", "direction": "credit", "amount": 2000 },
+    { "id": "m03", "_what": "expense e1", "account_id": "a-salary", "direction": "debit", "amount": 1250.5 },
+    { "id": "m04", "_what": "expense e2", "account_id": "a-salary", "direction": "debit", "amount": 3400 },
+    { "id": "m05", "_what": "transfer out", "account_id": "a-salary", "direction": "debit", "amount": 10000 },
+    { "id": "m06", "_what": "transfer in", "account_id": "a-savings", "direction": "credit", "amount": 10000 },
+    { "id": "m07", "_what": "ATM withdrawal out", "account_id": "a-salary", "direction": "debit", "amount": 3000 },
+    { "id": "m08", "_what": "ATM withdrawal into cash", "account_id": "a-cash", "direction": "credit", "amount": 3000 },
+    { "id": "m09", "_what": "expense e3 paid in cash", "account_id": "a-cash", "direction": "debit", "amount": 450 },
+    { "id": "m10", "_what": "credit card bill paid", "account_id": "a-salary", "direction": "debit", "amount": 15000 },
+    { "id": "m11", "_what": "expense e4, paid for someone else", "account_id": "a-salary", "direction": "debit", "amount": 2200 },
+    { "id": "m12", "_what": "a movement on a closed account", "account_id": "a-old", "direction": "debit", "amount": 1000 }
+  ],
+  "expenses": [
+    { "id": "e1", "user_id": "u1", "amount": 1250.5, "expense_date": "2026-10-02", "bank_account_id": "a-salary" },
+    { "id": "e2", "user_id": "u1", "amount": 3400, "expense_date": "2026-10-03", "bank_account_id": "a-salary" },
+    { "id": "e3", "user_id": "u1", "amount": 450, "expense_date": "2026-10-03", "bank_account_id": "a-cash" },
+    { "id": "e4", "user_id": "u1", "amount": 2200, "expense_date": "2026-10-04", "bank_account_id": "a-salary" },
+    { "id": "e5", "user_id": "u1", "amount": 8000, "expense_date": "2026-10-04", "credit_card_id": "card-1" }
+  ],
+  "paidFor": ["e4"],
+  "income": [
+    { "id": "i1", "user_id": "u1", "amount": 2000, "income_date": "2026-10-02", "bank_account_id": "a-salary" }
+  ],
+  "expected": {
+    "availableBalance": 175199.5,
+    "incomeReceived": 2000,
+    "spentThisMonth": 13100.5
+  }
+}
