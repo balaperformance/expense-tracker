@@ -175,6 +175,23 @@ class ExpenseRepository {
     }
   }
 
+  /// One expense with its category and payment method, for opening it from a
+  /// report; null when it has been deleted since.
+  Future<Expense?> fetchById({required String userId, required String id}) async {
+    try {
+      await _resolveCapabilities();
+      final Map<String, dynamic>? row = await _client
+          .from(_table)
+          .select(_select)
+          .eq('user_id', userId)
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : Expense.fromMap(row);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
   /// Ids of expenses paid on someone else's behalf (migration 005): owed
   /// back, so not the user's own spending habits.
   Future<Set<String>> fetchPaidForExpenseIds({required String userId}) async {
@@ -197,13 +214,46 @@ class ExpenseRepository {
     }
   }
 
+  /// How many expenses the reports read at most: years of daily spending.
+  static const int historyRowLimit = 25000;
+
+  /// The reports' history: lean rows (no joins, no notes), newest first, in
+  /// the database's own column names. Thousands of rows are read at once, so
+  /// they go straight to the insights engine rather than through [Expense].
+  Future<List<Map<String, dynamic>>> fetchHistoryRows({
+    required String userId,
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    try {
+      await _resolveCapabilities();
+      return await fetchAllPages(
+        postgrestPages(() => _client
+            .from(_table)
+            .select('id, amount, category_id, payment_method_id, '
+                'expense_date, description$_optionalColumns')
+            .eq('user_id', userId)
+            .gte('expense_date', AppDateUtils.toDateString(from))
+            .lt('expense_date', AppDateUtils.toDateString(toExclusive))
+            .order('expense_date', ascending: false)
+            .order('id')),
+        max: historyRowLimit,
+      );
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
   /// Month totals for a contiguous range, returned as `yyyy-MM` -> total.
   ///
   /// One request covers the whole trend chart instead of one per month.
+  /// [exclude]: expenses that are not the user's own spending (paid for
+  /// someone else), left out of every total.
   Future<Map<String, double>> fetchMonthlyTotals({
     required String userId,
     required DateTime from,
     required DateTime toExclusive,
+    Set<String> exclude = const <String>{},
   }) async {
     try {
       final List<Map<String, dynamic>> rows = await fetchAllPages(
@@ -217,7 +267,14 @@ class ExpenseRepository {
         max: AppConstants.monthlyAggregateLimit * 12,
       );
 
-      return monthlyTotals(rows, 'expense_date');
+      return monthlyTotals(
+        exclude.isEmpty
+            ? rows
+            : rows
+                .where((Map<String, dynamic> r) => !exclude.contains(r['id']))
+                .toList(),
+        'expense_date',
+      );
     } catch (error) {
       throw ErrorMapper.map(error);
     }

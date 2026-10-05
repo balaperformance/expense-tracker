@@ -22,6 +22,7 @@ import '../../services/schema_capabilities.dart';
 import '../../services/sms/bank_sms.dart';
 import '../../services/sms/sms_account_matcher.dart';
 import '../../services/sms/sms_expense_draft.dart';
+import '../../widgets/account_choice_chips.dart';
 import '../../widgets/card_widgets.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
@@ -715,27 +716,12 @@ class _AccountPicker extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      children: <Widget>[
-        AppChoiceChip(
-          label: 'Cash',
-          icon: Icons.payments_outlined,
-          selected: selectedAccountId == null,
-          enabled: enabled,
-          onSelected: () => onSelected(null),
-        ),
-        ...accounts.map((BankAccount account) {
-          return AppChoiceChip(
-            label: account.displayLabel,
-            icon: Icons.account_balance_outlined,
-            selected: selectedAccountId == account.id,
-            enabled: enabled,
-            onSelected: () => onSelected(account.id),
-          );
-        }),
-      ],
+    return AccountChoiceChips(
+      accounts: accounts,
+      selectedId: selectedAccountId,
+      enabled: enabled,
+      fullLabels: true,
+      onSelected: onSelected,
     );
   }
 }

@@ -21,9 +21,11 @@ class BankAccountRepository {
   Future<void> refreshCapabilities() =>
       SchemaCapabilities.resolve(_client, force: true);
 
-  static const String _select =
+  /// [kind] only once migration 011 has added it: selecting a missing column
+  /// fails the whole request.
+  static String get _select =>
       'id, user_id, bank_name, nickname, last4, opening_balance, '
-      'is_active, created_at';
+      'is_active, created_at${SchemaCapabilities.cashAccount ? ', kind' : ''}';
 
   Future<List<BankAccount>> fetchAll(String userId) async {
     try {

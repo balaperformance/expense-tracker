@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/formatters.dart';
@@ -249,7 +249,7 @@ class _TotalCard extends StatelessWidget {
                     'TOTAL OUTSTANDING',
                     style: AppTypography.eyebrow(
                       theme.textTheme,
-                      color: AppColors.heroAccent,
+                      color: PaletteTokens.of(context).heroAccent,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xs),
@@ -268,9 +268,9 @@ class _TotalCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.md),
-            const IconWell(
+            IconWell(
               icon: Icons.credit_card_rounded,
-              tone: AppColors.heroAccent,
+              tone: PaletteTokens.of(context).heroAccent,
               size: 44,
             ),
           ],

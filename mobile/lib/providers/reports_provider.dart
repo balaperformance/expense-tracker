@@ -74,6 +74,9 @@ class ReportsProvider extends AsyncProvider {
         AppDateUtils.trailingMonths(_month, _trendMonths);
 
     try {
+      // Purchases paid for someone else are owed back, not spending.
+      final Set<String> paidFor =
+          await _expenses.fetchPaidForExpenseIds(userId: id);
       final List<Object> results = await Future.wait(<Future<Object>>[
         _expenses.fetchForMonth(userId: id, month: _month),
         _income.fetchForMonth(userId: id, month: _month),
@@ -81,6 +84,7 @@ class ReportsProvider extends AsyncProvider {
           userId: id,
           from: months.first,
           toExclusive: AppDateUtils.addMonths(_month, 1),
+          exclude: paidFor,
         ),
         _income.fetchMonthlyTotals(
           userId: id,
@@ -89,7 +93,8 @@ class ReportsProvider extends AsyncProvider {
         ),
       ]);
 
-      final List<Expense> monthExpenses = results[0] as List<Expense>;
+      final List<Expense> monthExpenses =
+          personalSpending(results[0] as List<Expense>, paidFor);
       final List<Income> monthIncome = results[1] as List<Income>;
       final Map<String, double> expenseTotals =
           results[2] as Map<String, double>;

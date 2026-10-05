@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_glass.dart';
 import '../../core/theme/app_motion.dart';
+import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 
 /// One destination in [GlassNavBar].
@@ -61,6 +62,7 @@ class GlassNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final GlassTokens glass = AppGlass.of(context);
+    final PaletteTokens palette = PaletteTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final double safeBottom = MediaQuery.paddingOf(context).bottom;
 
@@ -106,10 +108,11 @@ class GlassNavBar extends StatelessWidget {
                           shape: BoxShape.circle,
                           color: scheme.primary,
                           // A soft glow in the brand colour: the selection
-                          // reads as lit, not merely filled.
+                          // reads as lit, not merely filled. Matte & Sand
+                          // keeps only a quiet contact shadow.
                           boxShadow: <BoxShadow>[
                             BoxShadow(
-                              color: scheme.primary.withOpacity(0.35),
+                              color: palette.brandGlow,
                               blurRadius: 12,
                               offset: const Offset(0, 4),
                             ),
@@ -154,7 +157,11 @@ class _NavSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Color tone = selected ? scheme.onPrimary : scheme.onSurfaceVariant;
+    // Matte & Sand marks the active icon in sand rather than the on-primary
+    // ink — one of the small marks the palette reserves sand for.
+    final Color tone = selected
+        ? PaletteTokens.of(context).navActiveIcon ?? scheme.onPrimary
+        : scheme.onSurfaceVariant;
 
     return Semantics(
       label: item.label,

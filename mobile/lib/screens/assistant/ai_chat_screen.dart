@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../models/ai_chat.dart';
 import '../../providers/ai_chat_provider.dart';
+import '../../widgets/assistant/rich_reply.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
@@ -426,7 +427,9 @@ class _AssistantBubble extends StatelessWidget {
             bottomRight: Radius.circular(AppSpacing.radiusLg),
           ),
         ),
-        child: SelectableText(message.text, style: theme.textTheme.bodyMedium),
+        // Laid out from the reply's Markdown — headings, points, steps, bold
+        // amounts, tables that scroll inside the bubble — and selectable.
+        child: RichReply(text: message.text, style: theme.textTheme.bodyMedium),
       ),
     );
   }

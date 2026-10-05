@@ -4,10 +4,11 @@ import 'package:flutter/services.dart';
 import 'app_colors.dart';
 import 'app_glass.dart';
 import 'app_motion.dart';
+import 'app_palette.dart';
 import 'app_spacing.dart';
 import 'app_typography.dart';
 
-/// Light and dark themes.
+/// Light and dark themes, for each palette.
 ///
 /// Every component the app uses is styled once here, so screens describe
 /// layout and never appearance. If a card, field or chip looks different on
@@ -15,41 +16,59 @@ import 'app_typography.dart';
 /// be added.
 ///
 /// Light and dark are built from the same structure but genuinely different
-/// values — see [AppColors] for why they are not one palette inverted.
+/// values — see [AppColors] for why they are not one palette inverted. The
+/// palettes share that structure too: one builder, fed a [PaletteTokens], so
+/// Matte & Sand is a different set of values rather than a second theme to
+/// keep in step. The tokens ride along as a theme extension, which is how the
+/// hero, the charts and the money tones find them.
 class AppTheme {
   const AppTheme._();
 
   /// Built once and reused. The getters these replace rebuilt the whole
   /// ThemeData — every component theme, every text style — on each access,
   /// which the app did on every settings change and every themed rebuild.
-  static final ThemeData light = _build(Brightness.light);
-  static final ThemeData dark = _build(Brightness.dark);
+  /// Static finals are lazy, so a palette nobody picks is never built.
+  static final ThemeData light = _build(PaletteTokens.currentLight);
+  static final ThemeData dark = _build(PaletteTokens.currentDark);
+  static final ThemeData matteLight = _build(PaletteTokens.matteLight);
+  static final ThemeData matteDark = _build(PaletteTokens.matteDark);
 
-  static ThemeData _build(Brightness brightness) {
+  /// The theme for [palette] at [brightness].
+  static ThemeData of(AppPalette palette, Brightness brightness) {
+    final bool isDark = brightness == Brightness.dark;
+    return switch (palette) {
+      AppPalette.current => isDark ? dark : light,
+      AppPalette.matte => isDark ? matteDark : matteLight,
+    };
+  }
+
+  static ThemeData _build(PaletteTokens p) {
+    final Brightness brightness = p.brightness;
     final bool isDark = brightness == Brightness.dark;
 
-    final Color background =
-        isDark ? AppColors.darkBackground : AppColors.lightBackground;
-    final Color surface =
-        isDark ? AppColors.darkSurface : AppColors.lightSurface;
-    final Color sunken = isDark ? AppColors.darkSunken : AppColors.lightSunken;
-    final Color border = isDark ? AppColors.darkBorder : AppColors.lightBorder;
-    final Color onSurface = isDark ? AppColors.darkText : AppColors.lightText;
-    final Color muted =
-        isDark ? AppColors.darkTextMuted : AppColors.lightTextMuted;
-    final Color primary = isDark ? AppColors.brandDark : AppColors.brand;
-    // The secondary accent, taupe, for idle icons and quiet highlights.
-    // Focus rings and progress use [primary], the brand.
-    const Color accent = AppColors.accent;
-    final Color onAccentInk = isDark ? AppColors.black : Colors.white;
-    final Color error = isDark ? AppColors.expenseDark : AppColors.expense;
+    final Color background = p.background;
+    final Color surface = p.surface;
+    final Color sunken = p.sunken;
+    final Color border = p.border;
+    final Color onSurface = p.text;
+    final Color muted = p.muted;
+    final Color primary = p.primary;
+    // The secondary accent — taupe, or sand — for idle icons and quiet
+    // highlights. Focus rings and progress use [primary], the brand.
+    final Color accent = p.accent;
+    final Color onAccentInk = p.onAccent;
+    final Color error = p.expense;
+    // The selected segment: a wash of the brand, unless the palette names
+    // its own (a wash of matte black would just be gray).
+    final Color tonal = p.tonal ?? primary.withOpacity(isDark ? 0.22 : 0.10);
+    final Color tonalInk = p.tonalInk ?? primary;
 
     final ColorScheme scheme = ColorScheme(
       brightness: brightness,
       primary: primary,
-      onPrimary: isDark ? AppColors.black : Colors.white,
-      primaryContainer: primary.withOpacity(isDark ? 0.22 : 0.12),
-      onPrimaryContainer: primary,
+      onPrimary: p.onPrimary,
+      primaryContainer: p.tonal ?? primary.withOpacity(isDark ? 0.22 : 0.12),
+      onPrimaryContainer: tonalInk,
       secondary: accent,
       onSecondary: onAccentInk,
       tertiary: accent,
@@ -59,24 +78,25 @@ class AppTheme {
       surfaceContainerHighest: sunken,
       onSurfaceVariant: muted,
       error: error,
-      onError: isDark ? AppColors.black : Colors.white,
+      onError: p.onError,
       errorContainer: error.withOpacity(isDark ? 0.20 : 0.10),
       onErrorContainer: error,
       outline: border,
       outlineVariant: border,
-      inverseSurface: isDark ? AppColors.darkText : AppColors.lightText,
-      onInverseSurface: isDark ? AppColors.lightText : Colors.white,
+      inverseSurface: onSurface,
+      onInverseSurface: p.onInverse,
       shadow: Colors.black,
       scrim: Colors.black,
     );
 
     final TextTheme text = AppTypography.textTheme(scheme);
-    final GlassTokens glass = AppGlass.forBrightness(brightness);
+    final GlassTokens glass = p.glass;
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
+      extensions: <ThemeExtension<dynamic>>[p],
       fontFamily: AppTypography.fontFamily,
       scaffoldBackgroundColor: background,
       canvasColor: background,
@@ -264,12 +284,12 @@ class AppTheme {
           side: WidgetStatePropertyAll<BorderSide>(BorderSide(color: border)),
           backgroundColor: WidgetStateProperty.resolveWith<Color>(
             (Set<WidgetState> states) => states.contains(WidgetState.selected)
-                ? primary.withOpacity(isDark ? 0.22 : 0.10)
+                ? tonal
                 : Colors.transparent,
           ),
           foregroundColor: WidgetStateProperty.resolveWith<Color>(
             (Set<WidgetState> states) =>
-                states.contains(WidgetState.selected) ? primary : muted,
+                states.contains(WidgetState.selected) ? tonalInk : muted,
           ),
           shape: WidgetStatePropertyAll<OutlinedBorder>(
             RoundedRectangleBorder(

@@ -5,8 +5,12 @@ import '../core/utils/date_utils.dart';
 import '../core/utils/uuid.dart';
 import '../models/ledger_entry.dart';
 import '../models/money_transfer.dart';
+import '../models/movement_treatment.dart';
+import '../models/receivable.dart';
 import '../services/schema_capabilities.dart';
 import 'paging.dart';
+import 'receivable_repository.dart';
+import 'tag_repository.dart';
 
 /// Reads and writes `public.account_transactions`, the ledger that is the
 /// source of truth for every bank account movement.
@@ -456,6 +460,175 @@ class LedgerRepository {
           .update(columns)
           .eq('id', entryId)
           .eq('user_id', userId);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  // ---- Treatments (migration 005) -------------------------------------------
+  //
+  // Changing how a recorded movement is recorded can take several writes —
+  // remove an expense, add or link the other transfer leg, create a claim.
+  // They are never issued one by one from here: `apply_bank_treatment` does
+  // them inside one database transaction, so a failure leaves nothing
+  // half-done. The counterparts of the web app's services/receivables.ts.
+
+  /// Re-treats the recorded movement [entryId] — expense, income, transfer,
+  /// card bill, money lent, repayment or reimbursement. [treatment] is the
+  /// engine's payload (the web domain's `treatmentPayload`), the same JSON
+  /// the web app sends. Returns the movement's id.
+  Future<String> applyBankTreatment({
+    required String entryId,
+    required Map<String, Object?> treatment,
+  }) async {
+    try {
+      final Object? id = await _client.rpc<Object?>(
+        'apply_bank_treatment',
+        params: <String, dynamic>{
+          'p_entry_id': entryId,
+          'p_treatment': treatment,
+        },
+      );
+      return id is String && id.isNotEmpty ? id : entryId;
+    } on PostgrestException catch (error) {
+      // The function raises its own errors as P0001, worded for the user
+      // ("Choose the card this paid.") — shown as they are.
+      if (error.code == 'P0001' && error.message.trim().isNotEmpty) {
+        throw AppException(error.message.trim());
+      }
+      throw ErrorMapper.map(error);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Every claim with what went out and what came back, read the way the
+  /// web app reads them (see [ReceivableRepository.fetchClaims]).
+  Future<List<ClaimSummary>> fetchClaims({required String userId}) =>
+      ReceivableRepository(_client).fetchClaims(userId);
+
+  /// Purchases from [from] up to [toExclusive], newest first — what a
+  /// reimbursement can pay back (the web's `fetchRecent`).
+  Future<List<ClaimPurchase>> fetchPurchases({
+    required String userId,
+    required DateTime from,
+    required DateTime toExclusive,
+    int limit = 80,
+  }) async {
+    final String columns = 'id, amount, expense_date, description'
+        '${SchemaCapabilities.merchant ? ', merchant' : ''}'
+        '${SchemaCapabilities.creditCards ? ', credit_card_id' : ''}'
+        ', categories(name)';
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from('expenses')
+          .select(columns)
+          .eq('user_id', userId)
+          .gte('expense_date', AppDateUtils.toDateString(from))
+          .lt('expense_date', AppDateUtils.toDateString(toExclusive))
+          .order('expense_date', ascending: false)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      String? clean(Object? value) {
+        final String? text = (value as String?)?.trim();
+        return text == null || text.isEmpty ? null : text;
+      }
+
+      return rows.map((Map<String, dynamic> r) {
+        final Object? category = r['categories'];
+        return ClaimPurchase(
+          id: r['id'] as String,
+          amount: (r['amount'] as num?)?.toDouble() ?? 0,
+          date: AppDateUtils.parseDate(r['expense_date'] as String),
+          title: clean(r['merchant']) ??
+              clean(r['description']) ??
+              (category is Map ? clean(category['name']) : null) ??
+              'Expense',
+          creditCardId: r['credit_card_id'] as String?,
+        );
+      }).toList();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// The expense and income rows [entryId] belongs to now — after a
+  /// treatment that may have just created one.
+  Future<({String? expenseId, String? incomeId})> documentsOfEntry({
+    required String userId,
+    required String entryId,
+  }) async {
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from(_table)
+          .select('expense_id, income_id')
+          .eq('user_id', userId)
+          .eq('id', entryId)
+          .limit(1);
+      if (rows.isEmpty) return (expenseId: null, incomeId: null);
+      return (
+        expenseId: rows.first['expense_id'] as String?,
+        incomeId: rows.first['income_id'] as String?,
+      );
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// The names of the tags on one expense or income row (migration 006).
+  Future<List<String>> fetchTagNames({
+    required String userId,
+    required TagKind kind,
+    required String id,
+  }) async {
+    if (!SchemaCapabilities.tags) return const <String>[];
+    try {
+      final List<Map<String, dynamic>> links = await _client
+          .from(kind == TagKind.expense ? 'expense_tags' : 'income_tags')
+          .select('tag_id')
+          .eq('user_id', userId)
+          .eq(kind == TagKind.expense ? 'expense_id' : 'income_id', id);
+      final List<String> ids = links
+          .map((Map<String, dynamic> r) => r['tag_id'] as String?)
+          .whereType<String>()
+          .toList();
+      if (ids.isEmpty) return const <String>[];
+      final List<Map<String, dynamic>> tags = await _client
+          .from('tags')
+          .select('id, name')
+          .eq('user_id', userId)
+          .inFilter('id', ids);
+      return tags
+          .map((Map<String, dynamic> r) => ((r['name'] as String?) ?? '').trim())
+          .where((String name) => name.isNotEmpty)
+          .toList()
+        ..sort((String a, String b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Makes [names] the complete set of tags on an expense or income row.
+  Future<void> setDocumentTags({
+    required TagKind kind,
+    required String id,
+    required List<String> names,
+  }) =>
+      TagRepository(_client).setTags(kind: kind, id: id, names: names);
+
+  /// An income row's source, which its edit keeps unless changed.
+  Future<String?> fetchIncomeSource({
+    required String userId,
+    required String incomeId,
+  }) async {
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from('income')
+          .select('source')
+          .eq('user_id', userId)
+          .eq('id', incomeId)
+          .limit(1);
+      return rows.isEmpty ? null : rows.first['source'] as String?;
     } catch (error) {
       throw ErrorMapper.map(error);
     }

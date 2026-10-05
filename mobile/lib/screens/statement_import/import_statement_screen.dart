@@ -78,10 +78,12 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     if (initial != null) _choose(initial);
   }
 
+  /// The accounts a statement can belong to: open bank accounts. Cash in
+  /// hand has no statement.
   List<BankAccount> _activeAccounts() => context
       .read<BankAccountProvider>()
       .accounts
-      .where((BankAccount a) => a.isActive)
+      .where((BankAccount a) => a.isActive && !a.isCash)
       .toList();
 
   void _choose(BankAccount account) {
@@ -155,8 +157,9 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     final BankAccount? account = provider.account;
     if (account == null) {
       if (accounts.isInitialLoad) return const ListSkeleton(rows: 3);
-      final List<BankAccount> active =
-          accounts.accounts.where((BankAccount a) => a.isActive).toList();
+      final List<BankAccount> active = accounts.accounts
+          .where((BankAccount a) => a.isActive && !a.isCash)
+          .toList();
       if (active.isEmpty) {
         return const ScrollableCentered(
           child: EmptyState(
@@ -176,11 +179,9 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
           CardList(
             children: active
                 .map((BankAccount a) => AppListRow(
-                      leading: BankAvatar(initial: a.initial),
+                      leading: AccountAvatar(account: a),
                       title: a.nickname,
-                      subtitle: a.last4 == null
-                          ? a.bankName
-                          : '${a.bankName} •••• ${a.last4}',
+                      subtitle: a.bankLine,
                       showChevron: true,
                       onTap: () => _choose(a),
                     ))
@@ -217,7 +218,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         )
       else
         AppListRow(
-          leading: BankAvatar(initial: account.initial),
+          leading: AccountAvatar(account: account),
           title: account.displayLabel,
           subtitle: account.bankName,
           trailing: provider.hasRows || busy
@@ -483,7 +484,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         final String? card = cardNames[row.transferCardId];
         return card == null ? 'Card bill payment' : '$card bill';
       case 'cash':
-        return 'Cash or other';
+        return BankAccount.cashOf(provider.accounts) != null ? 'Not tracked' : 'Cash or other';
       default:
         return null;
     }

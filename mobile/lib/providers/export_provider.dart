@@ -200,7 +200,7 @@ class ExportProvider extends AsyncProvider {
       cards: reference.cards,
     );
 
-    final String? filterNote = _filterNote(reference);
+    final String? filterNote = _filterNote(reference, source.paidForLeftOut);
 
     return switch (_request.type) {
       ExportReportType.bankStatement => _builder.bankStatement(
@@ -243,17 +243,21 @@ class ExportProvider extends AsyncProvider {
     };
   }
 
-  /// Says on the report itself that it was filtered, so a narrowed export
+  /// Says on the report itself that it was filtered — by category, or by
+  /// leaving out purchases paid for someone else — so a narrowed export
   /// cannot later be mistaken for a complete one.
-  String? _filterNote(ExportReferenceData reference) {
-    if (_request.categoryIds.isEmpty) return null;
-
+  String? _filterNote(ExportReferenceData reference, int paidForLeftOut) {
     final List<String> names = <String>[
       for (final ExpenseCategory category in reference.categories)
         if (_request.categoryIds.contains(category.id)) category.name,
     ];
-    if (names.isEmpty) return null;
-    return 'Filtered to ${names.join(', ')}';
+    final List<String> notes = <String>[
+      if (names.isNotEmpty) 'Filtered to ${names.join(', ')}',
+      if (paidForLeftOut > 0)
+        '$paidForLeftOut ${paidForLeftOut == 1 ? 'purchase' : 'purchases'} '
+            'paid for someone else not included',
+    ];
+    return notes.isEmpty ? null : notes.join(' · ');
   }
 
   // -------------------------------------------------------------------

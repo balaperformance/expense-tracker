@@ -1,7 +1,18 @@
 # expense_tracker
 
 The Android app (Flutter). The web app in `../ui` shares its Supabase backend,
-its statement parsers and its push-notification sender.
+its statement parsers, its Reports insights and its push-notification sender.
+
+## Reports
+
+Highlights, Spending and Analytics are computed on the phone by the web app's
+own insights (`../ui/src/domain/insights`), not a Dart copy: they are bundled
+into the same `assets/statement_engine/engine.js` (entry
+`../ui/src/engine/insightsEngine.ts`). The app reads two years of history
+once and hands it to the engine; every range, filter and span after that is a
+call into it with no request. After changing the insights in `ui/`, rebuild
+the bundle (`npm run build:engine` in `ui/`), then the APK. Where the engine
+cannot run (iOS, or a too-old System WebView) Reports shows the month report.
 
 ## Bank statement import
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/date_utils.dart';
@@ -568,7 +568,7 @@ class _OutstandingHero extends StatelessWidget {
       children: <Widget>[
         Text(
           credit ? 'CREDIT BALANCE' : 'OUTSTANDING',
-          style: AppTypography.eyebrow(theme.textTheme, color: AppColors.heroAccent),
+          style: AppTypography.eyebrow(theme.textTheme, color: PaletteTokens.of(context).heroAccent),
         ),
         const SizedBox(height: AppSpacing.xs),
         MoneyText(

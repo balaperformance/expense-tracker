@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/utils/date_utils.dart';
@@ -60,7 +61,7 @@ class SupabaseAiChatService implements AiChatService {
       'action': 'chat',
       'message': message,
       'history': history.map((ChatHistoryTurn t) => t.toJson()).toList(),
-      'client_context': _clientContext(today),
+      'client_context': clientContext(today),
     });
   }
 
@@ -72,7 +73,7 @@ class SupabaseAiChatService implements AiChatService {
     return _invoke(<String, dynamic>{
       'action': 'confirm',
       'pending_action': action.toJson(),
-      'client_context': _clientContext(today),
+      'client_context': clientContext(today),
     });
   }
 
@@ -118,11 +119,19 @@ class SupabaseAiChatService implements AiChatService {
   /// a suggestion that arrives late is worth less than one skipped.
   static const Duration _classifyTimeout = Duration(seconds: 20);
 
-  /// Only the calendar date: the phone knows its time zone and the server
-  /// does not, so "this month" is decided here. Nothing else about the
-  /// device is sent.
-  static Map<String, dynamic> _clientContext(DateTime today) =>
-      <String, dynamic>{'today': AppDateUtils.toDateString(today)};
+  /// The calendar date — the phone knows its time zone and the server does
+  /// not, so "this month" is decided here — and the reply format this app
+  /// can lay out. `markdown` asks the function for headings, lists, bold
+  /// amounts and tables, which the assistant screen renders; the web app
+  /// asks for the same. Nothing else about the device is sent.
+  @visibleForTesting
+  static Map<String, dynamic> clientContext(DateTime today) => <String, dynamic>{
+        'today': AppDateUtils.toDateString(today),
+        'reply_format': replyFormat,
+      };
+
+  /// The reply format requested from the function.
+  static const String replyFormat = 'markdown';
 
   Future<AiChatReply> _invoke(Map<String, dynamic> body) async {
     if (_client.auth.currentSession == null) {

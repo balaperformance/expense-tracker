@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import 'package:expense_tracker/core/theme/app_theme.dart';
@@ -37,6 +38,7 @@ class FakePushPlatform implements PushPlatform {
   final List<String> calls = <String>[];
   final List<String?> users = <String?>[];
   final StreamController<String> paths = StreamController<String>.broadcast();
+  final StreamController<void> pushes = StreamController<void>.broadcast();
 
   @override
   Future<PushDeviceStatus> status() async {
@@ -86,6 +88,9 @@ class FakePushPlatform implements PushPlatform {
 
   @override
   Stream<String> get openedPaths => paths.stream;
+
+  @override
+  Stream<void> get received => pushes.stream;
 }
 
 class FakeNotificationRepository extends NotificationRepository {
@@ -456,15 +461,23 @@ void main() {
   });
 
   group('Settings → Notifications', () {
+    /// The section folds away like the rest of Settings; [open] unfolds it
+    /// first, as if the user had opened it on an earlier visit.
     Future<NotificationProvider> pump(
       WidgetTester tester,
       double width,
-      Future<void> Function(NotificationProvider) prepare,
-    ) async {
+      Future<void> Function(NotificationProvider) prepare, {
+      bool open = true,
+    }) async {
       tester.view.physicalSize = Size(width * 2, 720 * 2);
       tester.view.devicePixelRatio = 2.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      if (open) {
+        await preferences.setSettingsOpen(
+          <String>{NotificationsSection.groupId},
+        );
+      }
       final NotificationProvider notifications = provider();
       await tester.runAsync(() => prepare(notifications));
       final SettingsProvider settings = SettingsProvider(
@@ -517,7 +530,8 @@ void main() {
         await n.attach('u1');
         await n.enable();
       });
-      expect(find.text('On for this phone'), findsOneWidget);
+      // The heading's line and the device row both say it.
+      expect(find.text('On for this phone'), findsNWidgets(2));
       expect(find.text('Turn off'), findsOneWidget);
     });
 
@@ -526,7 +540,7 @@ void main() {
       platform.deviceStatus =
           const PushDeviceStatus(available: true, permission: 'denied');
       await pump(tester, 360, (NotificationProvider n) => n.attach('u1'));
-      expect(find.text('Blocked on this phone'), findsOneWidget);
+      expect(find.text('Blocked on this phone'), findsNWidgets(2));
       await tester.tap(find.text('Open settings'));
       await tester.runAsync(() async {});
       expect(platform.calls, contains('openSettings'));
@@ -537,8 +551,42 @@ void main() {
       platform.deviceStatus =
           const PushDeviceStatus(available: false, permission: 'granted');
       await pump(tester, 360, (NotificationProvider n) => n.attach('u1'));
-      expect(find.text('Not set up yet'), findsOneWidget);
+      expect(find.text('Not set up yet'), findsNWidgets(2));
       expect(find.text('Turn on'), findsNothing);
+    });
+
+    testWidgets('folded, it says in one line whether this phone has them',
+        (WidgetTester tester) async {
+      await preferences.setPushOff(true);
+      await pump(
+        tester,
+        360,
+        (NotificationProvider n) => n.attach('u1'),
+        open: false,
+      );
+      expect(find.text('Notifications'), findsOneWidget);
+      expect(find.text('Off on this phone'), findsOneWidget);
+      expect(find.byType(Switch), findsNothing,
+          reason: 'a folded section builds nothing inside it');
+
+      await tester.tap(find.text('Notifications'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Switch), findsNWidgets(4));
+      expect(preferences.settingsOpen, contains(NotificationsSection.groupId));
+    });
+
+    test('the folded line follows the device state', () async {
+      platform.deviceStatus = PushDeviceStatus.unsupported;
+      final NotificationProvider unsupported = provider();
+      await unsupported.attach('u1');
+      expect(NotificationsSection.summaryOf(unsupported),
+          'Not available on this phone');
+
+      platform.deviceStatus =
+          const PushDeviceStatus(available: true, permission: 'granted');
+      final NotificationProvider on = provider();
+      await on.attach('u1');
+      expect(NotificationsSection.summaryOf(on), 'On for this phone');
     });
 
     testWidgets('is hidden until the migrations exist',
@@ -562,6 +610,60 @@ void main() {
       platform.paths.add('/accounts/abc-123');
       await Future<void>.delayed(Duration.zero);
       expect(notifications.takePendingPath(), '/accounts/abc-123');
+    });
+
+    test('the in-app history opens a page through the same route', () {
+      final NotificationProvider notifications = provider();
+      int heard = 0;
+      notifications.addListener(() => heard++);
+      notifications.openPath('/cards/c1');
+      expect(heard, 1);
+      expect(notifications.takePendingPath(), '/cards/c1');
+      expect(notifications.takePendingPath(), isNull);
+    });
+
+    test('a push that arrives while running is passed on for the history',
+        () async {
+      final NotificationProvider notifications = provider();
+      int received = 0;
+      final StreamSubscription<void> sub =
+          notifications.pushesReceived.listen((_) => received++);
+      platform.pushes.add(null);
+      await Future<void>.delayed(Duration.zero);
+      expect(received, 1);
+      await sub.cancel();
+    });
+  });
+
+  group('the Android channel', () {
+    TestWidgetsFlutterBinding.ensureInitialized();
+
+    Future<void> fromAndroid(String method, [Object? arguments]) async {
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+        'expense_tracker/push',
+        const StandardMethodCodec()
+            .encodeMethodCall(MethodCall(method, arguments)),
+        (_) {},
+      );
+    }
+
+    test('pushReceived and openPath reach their own streams', () async {
+      final MethodChannelPushPlatform channel = MethodChannelPushPlatform();
+      final List<String> paths = <String>[];
+      int received = 0;
+      final StreamSubscription<String> a = channel.openedPaths.listen(paths.add);
+      final StreamSubscription<void> b =
+          channel.received.listen((_) => received++);
+
+      await fromAndroid('pushReceived');
+      await fromAndroid('openPath', '/reports');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(received, 1);
+      expect(paths, <String>['/reports']);
+      await a.cancel();
+      await b.cancel();
     });
 
     test('opens only pages inside the app', () {

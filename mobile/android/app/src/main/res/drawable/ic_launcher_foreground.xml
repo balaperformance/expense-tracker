@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive launcher icon, front layer: the wallet. Same geometry as ui/assets/app-icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <group android:pivotX="256" android:pivotY="256" android:scaleX="0.74" android:scaleY="0.74">
+        <group android:pivotX="232" android:pivotY="196" android:rotation="-11">
+            <path android:pathData="M170,142 H306 A20,20 0 0 1 326,162 V230 A20,20 0 0 1 306,250 H170 A20,20 0 0 1 150,230 V162 A20,20 0 0 1 170,142 Z">
+                <aapt:attr name="android:fillColor">
+                  <gradient android:type="linear" android:startX="150" android:startY="142" android:endX="326" android:endY="250">
+                    <item android:offset="0" android:color="#FFFBF2"/>
+                    <item android:offset="1" android:color="#E9DCC2"/>
+                  </gradient>
+                </aapt:attr>
+            </path>
+            <path android:pathData="M150,170 H326 V188 H150 Z" android:fillColor="#C9AE7E" android:fillAlpha="0.55"/>
+        </group>
+        <path android:pathData="M166,196 H330 A42,42 0 0 1 372,238 V322 A42,42 0 0 1 330,364 H166 A42,42 0 0 1 124,322 V238 A42,42 0 0 1 166,196 Z">
+            <aapt:attr name="android:fillColor">
+              <gradient android:type="linear" android:startX="124" android:startY="196" android:endX="372" android:endY="364">
+                <item android:offset="0" android:color="#F2D59C"/>
+                <item android:offset="0.55" android:color="#D8AE68"/>
+                <item android:offset="1" android:color="#B07F3E"/>
+              </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M166,197.5 H330" android:strokeColor="#FFF1D2" android:strokeAlpha="0.55" android:strokeWidth="3" android:strokeLineCap="round"/>
+        <path android:pathData="M324,246 H356 A34,34 0 0 1 390,280 V280 A34,34 0 0 1 356,314 H324 A34,34 0 0 1 290,280 V280 A34,34 0 0 1 324,246 Z">
+            <aapt:attr name="android:fillColor">
+              <gradient android:type="linear" android:startX="0" android:startY="246" android:endX="0" android:endY="314">
+                <item android:offset="0" android:color="#8E6431"/>
+                <item android:offset="1" android:color="#6E4A22"/>
+              </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="M311,280 A13,13 0 1 1 337,280 A13,13 0 1 1 311,280 Z" android:fillColor="#FCEFD3"/>
+    </group>
+</vector>

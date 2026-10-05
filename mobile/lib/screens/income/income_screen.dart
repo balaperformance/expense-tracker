@@ -13,6 +13,7 @@ import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/money_text.dart';
+import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/transaction_tile.dart';
@@ -70,6 +71,10 @@ class _IncomeScreenState extends State<IncomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Income'),
+        actions: const <Widget>[
+          NotificationBell(glass: false),
+          SizedBox(width: AppSpacing.xs),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(58),
           child: Padding(

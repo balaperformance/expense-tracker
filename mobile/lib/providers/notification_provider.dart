@@ -304,6 +304,17 @@ class NotificationProvider extends AsyncProvider {
     }
   }
 
+  /// Opens [path] the way a tapped notification does — the in-app history
+  /// uses it, so both reach a page through the shell's one route.
+  void openPath(String path) {
+    _pendingPath = path;
+    safeNotify();
+  }
+
+  /// A push arrived while the app was running (PushBridge `pushReceived`),
+  /// for the in-app history to refresh. One platform channel serves both.
+  Stream<void> get pushesReceived => _platform.received;
+
   /// The page a tapped notification asked for, for the shell to open — once.
   String? takePendingPath() {
     final String? path = _pendingPath;

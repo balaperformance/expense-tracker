@@ -5,7 +5,12 @@ import '../core/utils/date_utils.dart';
 import '../models/expense.dart';
 import '../models/expense_filter.dart';
 import '../models/frequent_expense.dart';
+import '../models/receivable.dart';
+import '../models/tag.dart';
 import '../repositories/expense_repository.dart';
+import '../repositories/receivable_repository.dart';
+import '../repositories/tag_repository.dart';
+import '../services/schema_capabilities.dart';
 import 'async_state.dart';
 
 /// What Quick add reads: recent purchases, and the ids of those paid for
@@ -17,9 +22,22 @@ typedef QuickAddHistory = ({List<Expense> expenses, Set<String> paidForIds});
 /// Search input is debounced so typing does not fire a request per keystroke,
 /// and a filter change that resolves to the same query is ignored.
 class ExpenseProvider extends AsyncProvider {
-  ExpenseProvider(this._repository);
+  ExpenseProvider(
+    this._repository, {
+    TagRepository? tags,
+    ReceivableRepository? receivables,
+  })  : _tags = tags,
+        _receivables = receivables;
 
   final ExpenseRepository _repository;
+
+  /// Reads and writes an expense's tags (migration 006). Without it the form
+  /// offers no tags.
+  final TagRepository? _tags;
+
+  /// Marks an expense as paid for someone else (migration 005). Without it
+  /// the form offers no "Paid for someone else".
+  final ReceivableRepository? _receivables;
 
   static const Duration _searchDebounce = Duration(milliseconds: 350);
 
@@ -46,6 +64,19 @@ class ExpenseProvider extends AsyncProvider {
   bool get hasMore => _hasMore;
   bool get loadingMore => _loadingMore;
   int get revision => _revision;
+
+  /// Tags can be read and saved with an expense.
+  bool get tagsAvailable => _tags != null && SchemaCapabilities.tags;
+
+  /// An expense can be marked as paid for someone else.
+  bool get paidForAvailable =>
+      _receivables != null && SchemaCapabilities.treatments;
+
+  /// Set by [save] when the expense was saved but who it was paid for or its
+  /// tags were not — said once, so the user is never invited to save the
+  /// same expense twice.
+  String? _saveWarning;
+  String? get saveWarning => _saveWarning;
 
   @override
   bool get isEmptyData => _expenses.isEmpty;
@@ -202,10 +233,7 @@ class ExpenseProvider extends AsyncProvider {
 
   Future<bool> create(Expense expense) async {
     final bool ok = await guard(() async {
-      final Expense created = await _repository.create(expense);
-      if (_matchesCurrentFilter(created)) {
-        _expenses = <Expense>[created, ..._expenses];
-      }
+      _keepCreated(await _repository.create(expense));
       _revision++;
       safeNotify();
     });
@@ -214,14 +242,118 @@ class ExpenseProvider extends AsyncProvider {
 
   Future<bool> update(Expense expense) async {
     return guard(() async {
-      final Expense updated = await _repository.update(expense);
-      _expenses = _expenses
-          .map((Expense e) => e.id == updated.id ? updated : e)
-          .toList();
+      _keepUpdated(await _repository.update(expense));
       _revision++;
       safeNotify();
     });
   }
+
+  void _keepCreated(Expense created) {
+    if (_matchesCurrentFilter(created)) {
+      _expenses = <Expense>[created, ..._expenses];
+    }
+  }
+
+  void _keepUpdated(Expense updated) {
+    _expenses = _expenses
+        .map((Expense e) => e.id == updated.id ? updated : e)
+        .toList();
+  }
+
+  /// Saves the expense form: creates [expense] when it has no id yet,
+  /// otherwise updates it — then applies [paidFor] and, unless [tags] is
+  /// null, makes them its complete set of tags.
+  ///
+  /// Returns whether the expense itself was saved. Who it was paid for and
+  /// its tags are each one write of their own after it; if either fails the
+  /// expense stays saved (as the user's own spending, with the tags it had)
+  /// and [saveWarning] says what was not, rather than reporting a failure
+  /// that would invite a second save of the same expense.
+  Future<bool> save(
+    Expense expense, {
+    PaidForChange paidFor = const PaidForChange.keep(),
+    List<String>? tags,
+  }) async {
+    _saveWarning = null;
+    final bool isNew = expense.id.isEmpty;
+    Expense? saved;
+    final bool ok = await guard(() async {
+      saved = isNew
+          ? await _repository.create(expense)
+          : await _repository.update(expense);
+    });
+    final Expense? row = saved;
+    if (!ok || row == null) return false;
+
+    final List<String> problems = <String>[];
+    final ReceivableRepository? receivables = _receivables;
+    if (!paidFor.keeps &&
+        receivables != null &&
+        SchemaCapabilities.treatments) {
+      try {
+        await receivables.setExpensePaidFor(
+          userId: row.userId,
+          expenseId: row.id,
+          paidFor: paidFor.draft,
+        );
+      } catch (_) {
+        problems.add(paidFor.clears
+            ? 'it is still marked as paid for someone else'
+            : 'it could not be marked as paid for someone else');
+      }
+    }
+    final TagRepository? tagWriter = _tags;
+    if (tags != null && tagWriter != null && SchemaCapabilities.tags) {
+      try {
+        await tagWriter.setTags(kind: TagKind.expense, id: row.id, names: tags);
+      } catch (_) {
+        problems.add('its tags were not');
+      }
+    }
+    if (problems.isNotEmpty) {
+      _saveWarning = 'The expense was saved, but ${problems.join(', and ')}. '
+          'Open it to try again.';
+    }
+
+    if (isNew) {
+      _keepCreated(row);
+    } else {
+      _keepUpdated(row);
+    }
+    // Once, after every write, so what depends on the revision re-reads the
+    // paid-for exclusions and tags too.
+    _revision++;
+    safeNotify();
+    return true;
+  }
+
+  /// Every tag the user has and the names of those on [expenseId] (none for
+  /// a new expense); null when tags are unavailable or could not be read, so
+  /// the form neither shows nor changes them. Read-only, outside [guard].
+  Future<({List<Tag> known, List<String> names})?> tagsFor({
+    required String userId,
+    String? expenseId,
+  }) async {
+    final TagRepository? tags = _tags;
+    if (tags == null) return null;
+    try {
+      final ({List<Tag> known, List<String> names}) read =
+          await tags.fetchForRow(
+        userId: userId,
+        kind: TagKind.expense,
+        id: expenseId,
+      );
+      // Resolved by the read: before migration 006 there is nothing to show.
+      return SchemaCapabilities.tags ? read : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// One saved expense, to open it from elsewhere; null when it has been
+  /// deleted since. Read-only, outside [guard].
+  Future<Expense?> fetchById({required String userId, required String id}) =>
+      _repository.fetchById(userId: userId, id: id);
 
   /// Removes optimistically and restores the row if the delete fails, so the
   /// list never lies about what is stored.

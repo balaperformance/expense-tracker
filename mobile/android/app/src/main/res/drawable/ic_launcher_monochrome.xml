@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed launcher icon (Android 13+): the wallet in one colour. Same geometry as ui/assets/app-icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <group android:pivotX="256" android:pivotY="256" android:scaleX="0.74" android:scaleY="0.74">
+        <group android:pivotX="232" android:pivotY="196" android:rotation="-11">
+            <path android:pathData="M170,142 H306 A20,20 0 0 1 326,162 V230 A20,20 0 0 1 306,250 H170 A20,20 0 0 1 150,230 V162 A20,20 0 0 1 170,142 Z" android:fillColor="#FFFFFFFF" android:fillAlpha="0.5"/>
+        </group>
+        <path android:pathData="M166,196 H330 A42,42 0 0 1 372,238 V322 A42,42 0 0 1 330,364 H166 A42,42 0 0 1 124,322 V238 A42,42 0 0 1 166,196 Z M324,246 H356 A34,34 0 0 1 390,280 V280 A34,34 0 0 1 356,314 H324 A34,34 0 0 1 290,280 V280 A34,34 0 0 1 324,246 Z M311,280 A13,13 0 1 0 337,280 A13,13 0 1 0 311,280 Z M311,280 A13,13 0 1 0 337,280 A13,13 0 1 0 311,280 Z" android:fillColor="#FFFFFFFF"/>
+    </group>
+</vector>

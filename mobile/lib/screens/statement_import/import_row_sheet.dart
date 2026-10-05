@@ -21,6 +21,7 @@ import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/tag_field.dart';
 
 /// The other side of a transfer, as the review item stores it.
 class _Target {
@@ -82,11 +83,6 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     'refund': 'Refund',
     'transfer': 'Transfer',
   };
-
-  /// A tag is at most 40 characters and a row has at most 20 — the limits
-  /// `set_transaction_tags` enforces.
-  static const int _maxTagLength = 40;
-  static const int _maxTags = 20;
 
   late final TextEditingController _description =
       TextEditingController(text: widget.row.description);
@@ -367,7 +363,11 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         if (_taggable) ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
           const FieldLabel('Tags', hint: 'Optional'),
-          _tagField(theme),
+          TagField(
+            tags: _tags,
+            draft: _tagDraft,
+            onChanged: (List<String> next) => setState(() => _tags = next),
+          ),
         ],
         const SizedBox(height: AppSpacing.lg),
         _asPrinted(theme, row),
@@ -404,7 +404,9 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           for (final BankAccount a in others)
             AppChoiceChip(
               label: a.displayLabel,
-              icon: Icons.account_balance_outlined,
+              icon: a.isCash
+                  ? Icons.payments_outlined
+                  : Icons.account_balance_outlined,
               selected: _target == _Target.account(a.id),
               onSelected: () => setState(() {
                 _target = _Target.account(a.id);
@@ -422,8 +424,13 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
               }),
             ),
           AppChoiceChip(
-            label: 'Cash or other',
-            icon: Icons.payments_outlined,
+            // With a cash balance kept, cash is one of the accounts above.
+            label: BankAccount.cashOf(accounts) != null
+                ? 'An account not tracked here'
+                : 'Cash or other',
+            icon: BankAccount.cashOf(accounts) != null
+                ? Icons.account_balance_wallet_outlined
+                : Icons.payments_outlined,
             selected: _target == const _Target.cash(),
             onSelected: () => setState(() {
               _target = const _Target.cash();
@@ -442,66 +449,6 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         style: theme.textTheme.labelSmall,
       ),
     ];
-  }
-
-  Widget _tagField(ThemeData theme) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        if (_tags.isNotEmpty) ...<Widget>[
-          Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: _tags
-                .map((String tag) => InputChip(
-                      label: Text('#$tag'),
-                      visualDensity: VisualDensity.compact,
-                      onDeleted: () => setState(() => _tags.remove(tag)),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-        ],
-        TextField(
-          controller: _tagDraft,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            hintText: 'Add a tag',
-            prefixIcon: Icon(Icons.tag_rounded, size: AppSpacing.iconSm),
-          ),
-          onChanged: (String value) {
-            if (value.contains(',')) _commitTag();
-          },
-          onSubmitted: (_) => _commitTag(),
-        ),
-      ],
-    );
-  }
-
-  /// The tag being typed, cleaned as the database cleans it: no "#", single
-  /// spaces, no repeats (ignoring case).
-  List<String> _withDraft() {
-    final List<String> next = List<String>.of(_tags);
-    for (final String part in _tagDraft.text.split(',')) {
-      final String name = part
-          .replaceFirst(RegExp(r'^\s*#+'), '')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      if (name.isEmpty) continue;
-      final String clipped =
-          name.length > _maxTagLength ? name.substring(0, _maxTagLength) : name;
-      if (next.any((String t) => t.toLowerCase() == clipped.toLowerCase())) continue;
-      if (next.length >= _maxTags) break;
-      next.add(clipped);
-    }
-    return next;
-  }
-
-  void _commitTag() {
-    setState(() {
-      _tags = _withDraft();
-      _tagDraft.clear();
-    });
   }
 
   /// What the statement printed, unchanged, to check the row against.
@@ -571,7 +518,9 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     final String payee = _payee.text.trim();
     final String source = _source.text.trim();
     final String notes = _notes.text.trim();
-    final List<String> tags = _withDraft();
+    // A tag typed but not confirmed counts too, cleaned as the database
+    // cleans it.
+    final List<String> tags = TagField.withDraft(_tags, _tagDraft.text);
     final _Target? before = _Target.of(row);
     final Map<String, Object?> patch = <String, Object?>{
       if (description != row.description) 'description': description,

@@ -39,7 +39,8 @@ class StatementEngineException extends AppException {
 /// classification, duplicate rules, review edits and import plan, running
 /// offline on the phone (see `assets/statement_engine/engine.js` and
 /// MainActivity.kt). Nothing here parses statements itself — there is one
-/// implementation, shared with the web app.
+/// implementation, shared with the web app. The same engine computes the
+/// Reports insights (InsightsProvider).
 abstract class StatementEngine {
   /// The system document picker; null when the user cancels.
   Future<PickedStatementFile?> pickFile();
@@ -146,6 +147,8 @@ class EngineJson {
         'openingBalance': a.openingBalance,
         'isActive': a.isActive,
         'createdAt': _iso(a.createdAt),
+        // A withdrawal is a transfer into the cash account when there is one.
+        'kind': a.kind.wire,
       };
 
   static Map<String, Object?> category(ExpenseCategory c) => <String, Object?>{

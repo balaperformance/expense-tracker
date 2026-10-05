@@ -223,7 +223,7 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
             isExpanded: true,
             decoration: InputDecoration(
               prefixIcon: Icon(
-                source == null
+                source == null || source.account.isCash
                     ? Icons.payments_outlined
                     : Icons.account_balance_outlined,
                 size: AppSpacing.iconMd,
@@ -237,9 +237,12 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   )),
-              const DropdownMenuItem<String>(
+              DropdownMenuItem<String>(
                 value: _cash,
-                child: Text('Cash — no account balance changes'),
+                // With a cash balance kept, paying in cash is that account.
+                child: Text(BankAccount.cashOf(balances.map((BankAccountBalance b) => b.account)) != null
+                    ? 'Not tracked — no account balance changes'
+                    : 'Cash — no account balance changes'),
               ),
             ],
             onChanged: _saving

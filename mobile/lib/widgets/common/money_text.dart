@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_motion.dart';
+import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/utils/formatters.dart';
 
@@ -183,32 +183,30 @@ class MoneyText extends StatelessWidget {
   }
 }
 
-/// Resolves a semantic colour for the active brightness.
+/// Resolves a semantic colour for the active brightness and palette.
 ///
 /// Light and dark need different values for the same meaning: the green that
-/// passes contrast on white is too dark on near-black, and vice versa.
+/// passes contrast on white is too dark on near-black, and vice versa. Matte
+/// & Sand deepens the tones again so they read as text on ivory. The values
+/// live in [PaletteTokens]; this is the one place widgets ask for them.
 class ToneColors {
   const ToneColors._();
 
-  static bool _dark(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark;
-
-  static Color income(BuildContext context) =>
-      _dark(context) ? AppColors.incomeDark : AppColors.income;
+  static Color income(BuildContext context) => PaletteTokens.of(context).income;
 
   static Color expense(BuildContext context) =>
-      _dark(context) ? AppColors.expenseDark : AppColors.expense;
+      PaletteTokens.of(context).expense;
 
   static Color warning(BuildContext context) =>
-      _dark(context) ? AppColors.warningDark : AppColors.warning;
+      PaletteTokens.of(context).warning;
 
   static Color transfer(BuildContext context) =>
-      _dark(context) ? AppColors.transferDark : AppColors.transfer;
+      PaletteTokens.of(context).transfer;
 
   /// Tinted background for a tone — icon wells, soft badges, chart tracks.
   ///
   /// Dark mode needs a stronger tint because a 10% wash over near-black is
   /// effectively invisible.
   static Color wash(BuildContext context, Color tone) =>
-      tone.withOpacity(_dark(context) ? 0.20 : 0.11);
+      tone.withOpacity(PaletteTokens.of(context).wash);
 }

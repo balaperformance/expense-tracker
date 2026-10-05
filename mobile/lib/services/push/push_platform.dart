@@ -51,6 +51,11 @@ abstract class PushPlatform {
 
   /// Pages tapped notifications ask for while the app is running.
   Stream<String> get openedPaths;
+
+  /// A push for the signed-in account arrived while the app was running —
+  /// open or in the background. Carries nothing: the in-app history reads
+  /// the message from the server, where the sender saved it first.
+  Stream<void> get received;
 }
 
 class PushPlatformException implements Exception {
@@ -70,6 +75,8 @@ class MethodChannelPushPlatform implements PushPlatform {
     _channel.setMethodCallHandler((MethodCall call) async {
       if (call.method == 'openPath' && call.arguments is String) {
         _paths.add(call.arguments as String);
+      } else if (call.method == 'pushReceived') {
+        _received.add(null);
       }
       return null;
     });
@@ -77,9 +84,13 @@ class MethodChannelPushPlatform implements PushPlatform {
 
   final MethodChannel _channel;
   final StreamController<String> _paths = StreamController<String>.broadcast();
+  final StreamController<void> _received = StreamController<void>.broadcast();
 
   @override
   Stream<String> get openedPaths => _paths.stream;
+
+  @override
+  Stream<void> get received => _received.stream;
 
   Future<T?> _invoke<T>(String method, [Map<String, Object?>? args]) async {
     try {

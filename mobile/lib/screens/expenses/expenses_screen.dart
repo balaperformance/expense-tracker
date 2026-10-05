@@ -18,6 +18,7 @@ import '../../services/schema_capabilities.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/app_fields.dart';
+import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/transaction_tile.dart';
@@ -101,6 +102,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
             count: provider.filter.activeCount,
             onPressed: () => _openFilters(provider),
           ),
+          const NotificationBell(glass: false),
           const SizedBox(width: AppSpacing.xs),
         ],
         bottom: PreferredSize(

@@ -27,12 +27,14 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'app_palette.dart';
 import 'app_spacing.dart';
 
-/// Resolved glass values for one brightness.
+/// Resolved glass values for one palette and brightness.
 ///
-/// Read through [AppGlass.of] so a widget never has to know which mode it is
-/// in, and so the whole system can be retuned in one place.
+/// Read through [AppGlass.of] so a widget never has to know which mode — or
+/// which palette — it is in, and so the whole system can be retuned in one
+/// place.
 @immutable
 class GlassTokens {
   const GlassTokens({
@@ -45,6 +47,7 @@ class GlassTokens {
     required this.shadowStrong,
     required this.blur,
     required this.isDark,
+    this.cardFill,
   });
 
   /// Body of an ordinary pane, over the page background.
@@ -68,6 +71,14 @@ class GlassTokens {
   final double blur;
 
   final bool isDark;
+
+  /// A faint top-lit gradient, top to bottom, painted in place of [fill] on
+  /// an ordinary pane. Null — Gothic Noir — keeps the flat glass fill.
+  ///
+  /// Matte & Sand has no glass sheen and no heavy shadow, so this gradient
+  /// and the lit top edge are what make a card read as raised rather than
+  /// printed on the page.
+  final List<Color>? cardFill;
 
   /// The lit-edge border, as a gradient-backed painter would draw it.
   ///
@@ -160,9 +171,81 @@ class AppGlass {
     ],
   );
 
-  static GlassTokens of(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? dark : light;
+  /// Matte & Sand, light: near-opaque ivory panes on a hairline of sand, a
+  /// faint top-lit fill, and a tight contact shadow with a short, low
+  /// ambient one — depth without the floating look (web `--card-*`,
+  /// `--shadow*` under `[data-palette='matte']`).
+  static const GlassTokens matteLight = GlassTokens(
+    isDark: false,
+    fill: Color(0xFAFFFEFB),
+    fillStrong: Color(0xFEFFFEFB),
+    cardFill: <Color>[Color(0xFFFFFEFC), Color(0xFFFDFBF6)],
+    sunken: Color(0xFFEBE7DE),
+    borderTop: Color(0xE6FFFFFF),
+    borderBottom: Color(0xFFE0D8CA),
+    blur: blurBar,
+    shadow: <BoxShadow>[
+      BoxShadow(
+        color: Color(0x0D17140F),
+        blurRadius: 2,
+        offset: Offset(0, 1),
+      ),
+      BoxShadow(
+        color: Color(0x2B17140F),
+        blurRadius: 20,
+        spreadRadius: -12,
+        offset: Offset(0, 8),
+      ),
+    ],
+    shadowStrong: <BoxShadow>[
+      BoxShadow(
+        color: Color(0x0D17140F),
+        blurRadius: 4,
+        offset: Offset(0, 2),
+      ),
+      BoxShadow(
+        color: Color(0x3D17140F),
+        blurRadius: 36,
+        spreadRadius: -18,
+        offset: Offset(0, 18),
+      ),
+    ],
+  );
 
+  /// Matte & Sand, dark: charcoal panes with a warm hairline. No lit edge —
+  /// on black it would read as a scratch.
+  static const GlassTokens matteDark = GlassTokens(
+    isDark: true,
+    fill: Color(0xEB1A1A19),
+    fillStrong: Color(0xF71A1A19),
+    cardFill: <Color>[Color(0xFF1D1D1B), Color(0xFF1A1A19)],
+    sunken: Color(0xFF262523),
+    borderTop: Color(0x00FFFFFF),
+    borderBottom: Color(0xFF33302C),
+    blur: blurBar,
+    shadow: <BoxShadow>[
+      BoxShadow(
+        color: Color(0x99000000),
+        blurRadius: 20,
+        spreadRadius: -10,
+        offset: Offset(0, 8),
+      ),
+    ],
+    shadowStrong: <BoxShadow>[
+      BoxShadow(
+        color: Color(0xB3000000),
+        blurRadius: 36,
+        spreadRadius: -14,
+        offset: Offset(0, 16),
+      ),
+    ],
+  );
+
+  /// The glass of the palette and brightness [context] is drawn under.
+  static GlassTokens of(BuildContext context) =>
+      PaletteTokens.of(context).glass;
+
+  /// Gothic Noir's glass for [brightness].
   static GlassTokens forBrightness(Brightness brightness) =>
       brightness == Brightness.dark ? dark : light;
 }
@@ -248,9 +331,22 @@ class GlassSurface extends StatelessWidget {
         ? tone!.withOpacity(glass.isDark ? 0.42 : 0.30)
         : borderColor ?? glass.borderBottom;
 
+    // An ordinary card takes the palette's top-lit fill where it has one. A
+    // tinted pane, an explicit material and a strong bar or sheet keep their
+    // flat body: their colour is the point.
+    final List<Color>? lit =
+        tone == null && color == null && !strong ? glass.cardFill : null;
+
     Widget pane = DecoratedBox(
       decoration: BoxDecoration(
-        color: fill,
+        color: lit == null ? fill : null,
+        gradient: lit == null
+            ? null
+            : LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: lit,
+              ),
         borderRadius: shape,
         border: Border.all(color: outline, width: 0.75),
       ),

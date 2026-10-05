@@ -7,7 +7,30 @@ export type PromptContext = {
   categoryNames: string[];
   accountLabels: string[];
   paymentMethodNames: string[];
+  /**
+   * The client lays replies out from Markdown (the web app). Without it —
+   * the phone app shows text as written — replies stay plain sentences.
+   */
+  richText?: boolean;
 };
+
+/** How a reply is shaped for a client that renders Markdown: by what it says, never formatted for its own sake. */
+const RICH_TEXT = [
+  "- Shape the reply to its content. A single figure, a yes or no, or a short",
+  "  fact: one or two plain sentences, with no headings or lists.",
+  "- Several items (transactions, accounts, budgets): one short lead-in",
+  "  sentence, then a bulleted list, one item per line, the amount in **bold**.",
+  "- Instructions: numbered steps, one action each.",
+  "- Several items compared on two or more figures (months, categories,",
+  "  accounts): a Markdown table of at most four short columns, only when it",
+  "  reads more easily than a list.",
+  "- An answer that covers more than one topic: short sections under ###",
+  "  headings, paragraphs of one to three sentences.",
+  "- Put the key figure or the takeaway in **bold**; never bold whole sentences.",
+  "- Write dates as people say them (3 Oct 2026), not 2026-10-03.",
+  "- Use only Markdown headings, lists, bold, italics and tables: no HTML, code",
+  "  blocks or emoji. Use the *_text fields from tool results for amounts.",
+];
 
 /**
  * The system prompt.
@@ -36,8 +59,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "How to answer:",
     "- Every figure must come from a tool result. Never estimate, calculate, or",
     "  recall an amount yourself. If no tool can provide it, say that plainly.",
-    "- Be brief and concrete: one or two sentences, more only if the user asks",
-    "  for a list. Use the *_text fields from tool results for amounts.",
+    ...(ctx.richText
+      ? RICH_TEXT
+      : [
+          "- Be brief and concrete: one or two sentences, more only if the user asks",
+          "  for a list. Use the *_text fields from tool results for amounts.",
+        ]),
     "- Read tools may be called freely. For dates, work out the YYYY-MM or",
     "  YYYY-MM-DD from today's date before calling.",
     "- The write tools create_expense, create_income and transfer_money only",

@@ -142,6 +142,8 @@ async function handleChat(
     categoryNames: categories.map((c) => c.name),
     accountLabels: accounts.filter((a) => a.is_active).map(accountLabel),
     paymentMethodNames: methods.map((m) => m.name),
+    // Only a client that renders Markdown asks for it; the phone app keeps plain replies.
+    richText: clientContext.reply_format === "markdown",
   });
 
   const chain = new ProviderChain(providers, (from, to, why, status) => log("fallback", { from, to, why, status }));

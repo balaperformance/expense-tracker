@@ -18,8 +18,11 @@ import 'providers/dashboard_provider.dart';
 import 'providers/expense_provider.dart';
 import 'providers/export_provider.dart';
 import 'providers/income_provider.dart';
+import 'providers/insights_provider.dart';
+import 'providers/notification_inbox_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/payment_method_provider.dart';
+import 'providers/receivable_provider.dart';
 import 'providers/reports_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/statement_import_provider.dart';
@@ -36,6 +39,7 @@ import 'repositories/ledger_repository.dart';
 import 'repositories/notification_repository.dart';
 import 'repositories/payment_method_repository.dart';
 import 'repositories/profile_repository.dart';
+import 'repositories/receivable_repository.dart';
 import 'repositories/tag_repository.dart';
 import 'screens/auth/auth_gate.dart';
 import 'services/ai/ai_chat_service.dart';
@@ -112,10 +116,26 @@ class ExpenseTrackerApp extends StatelessWidget {
               PaymentMethodProvider(PaymentMethodRepository(client)),
         ),
         ChangeNotifierProvider<ExpenseProvider>(
-          create: (_) => ExpenseProvider(expenseRepository),
+          create: (_) => ExpenseProvider(
+            expenseRepository,
+            tags: TagRepository(client),
+            receivables: ReceivableRepository(client),
+          ),
         ),
         ChangeNotifierProvider<IncomeProvider>(
-          create: (_) => IncomeProvider(incomeRepository),
+          create: (_) => IncomeProvider(
+            incomeRepository,
+            tags: TagRepository(client),
+          ),
+        ),
+        // Money owed to the user (migration 005): loans and purchases paid
+        // for others, for the "Owed to you" screen and the expense form.
+        // Follows the signed-in user, so one user's claims never outlive
+        // their session.
+        ChangeNotifierProxyProvider<AuthProvider, ReceivableProvider>(
+          create: (_) => ReceivableProvider(ReceivableRepository(client)),
+          update: (_, AuthProvider auth, ReceivableProvider? owed) =>
+              owed!..attachUser(auth.userId),
         ),
         ChangeNotifierProvider<BudgetProvider>(
           create: (_) => BudgetProvider(
@@ -160,6 +180,17 @@ class ExpenseTrackerApp extends StatelessWidget {
           create: (_) => ReportsProvider(
             expenses: expenseRepository,
             income: incomeRepository,
+          ),
+        ),
+        // Reports' insights run in the same offline engine as statement
+        // import: the web app's own analysis.
+        ChangeNotifierProvider<InsightsProvider>(
+          create: (_) => InsightsProvider(
+            engine: MethodChannelStatementEngine(),
+            expenses: expenseRepository,
+            income: incomeRepository,
+            tags: TagRepository(client),
+            cards: creditCardRepository,
           ),
         ),
         ChangeNotifierProvider<ExportProvider>(
@@ -207,14 +238,26 @@ class ExpenseTrackerApp extends StatelessWidget {
             return notifications;
           },
         ),
+        // The bell's notification history (notification_log, migrations 010
+        // and 012). Follows the signed-in user; refreshed every 5 minutes, on
+        // resume and when a push arrives (the same push channel as above).
+        ChangeNotifierProxyProvider<AuthProvider, NotificationInboxProvider>(
+          create: (BuildContext context) => NotificationInboxProvider(
+            repository: NotificationRepository(client),
+            pushes: context.read<NotificationProvider>().pushesReceived,
+          ),
+          update: (_, AuthProvider auth, NotificationInboxProvider? inbox) =>
+              inbox!..attachUser(auth.userId),
+        ),
       ],
       child: Consumer<SettingsProvider>(
         builder: (BuildContext context, SettingsProvider settings, Widget? _) {
           return MaterialApp(
             title: AppConstants.appName,
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.light,
-            darkTheme: AppTheme.dark,
+            // The palette picks the pair; the theme mode picks between them.
+            theme: AppTheme.of(settings.palette, Brightness.light),
+            darkTheme: AppTheme.of(settings.palette, Brightness.dark),
             themeMode: settings.themeMode,
             home: const AuthGate(),
             builder: (BuildContext context, Widget? child) {

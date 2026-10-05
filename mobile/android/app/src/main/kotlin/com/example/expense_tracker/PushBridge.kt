@@ -6,12 +6,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.lang.ref.WeakReference
 import java.util.TimeZone
 
 /**
@@ -29,8 +32,10 @@ import java.util.TimeZone
  *   takeLaunchPath      the page a tapped notification asked for, once
  *   openSettings        the app's notification settings, to unblock them
  *
- * And one call back into Dart: openPath(path), when a notification is tapped
- * while the app is already running.
+ * And two calls back into Dart: openPath(path), when a notification is tapped
+ * while the app is already running; and pushReceived, when a push for the
+ * signed-in account arrives while the app is running (PushMessagingService),
+ * so the in-app history refreshes.
  */
 class PushBridge(private val activity: Activity, messenger: BinaryMessenger) {
     private val channel = MethodChannel(messenger, CHANNEL)
@@ -39,6 +44,8 @@ class PushBridge(private val activity: Activity, messenger: BinaryMessenger) {
 
     init {
         channel.setMethodCallHandler { call, result -> handle(call, result) }
+        // The newest activity's bridge is the one a push is reported to.
+        current = WeakReference(this)
     }
 
     private val prefs get() = activity.getSharedPreferences("expense_tracker_push", Activity.MODE_PRIVATE)
@@ -158,8 +165,32 @@ class PushBridge(private val activity: Activity, messenger: BinaryMessenger) {
         if (running) channel.invokeMethod("openPath", path) else launchPath = path
     }
 
+    /** Tells Dart a push arrived; on the main thread, and only while this activity's engine lives. */
+    private fun reportReceived() {
+        if (activity.isFinishing || activity.isDestroyed) return
+        try {
+            channel.invokeMethod("pushReceived", null)
+        } catch (error: Exception) {
+            // The engine went away meanwhile: the history is read when the app next opens.
+        }
+    }
+
     companion object {
         const val CHANNEL = "expense_tracker/push"
+
+        @Volatile
+        private var current: WeakReference<PushBridge>? = null
+
+        /**
+         * From PushMessagingService, on its own thread, for a push it accepted.
+         * Does nothing when no Flutter engine is running (the app is closed, or
+         * Firebase started the process just for the message).
+         */
+        fun pushReceived() {
+            if (current?.get() == null) return
+            Handler(Looper.getMainLooper()).post { current?.get()?.reportReceived() }
+        }
+
         private const val PERMISSION_REQUEST = 4712
         private const val ASKED = "permission_asked"
     }

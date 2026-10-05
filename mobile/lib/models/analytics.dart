@@ -96,6 +96,15 @@ class ReportData {
       transactionCount == 0 ? 0 : totalExpense / transactionCount;
 }
 
+/// The user's own spending: every expense except purchases paid on someone
+/// else's behalf ([paidForIds], migration 005), which are owed back. Every
+/// spending figure — Home, budgets, reports, exports — counts this, exactly as
+/// the web app does.
+List<Expense> personalSpending(List<Expense> expenses, Set<String> paidForIds) =>
+    paidForIds.isEmpty
+        ? List<Expense>.of(expenses)
+        : expenses.where((Expense e) => !paidForIds.contains(e.id)).toList();
+
 /// Groups expenses by category. Shared by the dashboard and reports so the
 /// two can never disagree.
 List<CategorySpend> buildCategoryBreakdown(

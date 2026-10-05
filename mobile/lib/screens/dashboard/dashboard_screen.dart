@@ -20,12 +20,14 @@ import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/income_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/budget_progress_tile.dart';
 import '../../widgets/card_widgets.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/charts/category_breakdown.dart';
 import '../../widgets/charts/monthly_trend_chart.dart';
 import '../../widgets/common/card_carousel.dart';
+import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/stat_tiles.dart';
@@ -143,6 +145,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onPressed: _openAccounts,
             icon: Icons.account_balance_outlined,
           ),
+          // The bell hides itself before migration 010.
+          if (SchemaCapabilities.notificationInbox) ...const <Widget>[
+            SizedBox(width: AppSpacing.sm),
+            NotificationBell(),
+          ],
           const SizedBox(width: AppSpacing.page),
         ],
       ),
@@ -219,12 +226,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             QuickAction(
               label: 'Accounts',
               icon: Icons.account_balance_outlined,
+              tone: Theme.of(context).colorScheme.primary,
               onTap: _openAccounts,
             ),
             QuickAction(
               label: 'Budgets',
               icon: Icons.donut_small_outlined,
+              tone: Theme.of(context).colorScheme.secondary,
               onTap: _openBudgets,
+              // Overspending shows as a red dot here; the Budgets screen has
+              // the detail.
+              alert: _overspent() ? 'over budget' : null,
             ),
           ],
         ),
@@ -246,57 +258,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Sections
   // -----------------------------------------------------------------------
 
-  /// Budget state. An alert outranks everything except the snapshot itself,
-  /// so it sits directly under the quick actions.
+  /// Any budget (overall or a category's) spent past its limit this month.
+  bool _overspent() {
+    final BudgetProvider budgets = context.watch<BudgetProvider>();
+    return <BudgetProgress?>[budgets.overall, ...budgets.categoryBudgets]
+        .any((BudgetProgress? p) => p != null && p.isOver);
+  }
+
+  /// The overall budget, when one is set. Overspending is the red dot on the
+  /// Budgets action; warnings and setting a budget live on the Budgets screen.
   Widget _budgetSection(String currency) {
     final BudgetProvider budgets = context.watch<BudgetProvider>();
-    final List<BudgetProgress> alerts = budgets.alerts;
-
-    if (budgets.overall == null && alerts.isEmpty) {
-      // No budget set. One quiet prompt, not a card competing with real data.
-      return Padding(
-        padding: const EdgeInsets.only(top: AppSpacing.section),
-        child: SurfaceCard(
-          padding: EdgeInsets.zero,
-          child: AppListRow(
-            leading: IconWell(
-              icon: Icons.donut_small_outlined,
-              tone: Theme.of(context).colorScheme.primary,
-            ),
-            title: 'Set a monthly budget',
-            subtitle: 'See how much of your plan you have used',
-            showChevron: true,
-            onTap: _openBudgets,
-          ),
-        ),
-      );
-    }
+    final BudgetProgress? overall = budgets.overall;
+    if (overall == null) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         const SizedBox(height: AppSpacing.section),
-        if (alerts.isNotEmpty) ...<Widget>[
-          BudgetAlertBanner(
-            alerts: alerts,
-            currency: currency,
-            onTap: _openBudgets,
-          ),
-          if (budgets.overall != null) const SizedBox(height: AppSpacing.sm),
-        ],
-        if (budgets.overall != null) ...<Widget>[
-          SectionHeader(
-            title: 'Budget',
-            actionLabel: 'Manage',
-            onAction: _openBudgets,
-          ),
-          BudgetCard(
-            progress: budgets.overall!,
-            currency: currency,
-            showAvatar: false,
-            onTap: _openBudgets,
-          ),
-        ],
+        SectionHeader(
+          title: 'Budget',
+          actionLabel: 'Manage',
+          onAction: _openBudgets,
+        ),
+        BudgetCard(
+          progress: overall,
+          currency: currency,
+          showAvatar: false,
+          onTap: _openBudgets,
+        ),
       ],
     );
   }
@@ -322,23 +312,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
           actionLabel: 'View',
           onAction: _openAccounts,
         ),
-        _AccountCarousel(
-          balances: accounts.balances,
-          currency: currency,
-          masked: masked,
-          onTap: _openAccounts,
+        _SwipeCarousel(
+          slides: <_Slide>[
+            for (final BankAccountBalance balance in accounts.balances)
+              _Slide(
+                key: balance.account.id,
+                label: '${balance.account.nickname} account',
+                onTap: _openAccounts,
+                row: AppListRow(
+                  leading: AccountAvatar(account: balance.account),
+                  title: balance.account.nickname,
+                  subtitle: balance.account.bankLine,
+                  trailing: MoneyText(
+                    balance.currentBalance,
+                    currency: currency,
+                    obscured: masked,
+                    tone: balance.isOverdrawn
+                        ? AmountTone.negative
+                        : AmountTone.neutral,
+                    // The balance leads the card, in the figure face.
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  onTap: _openAccounts,
+                ),
+              ),
+          ],
         ),
       ],
     );
   }
 
   /// Cards in use, and closed ones still being paid off — what is owed and
-  /// whether a bill is due. The full list is on the Credit cards screen.
+  /// whether a bill is due — one per slide, like the accounts.
   Widget _cardsSection(CreditCardProvider cards, String currency) {
     if (!cards.available || !cards.hasCards) return const SizedBox.shrink();
     final List<CardOverview> shown = cards.overviews
         .where((CardOverview o) => o.card.isActive || o.summary.outstanding > 0)
-        .take(3)
         .toList();
     if (shown.isEmpty) return const SizedBox.shrink();
     final bool masked = context.watch<SettingsProvider>().balancesHidden;
@@ -352,25 +361,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
           actionLabel: 'View',
           onAction: _openCards,
         ),
-        CardList(
-          children: shown
-              .map((CardOverview o) => AppListRow(
-                    leading: const CardAvatar(),
-                    title: o.card.cardName,
-                    subtitle: dueSummaryText(
-                      o.summary,
-                      (double v) => Formatters.currency(v, currencyCode: currency),
-                      Formatters.dayMonth,
-                    ),
-                    trailing: MoneyText(
-                      o.summary.outstanding,
-                      currency: currency,
-                      obscured: masked,
-                      style: theme.textTheme.titleSmall,
-                    ),
-                    onTap: () => _openCard(o.card.id),
-                  ))
-              .toList(),
+        _SwipeCarousel(
+          slides: <_Slide>[
+            for (final CardOverview o in shown)
+              _Slide(
+                key: o.card.id,
+                label: '${o.card.cardName} credit card',
+                onTap: () => _openCard(o.card.id),
+                row: AppListRow(
+                  leading: const CardAvatar(),
+                  title: o.card.cardName,
+                  subtitle: dueSummaryText(
+                    o.summary,
+                    (double v) => Formatters.currency(v, currencyCode: currency),
+                    Formatters.dayMonth,
+                  ),
+                  trailing: MoneyText(
+                    o.summary.outstanding,
+                    currency: currency,
+                    obscured: masked,
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                  onTap: () => _openCard(o.card.id),
+                ),
+              ),
+          ],
         ),
       ],
     );
@@ -663,29 +678,38 @@ class _DashboardSkeleton extends StatelessWidget {
   }
 }
 
-/// Compact horizontal pager for bank account cards.
-///
-/// One card fills the view at a time, and swiping reveals the next account.
-/// No auto-advance — this is a reference section, not a slideshow. Dots
-/// appear only when there is more than one account to swipe through.
-class _AccountCarousel extends StatefulWidget {
-  const _AccountCarousel({
-    required this.balances,
-    required this.currency,
-    required this.masked,
+/// One row of a [_SwipeCarousel]: an account or a credit card.
+class _Slide {
+  const _Slide({
+    required this.key,
+    required this.label,
     required this.onTap,
+    required this.row,
   });
 
-  final List<BankAccountBalance> balances;
-  final String currency;
-  final bool masked;
-  final VoidCallback onTap;
+  final String key;
 
-  @override
-  State<_AccountCarousel> createState() => _AccountCarouselState();
+  /// What a screen reader calls the slide.
+  final String label;
+  final VoidCallback onTap;
+  final Widget row;
 }
 
-class _AccountCarouselState extends State<_AccountCarousel> {
+/// Compact horizontal pager: the accounts, and the credit cards, on Home.
+///
+/// One card fills the view at a time, and swiping reveals the next one.
+/// No auto-advance — this is a reference section, not a slideshow. Dots
+/// appear only when there is more than one to swipe through.
+class _SwipeCarousel extends StatefulWidget {
+  const _SwipeCarousel({required this.slides});
+
+  final List<_Slide> slides;
+
+  @override
+  State<_SwipeCarousel> createState() => _SwipeCarouselState();
+}
+
+class _SwipeCarouselState extends State<_SwipeCarousel> {
   final PageController _controller = PageController();
   int _index = 0;
 
@@ -697,7 +721,7 @@ class _AccountCarouselState extends State<_AccountCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    final bool multi = widget.balances.length > 1;
+    final bool multi = widget.slides.length > 1;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -710,32 +734,19 @@ class _AccountCarouselState extends State<_AccountCarousel> {
           height: 72,
           child: PageView.builder(
             controller: _controller,
-            itemCount: widget.balances.length,
+            itemCount: widget.slides.length,
             onPageChanged: multi
                 ? (int i) => setState(() => _index = i)
                 : null,
             itemBuilder: (BuildContext ctx, int i) {
-              final BankAccountBalance balance = widget.balances[i];
-              return SurfaceCard(
-                padding: EdgeInsets.zero,
-                onTap: widget.onTap,
-                child: AppListRow(
-                  leading: BankAvatar(initial: balance.account.initial),
-                  title: balance.account.nickname,
-                  subtitle: balance.account.last4 == null
-                      ? balance.account.bankName
-                      : '${balance.account.bankName} •••• ${balance.account.last4}',
-                  trailing: MoneyText(
-                    balance.currentBalance,
-                    currency: widget.currency,
-                    obscured: widget.masked,
-                    tone: balance.isOverdrawn
-                        ? AmountTone.negative
-                        : AmountTone.neutral,
-                    // The balance leads the card, in the figure face.
-                    style: Theme.of(ctx).textTheme.headlineSmall,
-                  ),
-                  onTap: widget.onTap,
+              final _Slide slide = widget.slides[i];
+              return Semantics(
+                key: ValueKey<String>(slide.key),
+                label: slide.label,
+                child: SurfaceCard(
+                  padding: EdgeInsets.zero,
+                  onTap: slide.onTap,
+                  child: slide.row,
                 ),
               );
             },
@@ -743,16 +754,16 @@ class _AccountCarouselState extends State<_AccountCarousel> {
         ),
         if (multi) ...<Widget>[
           const SizedBox(height: AppSpacing.sm),
-          _AccountDots(count: widget.balances.length, index: _index),
+          _CarouselDots(count: widget.slides.length, index: _index),
         ],
       ],
     );
   }
 }
 
-/// Minimal dot indicators for the account carousel.
-class _AccountDots extends StatelessWidget {
-  const _AccountDots({required this.count, required this.index});
+/// Minimal dot indicators for a [_SwipeCarousel].
+class _CarouselDots extends StatelessWidget {
+  const _CarouselDots({required this.count, required this.index});
 
   final int count;
   final int index;

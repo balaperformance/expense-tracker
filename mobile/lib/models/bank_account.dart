@@ -1,3 +1,19 @@
+/// What an account is: a bank account, or the user's cash in hand
+/// (`bank_accounts.kind`, migration 011 — one per user). The cash balance is
+/// an ordinary account in the ledger, so a withdrawal is a transfer into it
+/// and a cash expense comes out of it, never income or spending twice.
+enum AccountKind {
+  bank('bank'),
+  cash('cash');
+
+  const AccountKind(this.wire);
+
+  final String wire;
+
+  static AccountKind fromWire(String? value) =>
+      value == 'cash' ? AccountKind.cash : AccountKind.bank;
+}
+
 /// Row of `public.bank_accounts`.
 ///
 /// [openingBalance] is the only stored money figure. The live balance is
@@ -13,7 +29,11 @@ class BankAccount {
     this.openingBalance = 0,
     this.isActive = true,
     this.createdAt,
+    this.kind = AccountKind.bank,
   });
+
+  /// The cash account's name — also what web and older phone builds show.
+  static const String cashName = 'Cash';
 
   final String id;
   final String userId;
@@ -23,11 +43,29 @@ class BankAccount {
   final double openingBalance;
   final bool isActive;
   final DateTime? createdAt;
+  final AccountKind kind;
+
+  bool get isCash => kind == AccountKind.cash;
+
+  /// The line under the name: the bank and last digits, or "Cash in hand".
+  String get bankLine {
+    if (isCash) return 'Cash in hand';
+    final String? digits = last4?.trim();
+    return digits == null || digits.isEmpty ? bankName : '$bankName •••• $digits';
+  }
+
+  /// The user's open cash account, if they keep one.
+  static BankAccount? cashOf(Iterable<BankAccount> accounts) {
+    for (final BankAccount account in accounts) {
+      if (account.isCash && account.isActive) return account;
+    }
+    return null;
+  }
 
   /// "HDFC •••• 4821" — what the picker and statement header show.
   String get displayLabel {
     final String? digits = last4?.trim();
-    if (digits == null || digits.isEmpty) return nickname;
+    if (isCash || digits == null || digits.isEmpty) return nickname;
     return '$nickname •••• $digits';
   }
 
@@ -46,6 +84,8 @@ class BankAccount {
       createdAt: map['created_at'] == null
           ? null
           : DateTime.parse(map['created_at'] as String),
+      // Absent before migration 011: every account is then a bank account.
+      kind: AccountKind.fromWire(map['kind'] as String?),
     );
   }
 
@@ -56,6 +96,9 @@ class BankAccount {
         'last4': _blankToNull(last4),
         'opening_balance': openingBalance,
         'is_active': isActive,
+        // Only a cash account names its kind: the column defaults to 'bank',
+        // and a database without it (before 011) can still take bank accounts.
+        if (isCash) 'kind': kind.wire,
       };
 
   Map<String, dynamic> toUpdateMap() => <String, dynamic>{
@@ -86,6 +129,7 @@ class BankAccount {
       openingBalance: openingBalance ?? this.openingBalance,
       isActive: isActive,
       createdAt: createdAt,
+      kind: kind,
     );
   }
 }

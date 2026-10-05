@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/theme/app_palette.dart';
+
 /// Device-local preferences.
 ///
 /// Theme lives here rather than in `profiles` because the table has no column
@@ -37,6 +39,27 @@ class PreferencesService {
       ThemeMode.system => 'system',
     });
   }
+
+  static const String _paletteKey = 'pref_palette';
+
+  /// The design language, independent of light/dark. Stored by the same id
+  /// the web app uses; anything unrecognised — including nothing saved yet —
+  /// reads as Gothic Noir, so everyone stays on it until they choose Matte &
+  /// Sand. A device setting, like the theme.
+  AppPalette get palette => AppPalette.fromId(_prefs.getString(_paletteKey));
+
+  Future<void> setPalette(AppPalette palette) =>
+      _prefs.setString(_paletteKey, palette.id);
+
+  static const String _settingsOpenKey = 'pref_settings_open';
+
+  /// The Settings sections unfolded on this phone, by id — the web app's
+  /// `et.settingsOpen`. Every section starts folded.
+  Set<String> get settingsOpen =>
+      (_prefs.getStringList(_settingsOpenKey) ?? const <String>[]).toSet();
+
+  Future<void> setSettingsOpen(Set<String> ids) =>
+      _prefs.setStringList(_settingsOpenKey, ids.toList()..sort());
 
   /// Whether bank balances are masked on the dashboard.
   ///
@@ -92,7 +115,7 @@ class PreferencesService {
   Future<void> setCachedCurrency(String code) =>
       _prefs.setString(_currencyKey, code);
 
-  /// Called on sign-out. Theme is intentionally kept: it is a device setting,
-  /// not user data.
+  /// Called on sign-out. Theme, palette and the folded Settings sections are
+  /// intentionally kept: they are device settings, not user data.
   Future<void> clearUserScoped() => _prefs.remove(_currencyKey);
 }

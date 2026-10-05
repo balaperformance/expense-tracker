@@ -1,4 +1,5 @@
 import '../core/utils/date_utils.dart';
+import '../models/analytics.dart';
 import '../models/budget.dart';
 import '../models/expense.dart';
 import '../repositories/budget_repository.dart';
@@ -67,10 +68,15 @@ class BudgetProvider extends AsyncProvider {
       final List<Object> results = await Future.wait(<Future<Object>>[
         _budgets.fetchForMonth(userId: userId, month: _month),
         _expenses.fetchForMonth(userId: userId, month: _month),
+        _expenses.fetchPaidForExpenseIds(userId: userId),
       ]);
 
       final List<Budget> budgets = results[0] as List<Budget>;
-      final List<Expense> expenses = results[1] as List<Expense>;
+      // Purchases paid for someone else are owed back, not budget spending.
+      final List<Expense> expenses = personalSpending(
+        results[1] as List<Expense>,
+        results[2] as Set<String>,
+      );
 
       final Map<String?, double> spendByCategory = <String?, double>{};
       double total = 0;

@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../core/constants/app_constants.dart';
+import '../core/theme/app_palette.dart';
 import '../models/profile.dart';
 import '../repositories/profile_repository.dart';
 import '../services/preferences_service.dart';
 import 'async_state.dart';
 
-/// Profile, currency and theme.
+/// Profile, currency, theme and palette.
 ///
-/// Theme is device-local (the `profiles` table has no column for it); the
-/// profile name and currency round-trip to Supabase.
+/// Theme and palette are device-local (the `profiles` table has no column
+/// for them); the profile name and currency round-trip to Supabase.
 class SettingsProvider extends AsyncProvider {
   SettingsProvider({
     required ProfileRepository repository,
@@ -17,6 +18,8 @@ class SettingsProvider extends AsyncProvider {
   })  : _repository = repository,
         _preferences = preferences {
     _themeMode = _preferences.themeMode;
+    _palette = _preferences.palette;
+    _openSections = _preferences.settingsOpen;
     _currency =
         _preferences.cachedCurrency ?? AppConstants.defaultCurrencyCode;
     _balancesHidden = _preferences.hideBalances;
@@ -27,11 +30,17 @@ class SettingsProvider extends AsyncProvider {
 
   Profile? _profile;
   late ThemeMode _themeMode;
+  late AppPalette _palette;
+  late Set<String> _openSections;
   late String _currency;
   late bool _balancesHidden;
 
   Profile? get profile => _profile;
   ThemeMode get themeMode => _themeMode;
+
+  /// The design language — Gothic Noir or Matte & Sand. Like the theme mode,
+  /// device-local; `main.dart` builds both MaterialApp themes from it.
+  AppPalette get palette => _palette;
 
   /// Always safe to read, even before the profile loads, because it falls back
   /// to the cached value written on the last successful load.
@@ -124,7 +133,30 @@ class SettingsProvider extends AsyncProvider {
     await _preferences.setThemeMode(mode);
   }
 
-  /// Clears user-scoped state on sign-out. Theme is deliberately preserved.
+  Future<void> setPalette(AppPalette palette) async {
+    if (_palette == palette) return;
+    _palette = palette;
+    safeNotify();
+    await _preferences.setPalette(palette);
+  }
+
+  /// Whether the Settings section [id] is unfolded on this phone.
+  bool isSectionOpen(String id) => _openSections.contains(id);
+
+  /// Remembers a section being folded or unfolded.
+  ///
+  /// Deliberately silent: the group animates itself, and nothing else on
+  /// screen depends on it — notifying would rebuild the whole app (the
+  /// MaterialApp listens here for the theme) on every tap of a heading.
+  Future<void> setSectionOpen(String id, bool open) async {
+    final bool changed =
+        open ? _openSections.add(id) : _openSections.remove(id);
+    if (!changed) return;
+    await _preferences.setSettingsOpen(_openSections);
+  }
+
+  /// Clears user-scoped state on sign-out. Theme, palette and the folded
+  /// sections are deliberately preserved: they belong to the device.
   ///
   /// Balances go back to hidden: the next person to reach this device must
   /// not inherit a reveal the previous account switched on.

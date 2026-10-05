@@ -7,17 +7,20 @@ import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
 import '../../models/bank_account.dart';
 import '../../models/income.dart';
+import '../../models/tag.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/income_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/schema_capabilities.dart';
+import '../../widgets/account_choice_chips.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/tag_field.dart';
 
 /// Create or edit an income entry.
 ///
@@ -60,6 +63,24 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
   bool _saving = false;
   String? _error;
 
+  /// The entry's tags (migration 006) and the one still being typed.
+  List<String> _tags = <String>[];
+  final TextEditingController _tagDraft = TextEditingController();
+
+  /// The user's tags, offered as suggestions.
+  List<Tag> _knownTags = const <Tag>[];
+
+  /// Tags can be read and saved.
+  late final bool _tagsOffered;
+
+  /// An edit's tags have been read. Until then they are neither shown nor
+  /// changed, so a failed read can never clear them.
+  bool _tagsRead = false;
+
+  /// A new entry shows tags at once (the suggestions follow); an edit once
+  /// its own tags are known.
+  bool get _showTags => _tagsOffered && (!widget.isEditing || _tagsRead);
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +92,25 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
     _source = TextEditingController(text: existing?.source ?? '');
     _description = TextEditingController(text: existing?.description ?? '');
     _date = existing?.incomeDate ?? AppDateUtils.today();
+    _tagsOffered = context.read<IncomeProvider>().tagsAvailable;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTags());
+  }
+
+  /// The user's tags and, for an edit, the entry's own.
+  Future<void> _loadTags() async {
+    if (!mounted || !_tagsOffered) return;
+    final IncomeProvider provider = context.read<IncomeProvider>();
+    final String? userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    final ({List<Tag> known, List<String> names})? read =
+        await provider.tagsFor(userId: userId, incomeId: widget.income?.id);
+    if (!mounted || read == null) return;
+    setState(() {
+      _knownTags = read.known;
+      // A new entry keeps whatever was added while the list loaded.
+      if (widget.isEditing) _tags = List<String>.of(read.names);
+      _tagsRead = true;
+    });
   }
 
   static String _trim(double value) {
@@ -83,6 +123,7 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
     _amount.dispose();
     _source.dispose();
     _description.dispose();
+    _tagDraft.dispose();
     super.dispose();
   }
 
@@ -191,19 +232,34 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
             const FieldLabel('Details', hint: 'Optional'),
             SurfaceCard(
               padding: const EdgeInsets.all(AppSpacing.md),
-              child: TextFormField(
-                controller: _description,
-                enabled: !_saving,
-                maxLines: 2,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  hintText: 'Description',
-                  alignLabelWithHint: true,
-                  prefixIcon: Icon(
-                    Icons.short_text_rounded,
-                    size: AppSpacing.iconMd,
+              child: Column(
+                children: <Widget>[
+                  TextFormField(
+                    controller: _description,
+                    enabled: !_saving,
+                    maxLines: 2,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: const InputDecoration(
+                      hintText: 'Description',
+                      alignLabelWithHint: true,
+                      prefixIcon: Icon(
+                        Icons.short_text_rounded,
+                        size: AppSpacing.iconMd,
+                      ),
+                    ),
                   ),
-                ),
+                  if (_showTags) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    TagField(
+                      tags: _tags,
+                      draft: _tagDraft,
+                      known: _knownTags,
+                      enabled: !_saving,
+                      onChanged: (List<String> next) =>
+                          setState(() => _tags = next),
+                    ),
+                  ],
+                ],
               ),
             ),
 
@@ -241,17 +297,27 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
       bankAccountId: _bankAccountId,
     );
 
-    final bool ok = widget.isEditing
-        ? await provider.update(draft)
-        : await provider.create(draft);
+    final bool ok = await provider.save(
+      draft,
+      // A tag typed but not confirmed counts too. Left alone when the tags
+      // are unavailable.
+      tags: _showTags
+          ? TagField.withDraft(_tags, _tagDraft.text, _knownTags)
+          : null,
+    );
 
     if (!mounted) return;
 
     if (ok) {
-      AppFeedback.success(
-        context,
-        widget.isEditing ? 'Income updated' : 'Income added',
-      );
+      final String? warning = provider.saveWarning;
+      if (warning != null) {
+        AppFeedback.error(context, warning);
+      } else {
+        AppFeedback.success(
+          context,
+          widget.isEditing ? 'Income updated' : 'Income added',
+        );
+      }
       Navigator.of(context).pop(true);
     } else {
       setState(() {
@@ -355,26 +421,12 @@ class _AccountPicker extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      children: <Widget>[
-        AppChoiceChip(
-          label: 'Not tracked',
-          selected: selectedId == null,
-          enabled: enabled,
-          onSelected: () => onSelected(null),
-        ),
-        ...accounts.map((BankAccount account) {
-          return AppChoiceChip(
-            label: account.nickname,
-            icon: Icons.account_balance_outlined,
-            selected: selectedId == account.id,
-            enabled: enabled,
-            onSelected: () => onSelected(account.id),
-          );
-        }),
-      ],
+    return AccountChoiceChips(
+      accounts: accounts,
+      selectedId: selectedId,
+      enabled: enabled,
+      noneLabel: 'Not tracked',
+      onSelected: onSelected,
     );
   }
 }

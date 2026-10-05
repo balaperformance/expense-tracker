@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../core/theme/app_colors.dart';
 import '../core/theme/app_glass.dart';
 import '../core/theme/app_motion.dart';
+import '../core/theme/app_palette.dart';
 import '../core/theme/app_spacing.dart';
 import '../core/theme/app_typography.dart';
 import '../core/utils/formatters.dart';
@@ -119,7 +119,7 @@ class BalanceCard extends StatelessWidget {
 
     // Builder so the content reads the hero's dark theme, not the page's.
     return HeroSurface(
-      glow: AppColors.heroGlow,
+      glow: PaletteTokens.of(context).heroGlow,
       child: Builder(
         builder: (BuildContext context) => _content(context, net),
       ),
@@ -128,6 +128,8 @@ class BalanceCard extends StatelessWidget {
 
   Widget _content(BuildContext context, double net) {
     final ThemeData theme = Theme.of(context);
+    // The hero's own ink and accent — taupe on Gothic Noir, sand on Matte.
+    final PaletteTokens hero = PaletteTokens.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,7 +141,7 @@ class BalanceCard extends StatelessWidget {
                 'NET THIS MONTH',
                 style: AppTypography.eyebrow(
                   theme.textTheme,
-                  color: AppColors.heroAccent,
+                  color: hero.heroAccent,
                 ),
               ),
             ),
@@ -159,7 +161,7 @@ class BalanceCard extends StatelessWidget {
           animate: true,
           style: theme.textTheme.displaySmall?.copyWith(
             fontSize: 36,
-            color: AppColors.heroInk,
+            color: hero.heroInk,
           ),
         ),
         if (income > 0) ...<Widget>[
@@ -167,7 +169,7 @@ class BalanceCard extends StatelessWidget {
           _SpendBar(
             share: expense / income,
             spent: ToneColors.expense(context),
-            track: AppColors.heroTrack,
+            track: hero.heroTrack,
           ),
         ],
         const SizedBox(height: AppSpacing.md),
@@ -198,10 +200,10 @@ class BalanceCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm + 2),
           Row(
             children: <Widget>[
-              const Icon(
+              Icon(
                 Icons.account_balance_rounded,
                 size: AppSpacing.iconSm,
-                color: AppColors.heroAccent,
+                color: hero.heroAccent,
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
@@ -239,21 +241,22 @@ class _HeroBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Color accent = PaletteTokens.of(context).heroAccent;
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.sm + 2,
         vertical: 3,
       ),
       decoration: BoxDecoration(
-        color: AppColors.heroAccent.withOpacity(0.14),
+        color: accent.withOpacity(0.14),
         borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-        border: Border.all(color: AppColors.heroAccent.withOpacity(0.30), width: 0.75),
+        border: Border.all(color: accent.withOpacity(0.30), width: 0.75),
       ),
       child: Text(
         label.toUpperCase(),
         style: AppTypography.eyebrow(
           Theme.of(context).textTheme,
-          color: AppColors.heroAccent,
+          color: accent,
         ),
       ),
     );
@@ -434,12 +437,17 @@ class QuickAction {
     required this.icon,
     required this.onTap,
     this.tone,
+    this.alert,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onTap;
   final Color? tone;
+
+  /// Something needs attention there (a budget overspent): a red dot on the
+  /// tile, and this in its accessible name.
+  final String? alert;
 }
 
 class _QuickActionButton extends StatelessWidget {
@@ -460,47 +468,73 @@ class _QuickActionButton extends StatelessWidget {
     // The scale observes pointer events without recognising them, so the
     // InkWell keeps sole ownership of the tap.
     return AppPressEffect(
-      child: InkWell(
-        onTap: action.onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: shape,
-                  boxShadow: AppGlass.of(context).shadow,
-                ),
-                child: SizedBox(
-                  width: _tile,
-                  height: _tile,
-                  child: Center(
-                    child: Container(
-                      width: _well,
-                      height: _well,
-                      decoration: BoxDecoration(
-                        color: ToneColors.wash(context, tone),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(action.icon, size: 20, color: tone),
+      child: Semantics(
+        button: true,
+        label: action.alert == null ? null : '${action.label}, ${action.alert}',
+        excludeSemantics: action.alert != null,
+        child: InkWell(
+          onTap: action.onTap,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.xxs),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: shape,
+                    boxShadow: AppGlass.of(context).shadow,
+                  ),
+                  child: SizedBox(
+                    width: _tile,
+                    height: _tile,
+                    child: Stack(
+                      children: <Widget>[
+                        Center(
+                          child: Container(
+                            width: _well,
+                            height: _well,
+                            decoration: BoxDecoration(
+                              color: ToneColors.wash(context, tone),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(action.icon, size: 20, color: tone),
+                          ),
+                        ),
+                        if (action.alert != null)
+                          Positioned(
+                            top: 3,
+                            right: 3,
+                            child: Container(
+                              width: 15,
+                              height: 15,
+                              decoration: BoxDecoration(
+                                color: ToneColors.expense(context),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: theme.colorScheme.surface,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: AppSpacing.xs + 2),
-              Text(
-                action.label,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: AppSpacing.xs + 2),
+                Text(
+                  action.label,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

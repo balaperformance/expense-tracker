@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_colors.dart';
+import '../core/theme/app_palette.dart';
 import '../core/theme/app_spacing.dart';
 import '../core/theme/category_icons.dart';
+import '../models/bank_account.dart';
 import 'common/money_text.dart';
 
 /// Rounded, tinted icon tile identifying a category.
@@ -24,10 +26,11 @@ class CategoryAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color tint = AppColors.readableOn(
+    // Matte & Sand mutes category colours, as the web's --category-mute does.
+    final Color tint = PaletteTokens.of(context).category(AppColors.readableOn(
       AppColors.fromHex(color),
       Theme.of(context).brightness,
-    );
+    ));
 
     return Container(
       width: size,
@@ -119,6 +122,31 @@ class _ToneAvatar extends StatelessWidget {
       ),
       child: Icon(icon, size: size * 0.46, color: tone),
     );
+  }
+}
+
+/// An account's tile: the cash glyph in the income tone for the cash
+/// balance, the bank monogram for everything else.
+class AccountAvatar extends StatelessWidget {
+  const AccountAvatar({
+    super.key,
+    required this.account,
+    this.size = AppSpacing.avatar,
+  });
+
+  final BankAccount account;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    if (account.isCash) {
+      return _ToneAvatar(
+        size: size,
+        tone: ToneColors.income(context),
+        icon: Icons.payments_outlined,
+      );
+    }
+    return BankAvatar(initial: account.initial, size: size);
   }
 }
 

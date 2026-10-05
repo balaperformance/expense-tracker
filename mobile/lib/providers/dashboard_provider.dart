@@ -63,6 +63,9 @@ class DashboardProvider extends AsyncProvider {
     final DateTime trendEnd = AppDateUtils.addMonths(anchor, 1);
 
     try {
+      // Purchases paid for someone else are owed back, not spending.
+      final Set<String> paidFor =
+          await _expenses.fetchPaidForExpenseIds(userId: userId);
       final List<Object> results = await Future.wait(<Future<Object>>[
         _expenses.fetchForMonth(userId: userId, month: anchor),
         _income.fetchForMonth(userId: userId, month: anchor),
@@ -70,6 +73,7 @@ class DashboardProvider extends AsyncProvider {
           userId: userId,
           from: trendStart,
           toExclusive: trendEnd,
+          exclude: paidFor,
         ),
         _income.fetchMonthlyTotals(
           userId: userId,
@@ -81,7 +85,8 @@ class DashboardProvider extends AsyncProvider {
             .then((Budget? b) => <Budget?>[b]),
       ]);
 
-      final List<Expense> monthExpenses = results[0] as List<Expense>;
+      final List<Expense> monthExpenses =
+          personalSpending(results[0] as List<Expense>, paidFor);
       final List<Income> monthIncome = results[1] as List<Income>;
       final Map<String, double> expenseTotals =
           results[2] as Map<String, double>;

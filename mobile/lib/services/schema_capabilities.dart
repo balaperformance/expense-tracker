@@ -23,6 +23,10 @@ class SchemaCapabilities {
   /// Postgres: relation does not exist (older PostgREST versions).
   static const String _undefinedTableLegacy = '42P01';
 
+  /// Postgres: permission denied. Before migration 010 granted the app
+  /// `notification_log`, the table existed but was closed to it.
+  static const String _permissionDenied = '42501';
+
   static bool _resolved = false;
 
   static bool _merchant = false;
@@ -35,6 +39,9 @@ class SchemaCapabilities {
   static bool _tags = false;
   static bool _statementDetails = false;
   static bool _notifications = false;
+  static bool _notificationInbox = false;
+  static bool _notificationClear = false;
+  static bool _cashAccount = false;
 
   static bool get resolved => _resolved;
 
@@ -82,6 +89,18 @@ class SchemaCapabilities {
   /// switches are shared with the web app, the device table is the phone's.
   static bool get notifications => _notifications;
 
+  /// `notification_log` readable by the app with its title, body, link and
+  /// read time (migration 010): the bell's history, shared with the web app.
+  static bool get notificationInbox => _notificationInbox;
+
+  /// `notification_log.cleared_at` (migration 012): read notifications can be
+  /// cleared from the list. Builds on the inbox.
+  static bool get notificationClear => _notificationClear;
+
+  /// `bank_accounts.kind` (migration 011): one account can be the user's cash
+  /// in hand, which cash expenses come out of.
+  static bool get cashAccount => _cashAccount;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -102,6 +121,9 @@ class SchemaCapabilities {
       if (!_tags) 'tags (006)',
       if (!_statementDetails) 'statement references and UPI details (007)',
       if (!_notifications) 'push notifications (008, 009)',
+      if (!_notificationInbox) 'notification history (010)',
+      if (!_cashAccount) 'cash balance (011)',
+      if (!_notificationClear) 'clearing read notifications (012)',
     ];
     return missing.join(', ');
   }
@@ -128,7 +150,7 @@ class SchemaCapabilities {
               _probe(client, 'account_transactions', 'credit_card_id'),
               // 9–10: treatments (005).
               _probe(client, 'receivables',
-                  'id, kind, person, ledger_entry_id, expense_id'),
+                  'id, kind, person, ledger_entry_id, expense_id, due_date, note'),
               _probe(client, 'account_transactions', 'receivable_id'),
               // 11–13: tags (006).
               _probe(client, 'tags', 'id, name'),
@@ -142,6 +164,14 @@ class SchemaCapabilities {
                   'user_id, daily_reminder, spending_summary, low_balance, '
                       'card_due, timezone'),
               _probe(client, 'mobile_push_tokens', 'id, token'),
+              // 17–18: notification history (010) and clearing it (012).
+              _probe(client, 'notification_log',
+                  'event_key, kind, sent_at, title, body, url, read_at',
+                  deniedMeansMissing: true),
+              _probe(client, 'notification_log', 'cleared_at',
+                  deniedMeansMissing: true),
+              // 19: the cash account (011).
+              _probe(client, 'bank_accounts', 'kind'),
             ]));
 
     _merchant = results[0];
@@ -154,26 +184,32 @@ class SchemaCapabilities {
     _tags = results.sublist(11, 14).every((bool present) => present);
     _statementDetails = results[14];
     _notifications = results[15] && results[16];
+    _notificationInbox = results[17];
+    _notificationClear = _notificationInbox && results[18];
+    _cashAccount = _bankAccounts && results[19];
     _resolved = true;
   }
 
   /// Returns whether [table].[column] can be selected.
   ///
-  /// Only a missing column or missing table counts as "absent". Any other
+  /// Only a missing column or missing table counts as "absent" — and, with
+  /// [deniedMeansMissing], a table the app has not been granted yet. Any other
   /// failure (network, auth) is rethrown so a transient outage is never
   /// misread as a permanently missing feature.
   static Future<bool> _probe(
     SupabaseClient client,
     String table,
-    String column,
-  ) async {
+    String column, {
+    bool deniedMeansMissing = false,
+  }) async {
     try {
       await client.from(table).select(column).limit(1);
       return true;
     } on PostgrestException catch (error) {
       if (error.code == _undefinedColumn ||
           error.code == _undefinedTable ||
-          error.code == _undefinedTableLegacy) {
+          error.code == _undefinedTableLegacy ||
+          (deniedMeansMissing && error.code == _permissionDenied)) {
         return false;
       }
       rethrow;
@@ -193,6 +229,9 @@ class SchemaCapabilities {
     bool? tags,
     bool? statementDetails,
     bool? notifications,
+    bool? notificationInbox,
+    bool? notificationClear,
+    bool? cashAccount,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -204,6 +243,9 @@ class SchemaCapabilities {
     _tags = tags ?? _tags;
     _statementDetails = statementDetails ?? _statementDetails;
     _notifications = notifications ?? _notifications;
+    _notificationInbox = notificationInbox ?? _notificationInbox;
+    _notificationClear = notificationClear ?? _notificationClear;
+    _cashAccount = cashAccount ?? _cashAccount;
     _resolved = true;
   }
 
@@ -219,5 +261,8 @@ class SchemaCapabilities {
     _tags = false;
     _statementDetails = false;
     _notifications = false;
+    _notificationInbox = false;
+    _notificationClear = false;
+    _cashAccount = false;
   }
 }

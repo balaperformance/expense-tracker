@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive launcher icon, back layer: the dark tile. Same geometry as ui/assets/app-icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path android:pathData="M0,0 H512 V512 H0 Z">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="linear" android:startX="256" android:startY="0" android:endX="256" android:endY="512">
+            <item android:offset="0" android:color="#2A2622"/>
+            <item android:offset="1" android:color="#0F0E0C"/>
+          </gradient>
+        </aapt:attr>
+    </path>
+    <path android:pathData="M0,0 H512 V512 H0 Z">
+        <aapt:attr name="android:fillColor">
+          <gradient android:type="radial" android:centerX="153.6" android:centerY="25.6" android:gradientRadius="384">
+            <item android:offset="0" android:color="#29FFF4DE"/>
+            <item android:offset="1" android:color="#00FFF4DE"/>
+          </gradient>
+        </aapt:attr>
+    </path>
+</vector>

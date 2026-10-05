@@ -9,7 +9,14 @@ import '../../models/credit_card.dart';
 import '../../models/ledger_entry.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
+import '../../providers/budget_provider.dart';
 import '../../providers/credit_card_provider.dart';
+import '../../providers/dashboard_provider.dart';
+import '../../providers/expense_provider.dart';
+import '../../providers/income_provider.dart';
+import '../../providers/insights_provider.dart';
+import '../../providers/receivable_provider.dart';
+import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_provider.dart';
 import '../../services/export/export_models.dart';
@@ -26,6 +33,7 @@ import '../cards/card_statement_screen.dart';
 import '../export/export_screen.dart';
 import '../statement_import/import_statement_screen.dart';
 import 'deposit_sheet.dart';
+import 'edit_movement_sheet.dart';
 import 'transfer_sheet.dart';
 
 /// Banking-style statement for one account.
@@ -76,7 +84,7 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
         titleSpacing: 0,
         title: Row(
           children: <Widget>[
-            BankAvatar(initial: widget.account.initial, size: 34),
+            AccountAvatar(account: widget.account, size: 34),
             const SizedBox(width: AppSpacing.md),
             Expanded(
               child: Column(
@@ -90,9 +98,7 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
-                    widget.account.last4 == null
-                        ? widget.account.bankName
-                        : '${widget.account.bankName} •••• ${widget.account.last4}',
+                    widget.account.bankLine,
                     style: theme.textTheme.labelSmall,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -122,16 +128,18 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
               if (value == 'import') _openImport();
               if (value == 'export') _openExport(provider);
             },
-            itemBuilder: (_) => const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(
-                value: 'import',
-                child: ListTile(
-                  leading: Icon(Icons.upload_file_rounded),
-                  title: Text('Import statement'),
-                  contentPadding: EdgeInsets.zero,
+            itemBuilder: (_) => <PopupMenuEntry<String>>[
+              // Cash has no bank statement to import.
+              if (!widget.account.isCash)
+                const PopupMenuItem<String>(
+                  value: 'import',
+                  child: ListTile(
+                    leading: Icon(Icons.upload_file_rounded),
+                    title: Text('Import statement'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
-              ),
-              PopupMenuItem<String>(
+              const PopupMenuItem<String>(
                 value: 'export',
                 child: ListTile(
                   leading: Icon(Icons.ios_share_rounded),
@@ -224,6 +232,10 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
                               .read<BankAccountProvider>()
                               .byId(row.entry.counterpartyAccountId)
                               ?.nickname,
+                      // Changing how a movement is recorded needs 005.
+                      onTap: SchemaCapabilities.treatments
+                          ? () => _openEditor(row)
+                          : null,
                       onLongPress: () => _onLongPress(row),
                     ),
                 ],
@@ -232,6 +244,7 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
             const SizedBox(height: AppSpacing.lg),
             Text(
               'Balance is calculated from the ledger, oldest first. '
+              '${SchemaCapabilities.treatments ? 'Tap a transaction to change how it is recorded — transfer, loan, reimbursement and more. ' : ''}'
               'Long-press a manual entry to delete it'
               '${_linkableCards().isNotEmpty ? ', or to mark it as a credit card bill payment' : ''}.',
               style: Theme.of(context).textTheme.labelSmall,
@@ -318,6 +331,53 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
           .where((CreditCard c) => c.isActive)
           .toList()
       : const <CreditCard>[];
+
+  /// Changes how a movement is recorded — expense, income, transfer (to
+  /// another account, the cash account or a card's bill), money lent, a
+  /// repayment or a reimbursement — in one database transaction.
+  Future<void> _openEditor(StatementRow row) async {
+    final List<BankAccount> accounts =
+        context.read<BankAccountProvider>().accounts;
+    final EditMovementResult? result = await showAppSheet<EditMovementResult>(
+      context: context,
+      builder: (_) => EditMovementSheet(
+        entry: row.entry,
+        account: widget.account,
+        // The provider's list holds the cash account too; this account is
+        // always offered to the sheet, which leaves it out as a target.
+        accounts: accounts.any((BankAccount a) => a.id == widget.account.id)
+            ? accounts
+            : <BankAccount>[widget.account, ...accounts],
+        cards: SchemaCapabilities.creditCards
+            ? context.read<CreditCardProvider>().cards
+            : const <CreditCard>[],
+      ),
+    );
+    if (!mounted || result == null) return;
+    if (result == EditMovementResult.delete) {
+      await _confirmDelete(row);
+      return;
+    }
+    _afterTreatment();
+  }
+
+  /// A treatment can add or remove an expense, an income row, the other leg
+  /// of a transfer, a card payment or a claim: everything that reads them is
+  /// out of date. The statement itself was reloaded by the save.
+  void _afterTreatment() {
+    final String? userId = context.read<AuthProvider>().userId;
+    final BankAccountProvider accounts = context.read<BankAccountProvider>()
+      ..invalidate();
+    if (userId != null) accounts.load(userId: userId, force: true);
+    context.read<CreditCardProvider>().invalidate();
+    context.read<DashboardProvider>().invalidate();
+    context.read<BudgetProvider>().invalidate();
+    context.read<ReportsProvider>().invalidate();
+    context.read<InsightsProvider>().invalidate();
+    context.read<ReceivableProvider?>()?.invalidate();
+    context.read<ExpenseProvider>().refresh();
+    context.read<IncomeProvider>().refresh();
+  }
 
   /// Card payments and linkable debits get a menu; everything else keeps the
   /// direct delete.
@@ -695,6 +755,7 @@ class _StatementRowTile extends StatelessWidget {
     required this.row,
     required this.currency,
     this.counterparty,
+    this.onTap,
     this.onLongPress,
   });
 
@@ -703,6 +764,9 @@ class _StatementRowTile extends StatelessWidget {
 
   /// Nickname of the other account in a transfer, if it still exists.
   final String? counterparty;
+
+  /// Opens the edit sheet (migration 005); null leaves the row inert.
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
   @override
@@ -742,6 +806,7 @@ class _StatementRowTile extends StatelessWidget {
         currencyCode: currency,
         compact: true,
       ),
+      onTap: onTap,
       onLongPress: onLongPress,
     );
   }

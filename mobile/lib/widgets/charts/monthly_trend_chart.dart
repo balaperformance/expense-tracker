@@ -22,9 +22,14 @@ class MonthlyTrendChart extends StatelessWidget {
     this.height = 164,
     this.selectedIndex,
     this.onSelected,
+    this.labelOf,
   });
 
   final List<MonthlyPoint> points;
+
+  /// The label under bar [index]; the month's short name by default. Weekly
+  /// buckets name their first day instead.
+  final String Function(int index)? labelOf;
   final String currency;
   final bool showIncome;
   final double height;
@@ -212,7 +217,8 @@ class MonthlyTrendChart extends StatelessWidget {
                             )
                           : null,
                       child: Text(
-                        Formatters.shortMonth(points[index].month),
+                        labelOf?.call(index) ??
+                            Formatters.shortMonth(points[index].month),
                         style: theme.textTheme.labelSmall?.copyWith(
                           // A deep garnet on the garnet wash (7.6:1), not
                           // garnet on garnet: an 11px label needs 4.5:1.

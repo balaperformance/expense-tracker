@@ -18,6 +18,8 @@ class PushMessagingService : FirebaseMessagingService() {
         val audience = data["audience"] ?: return
         if (audience != PushStore.audience(this)) return
         PushNotifications.show(this, title.take(300), body.take(500), data["path"], data["tag"]?.take(80))
+        // The app, if it is running, refreshes its notification history.
+        PushBridge.pushReceived()
     }
 
     override fun onNewToken(token: String) {

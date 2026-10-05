@@ -12,6 +12,7 @@ import 'package:expense_tracker/providers/ai_chat_provider.dart';
 import 'package:expense_tracker/screens/assistant/ai_chat_screen.dart';
 import 'package:expense_tracker/services/ai/ai_chat_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
@@ -171,6 +172,15 @@ void main() {
       expect(map(503, <String, dynamic>{'error': 'provider_unavailable'}).isRetryable, isTrue);
       expect(map(422).isRetryable, isFalse);
       expect(map(401).isRetryable, isFalse);
+    });
+  });
+
+  group('client context', () {
+    test('sends the local date and asks for rich (Markdown) replies, as the web does', () {
+      expect(SupabaseAiChatService.clientContext(DateTime(2026, 9, 2, 23, 59)), <String, dynamic>{
+        'today': '2026-09-02',
+        'reply_format': 'markdown',
+      });
     });
   });
 
@@ -451,6 +461,174 @@ void main() {
         await pump(tester, provider, width: 320, brightness: brightness);
         expect(tester.takeException(), isNull, reason: '$brightness');
       }
+      provider.dispose();
+    });
+  });
+
+  group('rich replies', () {
+    const String richReply = '### By month\n'
+        '\n'
+        '| Month | Spent | Budget | Remaining | Category | Account |\n'
+        '|---|---:|---:|---:|---|---|\n'
+        '| August 2026 | ₹42,100.00 | ₹50,000.00 | ₹7,900.00 | Groceries and household | HDFC Savings Account |\n'
+        '| September 2026 | **₹57,300.00** | ₹50,000.00 | -₹7,300.00 | Groceries and household | ICICI Salary Account |\n'
+        '\n'
+        'Your recent expenses:\n'
+        '\n'
+        '- **₹8,500** for Food\n'
+        '- **₹25,000** for Grocery\n'
+        '  - mostly vegetables\n'
+        '\n'
+        '1. Open Accounts\n'
+        '2. Tap Transfer';
+
+    Future<AiChatProvider> chatWith(String reply, {String question = 'How did I do?'}) async {
+      final FakeAiChatService service = FakeAiChatService()..reply(reply);
+      final AiChatProvider provider = _provider(service);
+      await provider.send(question);
+      return provider;
+    }
+
+    Future<void> pumpAt(WidgetTester tester, AiChatProvider provider, Brightness brightness,
+        {double width = 360, double height = 720}) async {
+      tester.view.physicalSize = Size(width * 3, height * 3);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        ChangeNotifierProvider<AiChatProvider>.value(
+          value: provider,
+          child: MaterialApp(
+            theme: brightness == Brightness.dark ? AppTheme.dark : AppTheme.light,
+            home: const AiChatScreen(),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    final Finder horizontalScroll = find.byWidgetPredicate(
+      (Widget w) => w is SingleChildScrollView && w.scrollDirection == Axis.horizontal,
+    );
+
+    testWidgets('a wide table at 360x720 scrolls inside the bubble and never overflows',
+        (WidgetTester tester) async {
+      for (final Brightness brightness in Brightness.values) {
+        for (final double width in <double>[320, 360]) {
+          final AiChatProvider provider = await chatWith(richReply);
+          await pumpAt(tester, provider, brightness, width: width);
+          expect(tester.takeException(), isNull, reason: '$width $brightness');
+
+          expect(find.byType(Table), findsOneWidget);
+          expect(horizontalScroll, findsOneWidget);
+          // The table box stays inside the screen; the table itself is wider
+          // than the box and is reached by scrolling, not by overflowing.
+          final Rect box = tester.getRect(horizontalScroll);
+          expect(box.left, greaterThanOrEqualTo(0));
+          expect(box.right, lessThanOrEqualTo(width));
+          final ScrollableState scrollable = tester.state<ScrollableState>(
+            find.descendant(of: horizontalScroll, matching: find.byType(Scrollable)),
+          );
+          expect(scrollable.position.maxScrollExtent, greaterThan(0));
+          provider.dispose();
+        }
+      }
+    });
+
+    testWidgets('the table can be dragged sideways to read every column',
+        (WidgetTester tester) async {
+      final AiChatProvider provider = await chatWith(richReply);
+      await pumpAt(tester, provider, Brightness.light);
+
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.descendant(of: horizontalScroll, matching: find.byType(Scrollable)),
+      );
+      expect(scrollable.position.pixels, 0);
+      await tester.drag(find.text('August 2026'), const Offset(-400, 0));
+      await tester.pumpAndSettle();
+      expect(scrollable.position.pixels, greaterThan(0));
+      expect(tester.takeException(), isNull);
+      provider.dispose();
+    });
+
+    testWidgets('headings, points, steps, bold amounts and aligned cells render',
+        (WidgetTester tester) async {
+      final AiChatProvider provider = await chatWith(richReply);
+      await pumpAt(tester, provider, Brightness.light);
+
+      // Markers are laid out, not printed.
+      expect(find.textContaining('###'), findsNothing);
+      expect(find.textContaining('**'), findsNothing);
+      expect(find.textContaining('|'), findsNothing);
+
+      expect(find.text('By month'), findsOneWidget);
+      expect(find.text('Your recent expenses:'), findsOneWidget);
+      expect(find.text('•'), findsNWidgets(2));
+      expect(find.text('◦'), findsOneWidget);
+      expect(find.text('1.'), findsOneWidget);
+      expect(find.text('2.'), findsOneWidget);
+      expect(find.text('Open Accounts'), findsOneWidget);
+
+      // Bold amounts are bold.
+      final Text point = tester.widget<Text>(find.text('₹8,500 for Food'));
+      final TextSpan bold = (point.textSpan! as TextSpan).children!.first as TextSpan;
+      expect(bold.toPlainText(), '₹8,500');
+      expect(bold.style?.fontWeight, FontWeight.w600);
+
+      // Money columns are right-aligned, text columns left-aligned.
+      expect(tester.widget<Text>(find.text('₹42,100.00')).textAlign, TextAlign.right);
+      expect(tester.widget<Text>(find.text('August 2026')).textAlign, TextAlign.left);
+      expect(find.text('₹57,300.00'), findsOneWidget);
+
+      // The heading is announced as one.
+      expect(
+        tester.getSemantics(find.text('By month')),
+        matchesSemantics(isHeader: true, label: 'By month'),
+      );
+      provider.dispose();
+    });
+
+    testWidgets('a plain answer stays a plain sentence; user messages are never formatted',
+        (WidgetTester tester) async {
+      final AiChatProvider provider =
+          await chatWith('You spent ₹4,200 on food.', question: 'is **this** bold?');
+      await pumpAt(tester, provider, Brightness.light);
+
+      expect(find.text('You spent ₹4,200 on food.'), findsOneWidget);
+      // What the user typed is shown exactly as typed.
+      expect(find.text('is **this** bold?'), findsOneWidget);
+      expect(find.byType(Table), findsNothing);
+      provider.dispose();
+    });
+
+    testWidgets('an assistant reply can still be selected and copied',
+        (WidgetTester tester) async {
+      final List<String?> copied = <String?>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map<Object?, Object?>)['text'] as String?);
+          }
+          return null;
+        },
+      );
+      addTearDown(() => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null));
+
+      final AiChatProvider provider = await chatWith(richReply);
+      await pumpAt(tester, provider, Brightness.light);
+
+      // One selectable region per assistant reply, none on the user's bubble.
+      expect(find.byType(SelectionArea), findsOneWidget);
+
+      await tester.longPress(find.text('Open Accounts'));
+      await tester.pumpAndSettle();
+      expect(find.text('Copy'), findsOneWidget);
+      await tester.tap(find.text('Copy'));
+      await tester.pumpAndSettle();
+      expect(copied, isNotEmpty);
+      expect(copied.last, isNotEmpty);
       provider.dispose();
     });
   });

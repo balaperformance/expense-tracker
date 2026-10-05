@@ -41,6 +41,30 @@ class CreditCardRepository {
       'id, user_id, card_id, kind, direction, amount, txn_date, description, '
       'reference, original_expense_id, created_at';
 
+  /// Fees, interest, refunds and cashback since [from], signed the way the
+  /// reports read them: a fee or interest is a positive charge (a credit of
+  /// either kind reverses one), a refund or cashback a positive amount back.
+  Future<List<CardTransaction>> fetchCharges({
+    required String userId,
+    required DateTime from,
+  }) async {
+    await SchemaCapabilities.resolve(_client);
+    if (!SchemaCapabilities.creditCards) return const <CardTransaction>[];
+    try {
+      final List<Map<String, dynamic>> rows =
+          await fetchAllPages(postgrestPages(() => _client
+              .from(_transactions)
+              .select(_transactionSelect)
+              .eq('user_id', userId)
+              .inFilter('kind', <String>['fee', 'interest', 'refund', 'cashback'])
+              .gte('txn_date', AppDateUtils.toDateString(from))
+              .order('id')));
+      return rows.map(CardTransaction.fromMap).toList();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
   /// Re-probes the schema, so the feature appears as soon as 004 is applied.
   Future<void> refreshCapabilities() =>
       SchemaCapabilities.resolve(_client, force: true);

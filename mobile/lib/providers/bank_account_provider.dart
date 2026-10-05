@@ -50,6 +50,15 @@ class BankAccountProvider extends AsyncProvider {
 
   bool get hasAccounts => _balances.isNotEmpty;
 
+  /// The user's open cash account (migration 011), if they keep one.
+  BankAccount? get cashAccount =>
+      BankAccount.cashOf(_balances.map((BankAccountBalance b) => b.account));
+
+  /// A cash balance can be added: the column exists and there is none yet
+  /// (one per person).
+  bool get canAddCash =>
+      available && SchemaCapabilities.cashAccount && cashAccount == null;
+
   @override
   bool get isEmptyData => _balances.isEmpty;
 
@@ -113,6 +122,7 @@ class BankAccountProvider extends AsyncProvider {
     required String nickname,
     String? last4,
     required double openingBalance,
+    AccountKind kind = AccountKind.bank,
   }) async {
     final String? userId = _userId;
     if (userId == null) return false;
@@ -125,6 +135,7 @@ class BankAccountProvider extends AsyncProvider {
         nickname: nickname,
         last4: last4,
         openingBalance: openingBalance,
+        kind: kind,
       ));
     });
 

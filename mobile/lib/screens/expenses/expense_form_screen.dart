@@ -12,15 +12,19 @@ import '../../models/expense_category.dart';
 import '../../models/expense_prefill.dart';
 import '../../models/frequent_expense.dart';
 import '../../models/payment_method.dart';
+import '../../models/receivable.dart';
+import '../../models/tag.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/payment_method_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/schema_capabilities.dart';
 import '../../widgets/card_widgets.dart';
+import '../../widgets/account_choice_chips.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_fields.dart';
@@ -28,6 +32,8 @@ import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/paid_for_field.dart';
+import '../../widgets/tag_field.dart';
 import 'paste_sms_screen.dart';
 import 'quick_add_chips.dart';
 import 'receipt_scan_flow.dart';
@@ -80,6 +86,15 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   /// record a debit against it.
   String? _bankAccountId;
 
+  /// The user has picked where it was paid from, or is editing a saved
+  /// expense. Until then a new expense comes out of the cash balance when the
+  /// user keeps one — and the accounts may load after the form opens, so the
+  /// default follows them rather than being fixed once.
+  late bool _accountChosen;
+
+  String? _sourceAccountId(List<BankAccount> accounts) =>
+      _accountChosen ? _bankAccountId : BankAccount.cashOf(accounts)?.id;
+
   /// Paid with a credit card instead of cash or an account. A card purchase
   /// raises the card's outstanding and never touches a bank balance.
   late bool _byCard;
@@ -102,6 +117,33 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
 
   /// The Quick add chip last applied, for the selected chip and the notice.
   FrequentExpense? _quickAdded;
+
+  /// Paid on someone else's behalf (migration 005): owed back, so not the
+  /// user's own spending.
+  bool _paidFor = false;
+  final TextEditingController _paidForPerson = TextEditingController();
+
+  /// The purchase's claim when it is already marked, for its progress.
+  ClaimSummary? _claim;
+
+  /// Whether the toggle shows the truth: always for a new expense; for an
+  /// edit once its claim has been read. Until then — or if the read fails —
+  /// the toggle is not offered and saving leaves the claim as it is.
+  late _ClaimRead _claimRead;
+
+  /// Everyone the user already has a claim with, offered as names.
+  List<String> _people = const <String>[];
+
+  /// The expense's tags (migration 006) and the one still being typed.
+  List<String> _tags = <String>[];
+  final TextEditingController _tagDraft = TextEditingController();
+
+  /// The user's tags, offered as suggestions.
+  List<Tag> _knownTags = const <Tag>[];
+
+  /// An edit's tags have been read. Until then they are neither shown nor
+  /// changed, so a failed read can never clear them.
+  bool _tagsRead = false;
 
   /// Quick add is offered only on a blank new expense: a scan, a card's "Add
   /// purchase" or an edit already says what this is.
@@ -136,13 +178,79 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     _categoryId = existing?.categoryId ?? prefill?.categoryId;
     _paymentMethodId = existing?.paymentMethodId ?? prefill?.paymentMethodId;
     _bankAccountId = existing?.bankAccountId;
+    _accountChosen = existing != null;
     _creditCardId =
         existing != null ? existing.creditCardId : widget.initialCardId;
     _byCard = _creditCardId != null;
     _date = existing?.expenseDate ?? prefill?.date ?? AppDateUtils.today();
     _fromScan = prefill?.source == ExpensePrefillSource.receiptScan;
+    final ExpenseProvider expenses = context.read<ExpenseProvider>();
+    _paidForOffered = expenses.paidForAvailable;
+    _tagsOffered = expenses.tagsAvailable;
+    _claimRead = existing == null ? _ClaimRead.known : _ClaimRead.reading;
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadCards());
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadQuickAdd());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadClaim());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTags());
+  }
+
+  /// "Paid for someone else" can be saved (migration 005).
+  late final bool _paidForOffered;
+
+  /// Tags can be read and saved (migration 006).
+  late final bool _tagsOffered;
+
+  /// Who this purchase was paid for, and the people already used. An edit
+  /// always reads afresh: saving decides from it whether to unmark.
+  Future<void> _loadClaim() async {
+    if (!mounted) return;
+    final String? userId = context.read<AuthProvider>().userId;
+    final ReceivableProvider? receivables =
+        context.read<ReceivableProvider?>();
+    if (!_paidForOffered || userId == null || receivables == null) {
+      if (_claimRead == _ClaimRead.reading) {
+        setState(() => _claimRead = _ClaimRead.failed);
+      }
+      return;
+    }
+    final Expense? existing = widget.expense;
+    await receivables.load(userId: userId, force: existing != null);
+    if (!mounted) return;
+    final bool failed = receivables.hasError;
+    setState(() {
+      _people = receivables.people;
+      if (existing == null) return;
+      if (failed) {
+        _claimRead = _ClaimRead.failed;
+        return;
+      }
+      final ClaimSummary? claim = receivables.claimForExpense(existing.id);
+      _claim = claim;
+      _paidFor = claim != null;
+      _paidForPerson.text = claim?.receivable.person ?? '';
+      _claimRead = _ClaimRead.known;
+    });
+  }
+
+  /// A new expense shows tags at once (the suggestions follow); an edit once
+  /// its own tags are known.
+  bool get _showTags => _tagsOffered && (!widget.isEditing || _tagsRead);
+
+  /// The user's tags and, for an edit, the expense's own.
+  Future<void> _loadTags() async {
+    if (!mounted || !_tagsOffered) return;
+    final ExpenseProvider provider = context.read<ExpenseProvider>();
+    final String? userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    final ({List<Tag> known, List<String> names})? read =
+        await provider.tagsFor(userId: userId, expenseId: widget.expense?.id);
+    if (!mounted || read == null) return;
+    setState(() {
+      _knownTags = read.known;
+      // A new expense keeps whatever was added while the list loaded.
+      if (widget.isEditing) _tags = List<String>.of(read.names);
+      _tagsRead = true;
+    });
   }
 
   /// The card choices, with their headroom. Cheap when already loaded.
@@ -209,8 +317,12 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       if (_byCard) {
         _creditCardId = source?.id;
       } else {
-        _bankAccountId =
-            source?.kind == FrequentSourceKind.account ? source?.id : null;
+        // Cash comes out of the cash balance when there is one.
+        _bankAccountId = source?.kind == FrequentSourceKind.account
+            ? source?.id
+            : BankAccount.cashOf(context.read<BankAccountProvider>().accounts)
+                ?.id;
+        _accountChosen = true;
       }
       _quickAdded = suggestion;
       _fromScan = false;
@@ -270,6 +382,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     _merchant.dispose();
     _description.dispose();
     _notes.dispose();
+    _paidForPerson.dispose();
+    _tagDraft.dispose();
     super.dispose();
   }
 
@@ -301,6 +415,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       cards: cardOptions,
     );
     final FrequentExpense? quickAdded = _quickAdded;
+    final ClaimSummary? claim = _claim;
+    final bool showTags = _showTags;
 
     return Scaffold(
       appBar: AppBar(
@@ -434,7 +550,9 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                 isRequired: true,
                 hint: payByCard
                     ? (cardMissing ? 'Pick a card' : null)
-                    : (_bankAccountId == null ? 'No balance affected' : null),
+                    : (_sourceAccountId(accounts.accounts) == null
+                        ? 'No balance affected'
+                        : null),
               ),
               if (cardOptions.isNotEmpty || payByCard) ...<Widget>[
                 FundingToggle(
@@ -449,7 +567,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
               ],
               if (payByCard && cardOptions.isEmpty)
                 cards.isLoading || cards.isIdle
-                    ? const ListSkeleton(rows: 1)
+                    ? const Skeleton(height: 40, radius: AppSpacing.radiusMd)
                     : cards.hasError
                         ? AppNotice(
                             icon: Icons.error_outline_rounded,
@@ -491,13 +609,57 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
               ] else if (SchemaCapabilities.phase2Ready)
                 _SourcePicker(
                   accounts: accounts.accounts,
-                  selectedAccountId: _bankAccountId,
+                  selectedAccountId: _sourceAccountId(accounts.accounts),
                   enabled: !_saving,
-                  onSelected: (String? id) =>
-                      setState(() => _bankAccountId = id),
+                  onSelected: (String? id) => setState(() {
+                    _bankAccountId = id;
+                    _accountChosen = true;
+                  }),
                 )
               else
                 const AppNotice(message: 'Recorded as cash: no balance changes.'),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
+            // ---------------------------------------------------------
+            // Paid for someone else — owed back, so not your spending
+            // ---------------------------------------------------------
+            if (_paidForOffered && _claimRead != _ClaimRead.failed) ...<Widget>[
+              if (_claimRead == _ClaimRead.reading)
+                // Chip-shaped: a list skeleton cannot sit inside this list.
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Skeleton(
+                    height: 34,
+                    width: 190,
+                    radius: AppSpacing.radiusPill,
+                  ),
+                )
+              else
+                PaidForField(
+                  value: _paidFor,
+                  onChanged: (bool value) => setState(() {
+                    _paidFor = value;
+                    _error = null;
+                  }),
+                  person: _paidForPerson,
+                  people: _people,
+                  submitted: _submitted,
+                  enabled: !_saving,
+                  progress: claim == null
+                      ? null
+                      : '${Formatters.currency(claim.received, currencyCode: settings.currency)} '
+                          'of ${Formatters.currency(claim.principal, currencyCode: settings.currency)} '
+                          'paid back · ${claim.status.label}',
+                ),
+              if (claim != null && !_paidFor && claim.received > 0) ...<Widget>[
+                const SizedBox(height: AppSpacing.sm),
+                AppNotice(
+                  message: '${Formatters.currency(claim.received, currencyCode: settings.currency)} '
+                      'already paid back stays as plain money in on its '
+                      'account, and this becomes your own spending again.',
+                ),
+              ],
               const SizedBox(height: AppSpacing.lg),
             ],
 
@@ -539,6 +701,17 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
+                  if (showTags) ...<Widget>[
+                    TagField(
+                      tags: _tags,
+                      draft: _tagDraft,
+                      known: _knownTags,
+                      enabled: !_saving,
+                      onChanged: (List<String> next) =>
+                          setState(() => _tags = next),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
                   TextFormField(
                     controller: _notes,
                     enabled: !_saving,
@@ -622,6 +795,12 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
           : 'Choose the credit card this was paid with.');
       return;
     }
+    final bool paidForKnown =
+        _paidForOffered && _claimRead == _ClaimRead.known;
+    if (paidForKnown && _paidFor && _paidForPerson.text.trim().isEmpty) {
+      setState(() => _error = 'Add who you paid for.');
+      return;
+    }
     if (!formValid) return;
 
     final String? userId = context.read<AuthProvider>().userId;
@@ -641,24 +820,48 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       categoryId: _categoryId,
       paymentMethodId: _paymentMethodId,
       // One funding source: a card purchase never touches a bank balance.
-      bankAccountId: payByCard ? null : _bankAccountId,
+      bankAccountId: payByCard
+          ? null
+          : _sourceAccountId(context.read<BankAccountProvider>().accounts),
       creditCardId: payByCard ? _creditCardId : null,
       merchant: _merchant.text,
       description: _description.text,
       notes: _notes.text,
     );
 
-    final bool ok = widget.isEditing
-        ? await provider.update(draft)
-        : await provider.create(draft);
+    final bool ok = await provider.save(
+      draft,
+      // Marked, unmarked, or — when it never was and still is not, or its
+      // claim could not be read — left alone.
+      paidFor: _paidForOffered
+          ? paidForChange(
+              known: paidForKnown,
+              paidFor: _paidFor,
+              person: _paidForPerson.text,
+              claim: _claim?.receivable,
+            )
+          : const PaidForChange.keep(),
+      // A tag typed but not confirmed counts too. Left alone when the tags
+      // are unavailable.
+      tags: _showTags
+          ? TagField.withDraft(_tags, _tagDraft.text, _knownTags)
+          : null,
+    );
 
     if (!mounted) return;
 
     if (ok) {
-      AppFeedback.success(
-        context,
-        widget.isEditing ? 'Expense updated' : 'Expense added',
-      );
+      // The purchase's amount, date or claim may have changed what is owed.
+      context.read<ReceivableProvider?>()?.invalidate();
+      final String? warning = provider.saveWarning;
+      if (warning != null) {
+        AppFeedback.error(context, warning);
+      } else {
+        AppFeedback.success(
+          context,
+          widget.isEditing ? 'Expense updated' : 'Expense added',
+        );
+      }
       Navigator.of(context).pop(true);
     } else {
       setState(() {
@@ -690,6 +893,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     if (!mounted) return;
 
     if (ok) {
+      // A purchase paid for someone else takes its claim with it.
+      context.read<ReceivableProvider?>()?.invalidate();
       AppFeedback.success(context, 'Expense deleted');
       Navigator.of(context).pop(true);
     } else {
@@ -699,6 +904,18 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       });
     }
   }
+}
+
+/// Where the form is with the purchase's claim (migration 005).
+enum _ClaimRead {
+  /// An edit's claim is being read; the toggle waits for it.
+  reading,
+
+  /// The toggle shows the truth: a new expense, or an edit's claim was read.
+  known,
+
+  /// The claim could not be read; nothing about it is shown or changed.
+  failed,
 }
 
 /// Pinned primary action.
@@ -802,9 +1019,9 @@ class _CategoryPicker extends StatelessWidget {
 
 /// Payment source: Cash, or one of the user's bank accounts.
 ///
-/// Cash is always first and is the default, because it is the only option
-/// that leaves every bank balance untouched — the safe choice if the user
-/// taps past this field.
+/// Cash leads and is the default: untracked cash leaves every bank balance
+/// untouched, and a kept cash balance (migration 011) is where cash spending
+/// belongs — the safe choice either way if the user taps past this field.
 class _SourcePicker extends StatelessWidget {
   const _SourcePicker({
     required this.accounts,
@@ -830,27 +1047,11 @@ class _SourcePicker extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      children: <Widget>[
-        AppChoiceChip(
-          label: 'Cash',
-          icon: Icons.payments_outlined,
-          selected: selectedAccountId == null,
-          enabled: enabled,
-          onSelected: () => onSelected(null),
-        ),
-        ...accounts.map((BankAccount account) {
-          return AppChoiceChip(
-            label: account.nickname,
-            icon: Icons.account_balance_outlined,
-            selected: selectedAccountId == account.id,
-            enabled: enabled,
-            onSelected: () => onSelected(account.id),
-          );
-        }),
-      ],
+    return AccountChoiceChips(
+      accounts: accounts,
+      selectedId: selectedAccountId,
+      enabled: enabled,
+      onSelected: onSelected,
     );
   }
 }

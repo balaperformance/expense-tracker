@@ -13,15 +13,19 @@ import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/state_views.dart';
 
-/// Create or edit a bank account.
+/// Create or edit a bank account — or, with [cash], the user's cash balance,
+/// which needs only the cash on hand now: its name is always Cash.
 ///
 /// Opening balance is editable after creation because people often add an
 /// account before they know the figure. It is a starting point for the ledger,
 /// not a running total, so changing it simply re-bases every derived balance.
 class AccountFormSheet extends StatefulWidget {
-  const AccountFormSheet({super.key, this.account});
+  const AccountFormSheet({super.key, this.account, this.cash = false});
 
   final BankAccount? account;
+
+  /// A new cash balance rather than a bank account.
+  final bool cash;
 
   @override
   State<AccountFormSheet> createState() => _AccountFormSheetState();
@@ -43,6 +47,8 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
   String? _error;
 
   bool get _isEditing => widget.account != null;
+
+  bool get _isCash => widget.account?.isCash ?? widget.cash;
 
   static String _trim(double value) {
     final String text = value.toStringAsFixed(2);
@@ -67,8 +73,12 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
     return Form(
       key: _formKey,
       child: AppSheet(
-        title: _isEditing ? 'Edit account' : 'New bank account',
-        subtitle: _isEditing ? widget.account!.bankName : 'Track its balance and statement',
+        title: _isCash
+            ? (_isEditing ? 'Edit cash balance' : 'Cash balance')
+            : (_isEditing ? 'Edit account' : 'New bank account'),
+        subtitle: _isCash
+            ? 'The cash you have on hand'
+            : (_isEditing ? widget.account!.bankName : 'Track its balance and statement'),
         // Delete lives in the header rather than as a second full-width
         // button, so the sheet keeps exactly one primary action.
         action: _isEditing
@@ -80,64 +90,72 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
               )
             : null,
         footer: AppButton.submit(
-          label: _isEditing ? 'Save changes' : 'Add account',
+          label: _isEditing
+              ? 'Save changes'
+              : (_isCash ? 'Add cash balance' : 'Add account'),
           busy: _saving,
           busyLabel: 'Saving…',
           onPressed: _saving ? null : _save,
         ),
         children: <Widget>[
-          const FieldLabel('Bank', isRequired: true),
-          TextFormField(
-            controller: _bankName,
-            autofocus: !_isEditing,
-            enabled: !_saving,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
-            validator: (String? v) => Validators.required(v, 'Bank name'),
-            decoration: const InputDecoration(
-              hintText: 'HDFC, ICICI, SBI…',
-              prefixIcon: Icon(
-                Icons.account_balance_outlined,
-                size: AppSpacing.iconMd,
+          if (!_isCash) ...<Widget>[
+            const FieldLabel('Bank', isRequired: true),
+            TextFormField(
+              controller: _bankName,
+              autofocus: !_isEditing,
+              enabled: !_saving,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              validator: (String? v) => Validators.required(v, 'Bank name'),
+              decoration: const InputDecoration(
+                hintText: 'HDFC, ICICI, SBI…',
+                prefixIcon: Icon(
+                  Icons.account_balance_outlined,
+                  size: AppSpacing.iconMd,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.lg),
 
-          const FieldLabel('Nickname', isRequired: true),
-          TextFormField(
-            controller: _nickname,
-            enabled: !_saving,
-            textCapitalization: TextCapitalization.words,
-            textInputAction: TextInputAction.next,
-            validator: (String? v) => Validators.required(v, 'Nickname'),
-            decoration: const InputDecoration(
-              hintText: 'Salary account, Joint savings…',
-              prefixIcon: Icon(Icons.badge_outlined, size: AppSpacing.iconMd),
+            const FieldLabel('Nickname', isRequired: true),
+            TextFormField(
+              controller: _nickname,
+              enabled: !_saving,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              validator: (String? v) => Validators.required(v, 'Nickname'),
+              decoration: const InputDecoration(
+                hintText: 'Salary account, Joint savings…',
+                prefixIcon: Icon(Icons.badge_outlined, size: AppSpacing.iconMd),
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.lg),
 
-          const FieldLabel('Last 4 digits', hint: 'Optional'),
-          TextFormField(
-            controller: _last4,
-            enabled: !_saving,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            inputFormatters: <TextInputFormatter>[
-              FilteringTextInputFormatter.digitsOnly,
-            ],
-            decoration: const InputDecoration(
-              hintText: '4821',
-              counterText: '',
-              prefixIcon: Icon(Icons.tag_rounded, size: AppSpacing.iconMd),
+            const FieldLabel('Last 4 digits', hint: 'Optional'),
+            TextFormField(
+              controller: _last4,
+              enabled: !_saving,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              inputFormatters: <TextInputFormatter>[
+                FilteringTextInputFormatter.digitsOnly,
+              ],
+              decoration: const InputDecoration(
+                hintText: '4821',
+                counterText: '',
+                prefixIcon: Icon(Icons.tag_rounded, size: AppSpacing.iconMd),
+              ),
             ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
+            const SizedBox(height: AppSpacing.lg),
+          ],
 
-          const FieldLabel('Opening balance', isRequired: true),
+          FieldLabel(
+            _isCash ? 'Cash on hand now' : 'Opening balance',
+            isRequired: true,
+          ),
           TextFormField(
             controller: _opening,
+            autofocus: _isCash && !_isEditing,
             enabled: !_saving,
             keyboardType: const TextInputType.numberWithOptions(
               decimal: true,
@@ -149,7 +167,11 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
             validator: _validateOpening,
             decoration: InputDecoration(
               prefixText: '${settings.currencySymbol} ',
-              helperText: 'The balance before any tracked transactions',
+              helperText: _isCash
+                  ? 'Cash spending lowers it; ATM withdrawals and cash you '
+                      'receive add to it.'
+                  : 'The balance before any tracked transactions',
+              helperMaxLines: 2,
             ),
           ),
 
@@ -186,20 +208,25 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
     final BankAccountProvider provider = context.read<BankAccountProvider>();
     final double opening = double.parse(_opening.text.trim());
 
+    // A cash balance is always called Cash and has no bank or card digits.
+    final String bankName = _isCash ? BankAccount.cashName : _bankName.text;
+    final String nickname = _isCash ? BankAccount.cashName : _nickname.text;
+    final String last4 = _isCash ? '' : _last4.text;
     final bool ok = _isEditing
         ? await provider.update(
             widget.account!.copyWith(
-              bankName: _bankName.text,
-              nickname: _nickname.text,
-              last4: _last4.text,
+              bankName: bankName,
+              nickname: nickname,
+              last4: last4,
               openingBalance: opening,
             ),
           )
         : await provider.create(
-            bankName: _bankName.text,
-            nickname: _nickname.text,
-            last4: _last4.text,
+            bankName: bankName,
+            nickname: nickname,
+            last4: last4,
             openingBalance: opening,
+            kind: _isCash ? AccountKind.cash : AccountKind.bank,
           );
 
     if (!mounted) return;
@@ -207,7 +234,9 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
     if (ok) {
       AppFeedback.success(
         context,
-        _isEditing ? 'Account updated' : 'Account added',
+        _isCash
+            ? (_isEditing ? 'Cash balance updated' : 'Cash balance added')
+            : (_isEditing ? 'Account updated' : 'Account added'),
       );
       Navigator.of(context).pop(true);
     } else {

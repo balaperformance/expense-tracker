@@ -9,6 +9,7 @@ library;
 
 import '../core/constants/app_constants.dart';
 import '../core/errors/app_exception.dart';
+import '../models/analytics.dart';
 import '../models/bank_account.dart';
 import '../models/expense.dart';
 import '../models/income.dart';
@@ -26,6 +27,7 @@ class ExportSource {
     this.statement,
     this.account,
     this.truncated = false,
+    this.paidForLeftOut = 0,
   });
 
   final List<Expense> expenses;
@@ -38,6 +40,9 @@ class ExportSource {
   /// True when a query came back at its row cap, so the report is a partial
   /// view. Surfaced to the user rather than hidden.
   final bool truncated;
+
+  /// Purchases paid for someone else in the range, left out of the report.
+  final int paidForLeftOut;
 
   bool get isEmpty =>
       expenses.isEmpty &&
@@ -83,15 +88,23 @@ class ExportRepository {
       case ExportReportType.expenses:
       case ExportReportType.spendingReport:
       case ExportReportType.categoryReport:
-        final List<Expense> rows = await _expenses.fetchRange(
-          userId: userId,
-          from: request.range.start,
-          toExclusive: request.range.endExclusive,
-          categoryIds: request.categoryIds,
-        );
+        final List<Object> loaded = await Future.wait(<Future<Object>>[
+          _expenses.fetchRange(
+            userId: userId,
+            from: request.range.start,
+            toExclusive: request.range.endExclusive,
+            categoryIds: request.categoryIds,
+          ),
+          _expenses.fetchPaidForExpenseIds(userId: userId),
+        ]);
+        final List<Expense> rows = loaded[0] as List<Expense>;
+        // Purchases paid for someone else are owed back, not spending.
+        final List<Expense> own =
+            personalSpending(rows, loaded[1] as Set<String>);
         return ExportSource(
-          expenses: rows,
+          expenses: own,
           truncated: _atCap(rows.length),
+          paidForLeftOut: rows.length - own.length,
         );
 
       case ExportReportType.income:
@@ -114,13 +127,16 @@ class ExportRepository {
             from: request.range.start,
             toExclusive: request.range.endExclusive,
           ),
+          _expenses.fetchPaidForExpenseIds(userId: userId),
         ]);
-        final List<Expense> spent = results[0] as List<Expense>;
+        final List<Expense> all = results[0] as List<Expense>;
+        final List<Expense> spent =
+            personalSpending(all, results[2] as Set<String>);
         final List<Income> received = results[1] as List<Income>;
         return ExportSource(
           expenses: spent,
           income: received,
-          truncated: _atCap(spent.length) || _atCap(received.length),
+          truncated: _atCap(all.length) || _atCap(received.length),
         );
     }
   }

@@ -8,6 +8,7 @@
 import 'dart:math' as math;
 
 import 'package:expense_tracker/core/theme/app_colors.dart';
+import 'package:expense_tracker/core/theme/app_palette.dart';
 import 'package:expense_tracker/core/theme/app_theme.dart';
 import 'package:expense_tracker/core/theme/app_typography.dart';
 import 'package:flutter/material.dart';
@@ -47,9 +48,13 @@ double _hueDistance(Color a, Color b) {
 }
 
 void main() {
+  // Matte & Sand is the same builder fed other values, so it has to clear
+  // every bar Gothic Noir does.
   final Map<String, ThemeData> themes = <String, ThemeData>{
     'light': AppTheme.light,
     'dark': AppTheme.dark,
+    'matte light': AppTheme.matteLight,
+    'matte dark': AppTheme.matteDark,
   };
 
   group('surface ramp', () {
@@ -111,6 +116,20 @@ void main() {
         AppColors.transferDark,
         AppColors.darkSurface,
       ),
+      'matte light': (
+        PaletteTokens.matteLight.income,
+        PaletteTokens.matteLight.expense,
+        PaletteTokens.matteLight.warning,
+        PaletteTokens.matteLight.transfer,
+        PaletteTokens.matteLight.surface,
+      ),
+      'matte dark': (
+        PaletteTokens.matteDark.income,
+        PaletteTokens.matteDark.expense,
+        PaletteTokens.matteDark.warning,
+        PaletteTokens.matteDark.transfer,
+        PaletteTokens.matteDark.surface,
+      ),
     };
 
     modes.forEach((String name, (Color, Color, Color, Color, Color) c) {
@@ -170,7 +189,13 @@ void main() {
         // Icon wells are the tone at low opacity. In dark mode a 10% wash
         // over near-black is invisible, which is why ToneColors.wash uses a
         // stronger alpha there.
-        final double alpha = name == 'dark' ? 0.20 : 0.11;
+        // The wash ToneColors actually paints in each palette.
+        final double alpha = switch (name) {
+          'dark' => PaletteTokens.currentDark.wash,
+          'matte light' => PaletteTokens.matteLight.wash,
+          'matte dark' => PaletteTokens.matteDark.wash,
+          _ => PaletteTokens.currentLight.wash,
+        };
         for (final Color tone in <Color>[income, expense, warning]) {
           final Color well = _over(tone.withOpacity(alpha), surface);
           expect(

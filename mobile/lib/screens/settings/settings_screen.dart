@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/constants/app_constants.dart';
-import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_palette.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../providers/ai_chat_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -21,6 +21,8 @@ import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
+import '../../widgets/common/notification_bell.dart';
+import '../../widgets/common/settings_group.dart';
 import '../../widgets/common/surface_card.dart';
 import '../accounts/accounts_screen.dart';
 import '../cards/credit_cards_screen.dart';
@@ -37,7 +39,9 @@ import 'payment_methods_screen.dart';
 ///
 /// Grouped into Money, Appearance and About, with secondary detail kept
 /// visually quiet — this screen should be scannable in one pass rather than
-/// read.
+/// read. Every section but About folds away behind a one-line summary, as on
+/// the web, so folded the screen is its own table of contents; which ones
+/// are open is remembered on this phone.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -48,7 +52,13 @@ class SettingsScreen extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        actions: const <Widget>[
+          NotificationBell(glass: false),
+          SizedBox(width: AppSpacing.xs),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
           AppSpacing.page,
@@ -114,19 +124,25 @@ class SettingsScreen extends StatelessWidget {
           // anonymous development session has none, and showing a row that
           // could only ever fail would be worse than not showing it.
           if (auth.user?.email != null) ...<Widget>[
-            const SectionHeader(title: 'Security'),
-            CardList(
-              dividerIndent:
-                  AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
-              children: <Widget>[
-                _row(
-                  context,
-                  icon: Icons.password_rounded,
-                  title: 'Change password',
-                  subtitle: 'Confirm your current password, then set a new one',
-                  onTap: () => openChangePassword(context),
-                ),
-              ],
+            _group(
+              settings,
+              id: 'security',
+              title: 'Security',
+              summary: 'Password',
+              child: CardList(
+                dividerIndent:
+                    AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
+                children: <Widget>[
+                  _row(
+                    context,
+                    icon: Icons.password_rounded,
+                    title: 'Change password',
+                    subtitle:
+                        'Confirm your current password, then set a new one',
+                    onTap: () => openChangePassword(context),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: AppSpacing.section),
           ],
@@ -134,18 +150,24 @@ class SettingsScreen extends StatelessWidget {
           // ---------------------------------------------------------------
           // Assistant
           // ---------------------------------------------------------------
-          const SectionHeader(title: 'Assistant'),
-          CardList(
-            dividerIndent: AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
-            children: <Widget>[
-              _row(
-                context,
-                icon: Icons.auto_awesome_outlined,
-                title: 'Ask the assistant',
-                subtitle: 'Totals, balances, budgets — or record an entry',
-                onTap: () => _openAssistant(context),
-              ),
-            ],
+          _group(
+            settings,
+            id: 'assistant',
+            title: 'Assistant',
+            summary: 'Ask about your money, or record an entry',
+            child: CardList(
+              dividerIndent:
+                  AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
+              children: <Widget>[
+                _row(
+                  context,
+                  icon: Icons.auto_awesome_outlined,
+                  title: 'Ask the assistant',
+                  subtitle: 'Totals, balances, budgets — or record an entry',
+                  onTap: () => _openAssistant(context),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.section),
 
@@ -157,150 +179,205 @@ class SettingsScreen extends StatelessWidget {
           // ---------------------------------------------------------------
           // Money
           // ---------------------------------------------------------------
-          const SectionHeader(title: 'Money'),
-          CardList(
-            dividerIndent: AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
-            children: <Widget>[
-              _row(
-                context,
-                icon: Icons.account_balance_outlined,
-                title: 'Bank accounts',
-                subtitle: 'Balances, statements and transfers',
-                onTap: () => _push(context, const AccountsScreen()),
-              ),
-              _row(
-                context,
-                icon: Icons.credit_card_rounded,
-                title: 'Credit cards',
-                subtitle: 'Outstanding, bills, due dates and statements',
-                onTap: () => _push(context, const CreditCardsScreen()),
-              ),
-              _row(
-                context,
-                icon: Icons.donut_small_outlined,
-                title: 'Budgets',
-                subtitle: 'Monthly limits',
-                onTap: () => _push(context, const BudgetsScreen()),
-              ),
-              _row(
-                context,
-                icon: Icons.category_outlined,
-                title: 'Categories',
-                subtitle: 'Organise your spending',
-                onTap: () => _push(context, const CategoriesScreen()),
-              ),
-              _row(
-                context,
-                icon: Icons.credit_card_outlined,
-                title: 'Payment methods',
-                subtitle: 'Cash, cards, UPI and more',
-                onTap: () => _push(context, const PaymentMethodsScreen()),
-              ),
-              _row(
-                context,
-                icon: Icons.currency_exchange_rounded,
-                title: 'Currency',
-                subtitle: 'Used for every amount in the app',
-                trailing: AppBadge(
-                  label: '${settings.currency}  ${settings.currencySymbol}',
+          _group(
+            settings,
+            id: 'money',
+            title: 'Money',
+            summary:
+                'Accounts, cards, budgets, categories · ${settings.currency}',
+            child: CardList(
+              dividerIndent:
+                  AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
+              children: <Widget>[
+                _row(
+                  context,
+                  icon: Icons.account_balance_outlined,
+                  title: 'Bank accounts',
+                  subtitle: 'Balances, statements and transfers',
+                  onTap: () => _push(context, const AccountsScreen()),
                 ),
-                onTap: () => _pickCurrency(context, settings),
-              ),
-            ],
+                _row(
+                  context,
+                  icon: Icons.credit_card_rounded,
+                  title: 'Credit cards',
+                  subtitle: 'Outstanding, bills, due dates and statements',
+                  onTap: () => _push(context, const CreditCardsScreen()),
+                ),
+                _row(
+                  context,
+                  icon: Icons.donut_small_outlined,
+                  title: 'Budgets',
+                  subtitle: 'Monthly limits',
+                  onTap: () => _push(context, const BudgetsScreen()),
+                ),
+                _row(
+                  context,
+                  icon: Icons.category_outlined,
+                  title: 'Categories',
+                  subtitle: 'Organise your spending',
+                  onTap: () => _push(context, const CategoriesScreen()),
+                ),
+                _row(
+                  context,
+                  icon: Icons.credit_card_outlined,
+                  title: 'Payment methods',
+                  subtitle: 'Cash, cards, UPI and more',
+                  onTap: () => _push(context, const PaymentMethodsScreen()),
+                ),
+                _row(
+                  context,
+                  icon: Icons.currency_exchange_rounded,
+                  title: 'Currency',
+                  subtitle: 'Used for every amount in the app',
+                  trailing: AppBadge(
+                    label: '${settings.currency}  ${settings.currencySymbol}',
+                  ),
+                  onTap: () => _pickCurrency(context, settings),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.section),
 
           // ---------------------------------------------------------------
           // Data & Export
           // ---------------------------------------------------------------
-          const SectionHeader(title: 'Data & Export'),
-          CardList(
-            dividerIndent: AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
-            children: <Widget>[
-              _row(
-                context,
-                icon: Icons.upload_file_rounded,
-                title: 'Import bank statement',
-                subtitle: 'PDF or Excel, read on this phone',
-                onTap: () => _push(context, const ImportStatementScreen()),
-              ),
-              _row(
-                context,
-                icon: Icons.ios_share_rounded,
-                title: 'Export a report',
-                subtitle: 'Statements, expenses, income and summaries',
-                onTap: () => _push(
-                  context,
-                  const ExportScreen(initialType: ExportReportType.spendingReport),
+          // Statement import is phone-only (the web reads statements in the
+          // Accounts screen), so the summary names it alongside the exports.
+          _group(
+            settings,
+            id: 'export',
+            title: 'Data & Export',
+            summary: 'Statement import, reports and transactions',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                CardList(
+                  dividerIndent:
+                      AppSpacing.avatarSm + AppSpacing.md + AppSpacing.md,
+                  children: <Widget>[
+                    _row(
+                      context,
+                      icon: Icons.upload_file_rounded,
+                      title: 'Import bank statement',
+                      subtitle: 'PDF or Excel, read on this phone',
+                      onTap: () =>
+                          _push(context, const ImportStatementScreen()),
+                    ),
+                    _row(
+                      context,
+                      icon: Icons.ios_share_rounded,
+                      title: 'Export a report',
+                      subtitle: 'Statements, expenses, income and summaries',
+                      onTap: () => _push(
+                        context,
+                        const ExportScreen(
+                          initialType: ExportReportType.spendingReport,
+                        ),
+                      ),
+                    ),
+                    _row(
+                      context,
+                      icon: Icons.description_outlined,
+                      title: 'Export bank statement',
+                      subtitle: 'One account, with a running balance',
+                      onTap: () => _push(
+                        context,
+                        const ExportScreen(
+                          initialType: ExportReportType.bankStatement,
+                        ),
+                      ),
+                    ),
+                    _row(
+                      context,
+                      icon: Icons.table_chart_outlined,
+                      title: 'Export transactions',
+                      subtitle: 'Every expense or income entry as CSV or PDF',
+                      onTap: () => _push(
+                        context,
+                        const ExportScreen(
+                          initialType: ExportReportType.expenses,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              _row(
-                context,
-                icon: Icons.description_outlined,
-                title: 'Export bank statement',
-                subtitle: 'One account, with a running balance',
-                onTap: () => _push(
-                  context,
-                  const ExportScreen(initialType: ExportReportType.bankStatement),
+                const SizedBox(height: AppSpacing.md),
+                const AppNotice(
+                  icon: Icons.download_done_outlined,
+                  message: 'Exports are generated on this device and handed '
+                      'straight to the share sheet. Nothing is uploaded.',
                 ),
-              ),
-              _row(
-                context,
-                icon: Icons.table_chart_outlined,
-                title: 'Export transactions',
-                subtitle: 'Every expense or income entry as CSV or PDF',
-                onTap: () => _push(
-                  context,
-                  const ExportScreen(initialType: ExportReportType.expenses),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          const AppNotice(
-            icon: Icons.download_done_outlined,
-            message: 'Exports are generated on this device and handed straight '
-                'to the share sheet. Nothing is uploaded.',
+              ],
+            ),
           ),
           const SizedBox(height: AppSpacing.section),
 
           // ---------------------------------------------------------------
           // Appearance
           // ---------------------------------------------------------------
-          const SectionHeader(title: 'Appearance'),
-          SurfaceCard(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text('Theme', style: theme.textTheme.labelMedium),
-                const SizedBox(height: AppSpacing.sm),
-                // A segmented control rather than three radio rows: one tap
-                // instead of two, in a third of the height.
-                SegmentedButton<ThemeMode>(
-                  segments: const <ButtonSegment<ThemeMode>>[
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.system,
-                      label: Text('System'),
-                      icon: Icon(Icons.brightness_auto_outlined, size: 15),
-                    ),
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.light,
-                      label: Text('Light'),
-                      icon: Icon(Icons.light_mode_outlined, size: 15),
-                    ),
-                    ButtonSegment<ThemeMode>(
-                      value: ThemeMode.dark,
-                      label: Text('Dark'),
-                      icon: Icon(Icons.dark_mode_outlined, size: 15),
-                    ),
-                  ],
-                  selected: <ThemeMode>{settings.themeMode},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (Set<ThemeMode> value) =>
-                      settings.setThemeMode(value.first),
-                ),
-              ],
+          _group(
+            settings,
+            id: 'appearance',
+            title: 'Appearance',
+            summary:
+                '${settings.palette.label} · ${_modeLabel(settings.themeMode)}',
+            child: SurfaceCard(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  // The design language, independent of light and dark —
+                  // Matte & Sand first, as on the web.
+                  Text('Palette', style: theme.textTheme.labelMedium),
+                  const SizedBox(height: AppSpacing.sm),
+                  SegmentedButton<AppPalette>(
+                    segments: const <ButtonSegment<AppPalette>>[
+                      ButtonSegment<AppPalette>(
+                        value: AppPalette.matte,
+                        label: Text('Matte & Sand'),
+                      ),
+                      ButtonSegment<AppPalette>(
+                        value: AppPalette.current,
+                        label: Text('Current'),
+                      ),
+                    ],
+                    selected: <AppPalette>{settings.palette},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (Set<AppPalette> value) =>
+                        settings.setPalette(value.first),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text('Mode', style: theme.textTheme.labelMedium),
+                  const SizedBox(height: AppSpacing.sm),
+                  // A segmented control rather than three radio rows: one tap
+                  // instead of two, in a third of the height.
+                  SegmentedButton<ThemeMode>(
+                    segments: const <ButtonSegment<ThemeMode>>[
+                      ButtonSegment<ThemeMode>(
+                        value: ThemeMode.system,
+                        label: Text('System'),
+                        icon: Icon(Icons.brightness_auto_outlined, size: 15),
+                      ),
+                      ButtonSegment<ThemeMode>(
+                        value: ThemeMode.light,
+                        label: Text('Light'),
+                        icon: Icon(Icons.light_mode_outlined, size: 15),
+                      ),
+                      ButtonSegment<ThemeMode>(
+                        value: ThemeMode.dark,
+                        label: Text('Dark'),
+                        icon: Icon(Icons.dark_mode_outlined, size: 15),
+                      ),
+                    ],
+                    selected: <ThemeMode>{settings.themeMode},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (Set<ThemeMode> value) =>
+                        settings.setThemeMode(value.first),
+                  ),
+                ],
+              ),
             ),
           ),
 
@@ -348,6 +425,33 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
+
+  /// A section that folds away, remembered on this phone under [id] — the
+  /// web app's ids, so the two describe the same sections. Keyed by [id]:
+  /// Security comes and goes with the account, and the groups after it must
+  /// keep their own open state when it does.
+  Widget _group(
+    SettingsProvider settings, {
+    required String id,
+    required String title,
+    required String summary,
+    required Widget child,
+  }) {
+    return SettingsGroup(
+      key: ValueKey<String>('settings-group-$id'),
+      title: title,
+      summary: summary,
+      initiallyOpen: settings.isSectionOpen(id),
+      onOpenChanged: (bool open) => settings.setSectionOpen(id, open),
+      child: child,
+    );
+  }
+
+  static String _modeLabel(ThemeMode mode) => switch (mode) {
+        ThemeMode.system => 'System',
+        ThemeMode.light => 'Light',
+        ThemeMode.dark => 'Dark',
+      };
 
   /// One settings row. Keeps the icon well, density and chevron identical
   /// across every group.
@@ -537,8 +641,9 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-/// The profile initial on a black disc with a taupe ring — the same
+/// The profile initial on a black disc with an accent ring — the same
 /// material as the brand mark, so the account reads as part of the app.
+/// Taupe on Gothic Noir; sand on Matte & Sand.
 class _ProfileAvatar extends StatelessWidget {
   const _ProfileAvatar({required this.initial});
 
@@ -546,28 +651,30 @@ class _ProfileAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final PaletteTokens palette = PaletteTokens.of(context);
+
     return Container(
       width: 54,
       height: 54,
       padding: const EdgeInsets.all(2.5),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: AppColors.accent, width: 1.2),
+        border: Border.all(color: palette.accent, width: 1.2),
       ),
       child: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: AppColors.heroLight,
+            colors: palette.mark,
           ),
         ),
         child: Center(
           child: Text(
             initial,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: AppColors.heroAccent,
+                  color: palette.heroAccent,
                 ),
           ),
         ),

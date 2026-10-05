@@ -19,14 +19,16 @@ class AuthScaffold extends StatelessWidget {
     required this.subtitle,
     required this.children,
     this.showBack = false,
-    this.icon = Icons.account_balance_wallet_rounded,
+    this.icon,
   });
 
   final String title;
   final String subtitle;
   final List<Widget> children;
   final bool showBack;
-  final IconData icon;
+
+  /// A screen's own glyph on the brand tile; the app icon's wallet when null.
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -144,7 +146,8 @@ class AuthField extends StatelessWidget {
 
   final TextEditingController controller;
   final String label;
-  final IconData icon;
+  /// A screen's own glyph on the brand tile; the app icon's wallet when null.
+  final IconData? icon;
   final String? Function(String?)? validator;
   final TextInputType? keyboardType;
   final bool obscure;
