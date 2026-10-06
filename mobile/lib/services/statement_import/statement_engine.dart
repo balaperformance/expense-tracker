@@ -6,7 +6,9 @@ import '../../core/errors/app_exception.dart';
 import '../../core/utils/date_utils.dart';
 import '../../models/bank_account.dart';
 import '../../models/credit_card.dart';
+import '../../models/expense.dart';
 import '../../models/expense_category.dart';
+import '../../models/income.dart';
 import '../../models/ledger_entry.dart';
 import '../../models/payment_method.dart';
 
@@ -197,6 +199,41 @@ class EngineJson {
         'creditCardId': e.creditCardId,
         if (e.reference != null) 'reference': e.reference,
         if (e.upiId != null) 'upiId': e.upiId,
+        // The expense or income it belongs to: an entry the ledger check has
+        // matched is not offered again as a possible duplicate.
+        if (e.expenseId != null) 'expenseId': e.expenseId,
+        if (e.incomeId != null) 'incomeId': e.incomeId,
+      };
+
+  /// A recorded expense — on any account or none — as the possible-duplicate
+  /// check sees it (the web's `recordedFromExpense`).
+  static Map<String, Object?> recordedExpense(Expense e) => <String, Object?>{
+        'id': e.id,
+        'kind': 'expense',
+        'date': AppDateUtils.toDateString(e.expenseDate),
+        'amount': e.amount,
+        'merchant': e.merchant,
+        'description': e.description,
+        'notes': e.notes,
+        'category': e.category?.name,
+        'paymentMethod': e.paymentMethod?.name,
+        'bankAccountId': e.bankAccountId,
+        'creditCardId': e.creditCardId,
+      };
+
+  /// Recorded income, likewise (the web's `recordedFromIncome`).
+  static Map<String, Object?> recordedIncome(Income i) => <String, Object?>{
+        'id': i.id,
+        'kind': 'income',
+        'date': AppDateUtils.toDateString(i.incomeDate),
+        'amount': i.amount,
+        'merchant': null,
+        'description': i.description,
+        'notes': null,
+        'category': i.source,
+        'paymentMethod': null,
+        'bankAccountId': i.bankAccountId,
+        'creditCardId': null,
       };
 
   /// A recorded ledger row in the web model's full shape, for finding a

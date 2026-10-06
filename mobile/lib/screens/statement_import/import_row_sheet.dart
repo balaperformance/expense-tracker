@@ -65,6 +65,51 @@ class _Target {
   int get hashCode => Object.hash(type, accountId, cardId);
 }
 
+/// The answer to "is this a possible duplicate?", applied to the review list
+/// straight away — the sheet's own edits still wait for Done.
+class _DuplicateAnswer extends StatelessWidget {
+  const _DuplicateAnswer({required this.row, required this.provider});
+
+  final ImportRow row;
+  final StatementImportProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    if (row.duplicateDecision != null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: AppButton(
+          label: 'Change answer',
+          icon: Icons.refresh_rounded,
+          size: AppButtonSize.small,
+          variant: AppButtonVariant.ghost,
+          onPressed: () => provider.decideDuplicate(row.id, null),
+        ),
+      );
+    }
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.xs,
+      children: <Widget>[
+        AppButton(
+          label: "Yes, it's a duplicate",
+          icon: Icons.content_copy_rounded,
+          size: AppButtonSize.small,
+          variant: AppButtonVariant.secondary,
+          onPressed: () => provider.decideDuplicate(row.id, 'duplicate'),
+        ),
+        AppButton(
+          label: 'No, keep it',
+          icon: Icons.check_rounded,
+          size: AppButtonSize.small,
+          variant: AppButtonVariant.tonal,
+          onPressed: () => provider.decideDuplicate(row.id, 'notDuplicate'),
+        ),
+      ],
+    );
+  }
+}
+
 /// Edits one statement row before import. Nothing is saved from here — only
 /// the review list changes. Pops 'saved' or 'removed'.
 class ImportRowSheet extends StatefulWidget {
@@ -166,7 +211,12 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     final List<ExpenseCategory> categories =
         context.watch<CategoryProvider>().categories;
     final List<CreditCard> cards = context.watch<CreditCardProvider>().cards;
-    final ImportRow row = widget.row;
+    // The row as it is now: a duplicate answered from here changes it while
+    // the sheet is open.
+    final ImportRow row = provider.rows.firstWhere(
+      (ImportRow r) => r.id == widget.row.id,
+      orElse: () => widget.row,
+    );
     // A multi-account statement's row can move to another account; any other
     // row stays on the statement's.
     final List<BankAccount> accounts = provider.accounts
@@ -190,6 +240,10 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
             tone: ToneColors.warning(context),
             message: row.duplicateText!,
           ),
+          if (row.possibleDuplicate) ...<Widget>[
+            const SizedBox(height: AppSpacing.sm),
+            _DuplicateAnswer(row: row, provider: provider),
+          ],
           const SizedBox(height: AppSpacing.md),
         ],
         if (row.issues.isNotEmpty) ...<Widget>[

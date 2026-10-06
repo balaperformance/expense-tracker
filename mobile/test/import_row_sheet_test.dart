@@ -193,6 +193,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  ImportRow possibleRow({String? decision}) => ImportRow(
+        <String, Object?>{
+          ..._paytmRow().json,
+          'bankAccountId': 'a1',
+          'accountStatus': 'matched',
+          'duplicate': <String, Object?>{'type': 'possible', 'entryId': 'e1'},
+        },
+        <String, Object?>{
+          'possible': true,
+          'unchecked': decision == null,
+          'decision': decision,
+          'duplicateText': decision == null
+              ? 'Possible duplicate. Looks like "Lunch", an expense you recorded on 10 Sept 2026. Same amount, 2 days apart. Is it the same payment?'
+              : 'You marked this as the same as "Lunch", so it is left out.',
+        },
+      );
+
+  for (final double width in <double>[320, 360]) {
+    testWidgets('a possible duplicate asks whether it is the same payment at $width dp',
+        (WidgetTester tester) async {
+      await pump(tester, possibleRow(), width);
+      expect(find.textContaining('Possible duplicate.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text("Yes, it's a duplicate"));
+      await tester.pumpAndSettle();
+      final Map<String, Object?> action = engine.calls
+          .lastWhere(((String, Map<String, Object?>) c) => c.$1 == 'reduce')
+          .$2['action']! as Map<String, Object?>;
+      expect(action, <String, Object?>{'type': 'decideDuplicate', 'id': 'p1:0', 'decision': 'duplicate'});
+
+      await tester.tap(find.text('No, keep it'));
+      await tester.pumpAndSettle();
+      expect(
+        engine.calls.where(((String, Map<String, Object?>) c) => c.$1 == 'reduce').last.$2['action'],
+        <String, Object?>{'type': 'decideDuplicate', 'id': 'p1:0', 'decision': 'notDuplicate'},
+      );
+    });
+  }
+
+  testWidgets('an answered duplicate can be changed', (WidgetTester tester) async {
+    await pump(tester, possibleRow(decision: 'duplicate'), 360);
+    expect(find.text("Yes, it's a duplicate"), findsNothing);
+    await tester.tap(find.text('Change answer'));
+    await tester.pumpAndSettle();
+    expect(
+      engine.calls.where(((String, Map<String, Object?>) c) => c.$1 == 'reduce').last.$2['action'],
+      <String, Object?>{'type': 'decideDuplicate', 'id': 'p1:0', 'decision': null},
+    );
+  });
+
   testWidgets('saving without an account says which one to choose',
       (WidgetTester tester) async {
     await pump(tester, _paytmRow(), 360);

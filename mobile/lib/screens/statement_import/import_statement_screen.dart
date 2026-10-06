@@ -412,6 +412,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
                   targetLabel: _targetLabel(r, provider, cardNames),
                   enabled: !busy,
                   onToggle: () => provider.toggle(r.id),
+                  onDecide: (String decision) => provider.decideDuplicate(r.id, decision),
                   onEdit: () => _editRow(r),
                 ))
             .toList(),
@@ -523,6 +524,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         .where((ImportRow r) =>
             r.selected && r.kind == 'transfer' && r.transferTargetType == null)
         .length;
+    final int unchecked = provider.uncheckedSelected;
     final bool ok = await AppFeedback.confirm(
       context,
       title: 'Import ${plan.operations.length} '
@@ -537,6 +539,10 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         if (untracked > 0)
           '$untracked ${untracked == 1 ? 'transfer has' : 'transfers have'} no '
               'account chosen and will change this balance only.',
+        if (unchecked > 0)
+          '$unchecked possible ${unchecked == 1 ? 'duplicate has' : 'duplicates have'} '
+              'not been checked and will be imported as new. Cancel and use '
+              'the Dupes filter to check ${unchecked == 1 ? 'it' : 'them'} first.',
         if (plan.skipped.isNotEmpty)
           '${plan.skipped.length} selected rows will be skipped: $skippedReason.',
         'Rows recorded meanwhile are checked again and left out.',
@@ -751,7 +757,10 @@ class _SummaryCard extends StatelessWidget {
               tone: ToneColors.expense(context)),
           line('Refunds · transfers', '${_n('refunds')} · ${_n('transfers')}'),
           if (_n('duplicates') > 0)
-            line('Already recorded', '${_n('duplicates')} left out',
+            line('Duplicates', '${_n('duplicates')} left out',
+                tone: ToneColors.warning(context)),
+          if (_n('possible') > 0)
+            line('Possible duplicates', '${_n('possible')} to check',
                 tone: ToneColors.warning(context)),
           if (_n('needsDetail') > 0)
             line('Need an account or other details', '${_n('needsDetail')}',
@@ -775,6 +784,7 @@ class _ImportRowTile extends StatelessWidget {
     required this.targetLabel,
     required this.enabled,
     required this.onToggle,
+    required this.onDecide,
     required this.onEdit,
   });
 
@@ -800,6 +810,9 @@ class _ImportRowTile extends StatelessWidget {
   final String? targetLabel;
   final bool enabled;
   final VoidCallback onToggle;
+
+  /// The answer for a possible duplicate: 'duplicate' or 'notDuplicate'.
+  final ValueChanged<String> onDecide;
   final VoidCallback onEdit;
 
   @override
@@ -855,7 +868,10 @@ class _ImportRowTile extends StatelessWidget {
                         if (row.attention) 'Check this row',
                       ].join(' · '),
                       style: theme.textTheme.labelSmall?.copyWith(
-                        color: row.blocking || row.attention
+                        color: row.blocking ||
+                                row.attention ||
+                                row.uncheckedDuplicate ||
+                                row.duplicateDecision == 'duplicate'
                             ? ToneColors.warning(context)
                             : null,
                       ),
@@ -883,6 +899,29 @@ class _ImportRowTile extends StatelessWidget {
                             ),
                           for (final String tag in row.tags)
                             AppBadge(label: '#$tag'),
+                        ],
+                      ),
+                    ],
+                    if (row.uncheckedDuplicate) ...<Widget>[
+                      const SizedBox(height: AppSpacing.xs),
+                      Wrap(
+                        spacing: AppSpacing.xs,
+                        runSpacing: AppSpacing.xxs,
+                        children: <Widget>[
+                          AppButton(
+                            label: 'Duplicate',
+                            icon: Icons.content_copy_rounded,
+                            size: AppButtonSize.small,
+                            variant: AppButtonVariant.secondary,
+                            onPressed: enabled ? () => onDecide('duplicate') : null,
+                          ),
+                          AppButton(
+                            label: 'Not a duplicate',
+                            icon: Icons.check_rounded,
+                            size: AppButtonSize.small,
+                            variant: AppButtonVariant.ghost,
+                            onPressed: enabled ? () => onDecide('notDuplicate') : null,
+                          ),
                         ],
                       ),
                     ],

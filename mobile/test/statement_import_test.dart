@@ -14,6 +14,7 @@ import 'package:expense_tracker/models/expense.dart';
 import 'package:expense_tracker/models/expense_category.dart';
 import 'package:expense_tracker/models/income.dart';
 import 'package:expense_tracker/models/ledger_entry.dart';
+import 'package:expense_tracker/models/payment_method.dart';
 import 'package:expense_tracker/providers/statement_import_provider.dart';
 import 'package:expense_tracker/repositories/expense_repository.dart';
 import 'package:expense_tracker/repositories/income_repository.dart';
@@ -200,6 +201,22 @@ class RecordingExpenses extends ExpenseRepository {
   final List<MovementDetails?> details = <MovementDetails?>[];
   int failures = 0;
 
+  /// Expenses already recorded — by hand — for the possible-duplicate check.
+  List<Expense> recorded = <Expense>[];
+  final List<(DateTime, DateTime)> ranges = <(DateTime, DateTime)>[];
+
+  @override
+  Future<List<Expense>> fetchRange({
+    required String userId,
+    required DateTime from,
+    required DateTime toExclusive,
+    Set<String> categoryIds = const <String>{},
+    int limit = 0,
+  }) async {
+    ranges.add((from, toExclusive));
+    return recorded;
+  }
+
   @override
   Future<Expense> create(Expense expense, {MovementDetails? details}) async {
     if (failures > 0) {
@@ -225,6 +242,16 @@ class RecordingIncome extends IncomeRepository {
 
   final List<Income> created = <Income>[];
   final List<MovementDetails?> details = <MovementDetails?>[];
+  List<Income> recorded = <Income>[];
+
+  @override
+  Future<List<Income>> fetchRange({
+    required String userId,
+    required DateTime from,
+    required DateTime toExclusive,
+    int limit = 0,
+  }) async =>
+      recorded;
 
   @override
   Future<Income> create(Income income, {MovementDetails? details}) async {
@@ -534,6 +561,107 @@ void main() {
           .single! as Map<String, Object?>;
       expect(existing['reference'], '600012345678');
       expect(existing['upiId'], 'cafe@upi');
+    });
+
+    test('expenses and income added by hand reach the possible-duplicate check',
+        () async {
+      expenses.recorded = <Expense>[
+        Expense(
+          id: 'e1',
+          userId: 'u1',
+          amount: 450,
+          expenseDate: DateTime(2026, 9, 4),
+          merchant: 'Swiggy',
+          description: 'Dinner',
+          notes: 'Bank SMS ref 612345678901',
+          category: const ExpenseCategory(id: 'c1', userId: 'u1', name: 'Food', icon: 'restaurant', color: '#FF7043'),
+          paymentMethod: const PaymentMethod(id: 'pm1', userId: 'u1', name: 'UPI'),
+        ),
+      ];
+      income.recorded = <Income>[
+        Income(id: 'i1', userId: 'u1', amount: 85000, incomeDate: DateTime(2026, 8, 31), source: 'Salary', bankAccountId: 'a2'),
+      ];
+      ledger.recorded = <LedgerEntry>[
+        LedgerEntry(
+          id: 'l1',
+          userId: 'u1',
+          accountId: 'a1',
+          direction: LedgerDirection.debit,
+          amount: 300,
+          txnDate: DateTime(2026, 9, 6),
+          expenseId: 'e7',
+        ),
+      ];
+      final FakeEngine engine = FakeEngine(<String, Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        'recheck': (Map<String, Object?> a) => a['items'],
+      });
+      final StatementImportProvider provider = providerFor(engine);
+
+      await provider.addFile();
+      final Map<String, Object?> review = engine.argsOf('review').single;
+      expect(review['recorded'], <Object?>[
+        <String, Object?>{
+          'id': 'e1',
+          'kind': 'expense',
+          'date': '2026-09-04',
+          'amount': 450.0,
+          'merchant': 'Swiggy',
+          'description': 'Dinner',
+          'notes': 'Bank SMS ref 612345678901',
+          'category': 'Food',
+          'paymentMethod': 'UPI',
+          'bankAccountId': null,
+          'creditCardId': null,
+        },
+        <String, Object?>{
+          'id': 'i1',
+          'kind': 'income',
+          'date': '2026-08-31',
+          'amount': 85000.0,
+          'merchant': null,
+          'description': null,
+          'notes': null,
+          'category': 'Salary',
+          'paymentMethod': null,
+          'bankAccountId': 'a2',
+          'creditCardId': null,
+        },
+      ]);
+      // The ledger row says which expense it belongs to, so a matched one is not offered again.
+      expect((review['existing']! as List<Object?>).single, containsPair('expenseId', 'e7'));
+      // A week either side of the session: an expense added by hand may be dated off.
+      expect(expenses.ranges.single, (DateTime(2026, 8, 25), DateTime(2026, 10, 8)));
+      expect(provider.checkFailed, isFalse);
+
+      await provider.recheck();
+      expect(engine.argsOf('recheck').single['recorded'], hasLength(2));
+    });
+
+    test('a possible duplicate is answered through the shared reducer', () async {
+      final FakeEngine engine = FakeEngine(<String, Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        'reduce': (Map<String, Object?> a) => a['items'],
+        'view': (Map<String, Object?> args) => <String, Object?>{
+              'summary': <String, Object?>{'possible': 1},
+              'rows': <Object?>[
+                <String, Object?>{'id': 's1:0', 'possible': true, 'unchecked': true, 'decision': null},
+                <String, Object?>{'id': 's1:1', 'possible': false, 'unchecked': false},
+              ],
+            },
+      });
+      final StatementImportProvider provider = providerFor(engine);
+      await provider.addFile();
+
+      final ImportRow flagged = provider.rows.first;
+      expect(flagged.possibleDuplicate, isTrue);
+      expect(flagged.uncheckedDuplicate, isTrue);
+      expect(flagged.duplicateDecision, isNull);
+      expect(provider.uncheckedSelected, 1);
+
+      await provider.decideDuplicate('s1:0', 'duplicate');
+      expect(engine.argsOf('reduce').single['action'],
+          <String, Object?>{'type': 'decideDuplicate', 'id': 's1:0', 'decision': 'duplicate'});
     });
 
     test('a failed duplicate check holds the import until a retry works',

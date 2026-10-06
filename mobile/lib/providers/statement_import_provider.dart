@@ -15,6 +15,12 @@ import '../services/schema_capabilities.dart';
 import '../services/statement_import/statement_engine.dart';
 import 'async_state.dart';
 
+/// The ledger rows and the hand-added entries a session is checked against.
+typedef _Recorded = ({
+  List<Map<String, Object?>> existing,
+  List<Map<String, Object?>> recorded,
+});
+
 /// One reviewable statement row. A thin typed view over the engine's JSON —
 /// the engine owns the shape, so edits round-trip through it unchanged.
 class ImportRow {
@@ -104,6 +110,19 @@ class ImportRow {
   String? get duplicateBadge => flags['duplicateBadge'] as String?;
   String? get duplicateText => flags['duplicateText'] as String?;
   bool get isDuplicate => json['duplicate'] != null;
+
+  /// Possibly the same as something already recorded — an expense added by
+  /// hand, or a same-amount entry a day or two away. The user is asked.
+  bool get possibleDuplicate => flags['possible'] == true;
+
+  /// A possible duplicate the user has not answered yet.
+  bool get uncheckedDuplicate => flags['unchecked'] == true;
+
+  /// The answer: 'duplicate' (left out) or 'notDuplicate' (imported).
+  String? get duplicateDecision => flags['decision'] as String?;
+
+  /// Left out as a duplicate — flagged as one, or confirmed by the user.
+  bool get leftOut => flags['leftOut'] == true;
 
   /// What the row still lacks before it can be imported as chosen — 'account'
   /// on a multi-account statement whose account could not be matched,
@@ -270,8 +289,10 @@ class StatementImportProvider extends AsyncProvider {
   final LedgerRepository _ledger;
   final TagRepository _tags;
 
-  /// How far around a statement's dates recorded rows are checked.
-  static const int nearbyDays = 2;
+  /// How far around a statement's dates recorded rows are read — the
+  /// engine's `checkDays`: an expense added by hand may be dated up to a
+  /// week off.
+  static const int checkDays = 7;
 
   /// After this many failures in a row the problem is not the data; stop
   /// rather than fail every row.
@@ -327,6 +348,11 @@ class StatementImportProvider extends AsyncProvider {
 
   int _count(String key) => (_summary[key] as num?)?.toInt() ?? 0;
   int get selectedCount => _count('selected');
+
+  /// Selected rows that may be duplicates the user has not answered.
+  int get uncheckedSelected => rows
+      .where((ImportRow r) => r.selected && r.uncheckedDuplicate)
+      .length;
 
   /// Starts a session for [account]. Picking another account starts over.
   void begin({
@@ -425,15 +451,18 @@ class StatementImportProvider extends AsyncProvider {
       }
 
       List<Map<String, Object?>> existing = <Map<String, Object?>>[];
+      List<Map<String, Object?>> recorded = <Map<String, Object?>>[];
       try {
         // Every account the session's rows are on: a Paytm statement spans several.
-        existing = await _existingFor(
+        final _Recorded found = await _recordedFor(
           <ImportedStatement>[..._statements, statement],
           <String>[
             ..._accountsOf(_items),
             ..._accountsOf(transactions.whereType<Map<String, Object?>>()),
           ],
         );
+        existing = found.existing;
+        recorded = found.recorded;
       } catch (_) {
         // Still reviewable — overlaps between these files are caught — but
         // importing waits until the check against recorded rows succeeds.
@@ -443,6 +472,7 @@ class StatementImportProvider extends AsyncProvider {
         'current': _items,
         'transactions': transactions,
         'existing': existing,
+        'recorded': recorded,
         'categories': _categories.map(EngineJson.category).toList(),
       }))! as List<Object?>;
       _statements.add(statement);
@@ -477,9 +507,11 @@ class StatementImportProvider extends AsyncProvider {
           .whereType<String>()
           .where((String id) => id.isNotEmpty);
 
-  /// Recorded movements around every statement in the session, on the
-  /// upload's account and every account [accountIds] names.
-  Future<List<Map<String, Object?>>> _existingFor(
+  /// What the duplicate checks compare the session with: the ledger around
+  /// every statement in it, on the upload's account and every account
+  /// [accountIds] names; and the expenses and income recorded around it on
+  /// any account or none.
+  Future<_Recorded> _recordedFor(
     List<ImportedStatement> statements,
     Iterable<String> accountIds,
   ) async {
@@ -488,12 +520,32 @@ class StatementImportProvider extends AsyncProvider {
           .map((ImportedStatement s) => <String, Object?>{'period': s.json['period']})
           .toList(),
     });
-    if (range is! Map<String, Object?>) return <Map<String, Object?>>[];
-    return _existingBetween(
-      AppDateUtils.parseDate(range['from']! as String),
-      AppDateUtils.parseDate(range['to']! as String),
-      <String>{_account!.id, ...accountIds},
-    );
+    if (range is! Map<String, Object?>) {
+      return (existing: <Map<String, Object?>>[], recorded: <Map<String, Object?>>[]);
+    }
+    final DateTime from = AppDateUtils.parseDate(range['from']! as String);
+    final DateTime to = AppDateUtils.parseDate(range['to']! as String);
+    final List<List<Map<String, Object?>>> found =
+        await Future.wait(<Future<List<Map<String, Object?>>>>[
+      _existingBetween(from, to, <String>{_account!.id, ...accountIds}),
+      _recordedBetween(from, to),
+    ]);
+    return (existing: found[0], recorded: found[1]);
+  }
+
+  /// Every expense and income dated around [from]–[to], on any account or
+  /// none — what a statement row may already have been added by hand as.
+  Future<List<Map<String, Object?>>> _recordedBetween(DateTime from, DateTime to) async {
+    final DateTime start = DateTime(from.year, from.month, from.day - checkDays);
+    final DateTime end = DateTime(to.year, to.month, to.day + checkDays + 1);
+    final (List<Expense> expenses, List<Income> income) = await (
+      _expenses.fetchRange(userId: _userId!, from: start, toExclusive: end),
+      _income.fetchRange(userId: _userId!, from: start, toExclusive: end),
+    ).wait;
+    return <Map<String, Object?>>[
+      ...expenses.map(EngineJson.recordedExpense),
+      ...income.map(EngineJson.recordedIncome),
+    ];
   }
 
   Future<List<Map<String, Object?>>> _existingBetween(
@@ -506,8 +558,8 @@ class StatementImportProvider extends AsyncProvider {
             (String accountId) => _ledger.fetchForAccount(
               userId: _userId!,
               accountId: accountId,
-              from: DateTime(from.year, from.month, from.day - nearbyDays),
-              toExclusive: DateTime(to.year, to.month, to.day + nearbyDays + 1),
+              from: DateTime(from.year, from.month, from.day - checkDays),
+              toExclusive: DateTime(to.year, to.month, to.day + checkDays + 1),
             ),
           ),
     );
@@ -561,6 +613,13 @@ class StatementImportProvider extends AsyncProvider {
   Future<void> remove(String id) =>
       reduce(<String, Object?>{'type': 'remove', 'id': id});
 
+  /// The answer for a possible duplicate: 'duplicate' leaves the row out,
+  /// 'notDuplicate' imports it as its own transaction; null takes the answer
+  /// back. Nothing is deleted or merged either way.
+  Future<void> decideDuplicate(String id, String? decision) => reduce(
+        <String, Object?>{'type': 'decideDuplicate', 'id': id, 'decision': decision},
+      );
+
   /// Kinds valid for a direction, from the engine. Loans and reimbursements
   /// are recorded on the web app, so the phone does not offer them.
   Future<List<String>> kindsFor(bool debit) async {
@@ -579,11 +638,11 @@ class StatementImportProvider extends AsyncProvider {
     _rechecking = true;
     safeNotify();
     try {
-      final List<Map<String, Object?>> existing =
-          await _existingFor(_statements, _accountsOf(_items));
+      final _Recorded found = await _recordedFor(_statements, _accountsOf(_items));
       final List<Object?> next = (await _engine.call('recheck', <String, Object?>{
         'items': _items,
-        'existing': existing,
+        'existing': found.existing,
+        'recorded': found.recorded,
       }))! as List<Object?>;
       _items = next.cast<Map<String, Object?>>();
       await _refreshView();
