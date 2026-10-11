@@ -7,6 +7,7 @@ import '../models/expense_category.dart';
 import '../models/income.dart';
 import '../models/ledger_entry.dart';
 import '../models/payment_method.dart';
+import '../models/receivable.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/income_repository.dart';
 import '../repositories/ledger_repository.dart';
@@ -100,8 +101,23 @@ class ImportRow {
   String? get transferCardId =>
       transferTargetType == 'card' ? _target!['cardId'] as String? : null;
 
-  /// An expense paid on someone else's behalf (only ever set on the web).
+  /// An expense paid for someone — a purchase or money lent: owed back, not
+  /// spending.
   bool get reimbursable => json['reimbursable'] == true;
+
+  /// Who it was paid for, or who is paying it back.
+  String get person => (json['person'] as String?) ?? '';
+
+  /// A repayment: what it pays back — {type: 'claim', receivableId, left} for
+  /// something already recorded, {type: 'pending', itemId} for a row of this
+  /// import — or null until chosen.
+  Map<String, Object?>? get settles =>
+      json['settles'] is Map ? (json['settles']! as Map).cast<String, Object?>() : null;
+
+  /// A suggested link to something paid for someone (never applied until the
+  /// user accepts it): {type, text, edit}.
+  Map<String, Object?>? get hint =>
+      flags['hint'] is Map ? (flags['hint']! as Map).cast<String, Object?>() : null;
 
   bool get blocking => flags['blocking'] == true;
   bool get uncategorized => flags['uncategorized'] == true;
@@ -188,11 +204,11 @@ class ImportCounts {
 
   /// Transfers between two of the user's own accounts.
   int get transfers => _n('transfers');
-  int get lent => _n('lent');
+
+  /// Money paid back for something paid for someone — not income.
   int get repaid => _n('repaid');
 
-  int get total =>
-      expenses + paidFor + income + movements + transfers + lent + repaid;
+  int get total => expenses + paidFor + income + movements + transfers + repaid;
 }
 
 /// Counts of what one import wrote.
@@ -206,7 +222,7 @@ class ImportOutcome {
   /// Transfers between the user's own accounts (both legs, or linked).
   int transfers = 0;
 
-  /// Loans, repayments and purchases paid for someone (web treatments).
+  /// Expenses paid for someone, and repayments of them.
   int other = 0;
   int skipped = 0;
 
@@ -309,6 +325,12 @@ class StatementImportProvider extends AsyncProvider {
   List<Map<String, Object?>> _items = <Map<String, Object?>>[];
   Map<String, Map<String, Object?>> _flags = <String, Map<String, Object?>>{};
   Map<String, Object?> _summary = <String, Object?>{};
+
+  /// What is still owed (open claims, in the engine's `OpenClaim` shape) and
+  /// everyone paid for — what statement rows are matched against for hints.
+  List<Map<String, Object?>> _openClaims = const <Map<String, Object?>>[];
+  List<String> _people = const <String>[];
+  String _currency = 'INR';
 
   String? _reading;
   PendingPassword? _pending;
@@ -579,6 +601,55 @@ class StatementImportProvider extends AsyncProvider {
       for (final Object? row in (view['rows'] as List<Object?>?) ?? const <Object?>[])
         ((row! as Map<String, Object?>)['id']! as String): row as Map<String, Object?>,
     };
+    if (!SchemaCapabilities.treatments || (_openClaims.isEmpty && _people.isEmpty)) return;
+    // Suggestions only: a row that looks like a repayment of, or a payment
+    // for, someone the user has paid for. Nothing is applied until accepted.
+    try {
+      final Map<String, Object?> hints = ((await _engine.call('paidForHints', <String, Object?>{
+            'items': _items,
+            'claims': _openClaims,
+            'people': _people,
+            'currency': _currency,
+          })) as Map<Object?, Object?>?)
+              ?.cast<String, Object?>() ??
+          const <String, Object?>{};
+      for (final MapEntry<String, Object?> hint in hints.entries) {
+        final Map<String, Object?>? flags = _flags[hint.key];
+        if (flags != null) _flags[hint.key] = <String, Object?>{...flags, 'hint': hint.value};
+      }
+    } catch (_) {
+      // Hints are a convenience: the review works the same without them.
+    }
+  }
+
+  /// What is still owed and everyone paid for, from the user's claims — for
+  /// the rows' hints. Called by the screen once the claims are read.
+  Future<void> setClaims(List<ClaimSummary> claims, {required String currency}) async {
+    _openClaims = <Map<String, Object?>>[
+      for (final ClaimSummary c in claims)
+        if (c.source != null && c.status.isOpen)
+          <String, Object?>{
+            'receivableId': c.receivable.id,
+            'person': c.receivable.person,
+            'left': amountLeft(c),
+            'date': AppDateUtils.toDateString(c.source!.date),
+          },
+    ];
+    _people = knownPeople(claims);
+    _currency = currency;
+    if (_items.isEmpty) return;
+    try {
+      await _refreshView();
+    } catch (_) {
+      return;
+    }
+    safeNotify();
+  }
+
+  /// Accepts [row]'s hint — the same edit as choosing it in the row's editor.
+  Future<void> acceptHint(ImportRow row) async {
+    final Object? patch = row.hint?['edit'];
+    if (patch is Map) await edit(row.id, patch.cast<String, Object?>());
   }
 
   /// Toggle, select, edit or remove — through the same reducer the web uses.
@@ -620,12 +691,12 @@ class StatementImportProvider extends AsyncProvider {
         <String, Object?>{'type': 'decideDuplicate', 'id': id, 'decision': decision},
       );
 
-  /// Kinds valid for a direction, from the engine. Loans and reimbursements
-  /// are recorded on the web app, so the phone does not offer them.
+  /// Kinds valid for a direction, from the engine: a repayment only with
+  /// migration 005.
   Future<List<String>> kindsFor(bool debit) async {
     final Object? kinds = await _engine.call(
       'kindsFor',
-      <String, Object?>{'type': debit ? 'debit' : 'credit', 'treatments': false},
+      <String, Object?>{'type': debit ? 'debit' : 'credit', 'treatments': SchemaCapabilities.treatments},
     );
     return (kinds as List<Object?>? ?? const <Object?>[]).whereType<String>().toList();
   }
@@ -797,7 +868,7 @@ class StatementImportProvider extends AsyncProvider {
       ..income = counts.income
       ..movements = counts.movements
       ..transfers = counts.transfers
-      ..other = counts.paidFor + counts.lent + counts.repaid;
+      ..other = counts.paidFor + counts.repaid;
   }
 
   /// Transfers whose other leg is already on that account (both statements

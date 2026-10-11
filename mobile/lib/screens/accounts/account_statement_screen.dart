@@ -333,8 +333,8 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
       : const <CreditCard>[];
 
   /// Changes how a movement is recorded — expense, income, transfer (to
-  /// another account, the cash account or a card's bill), money lent, a
-  /// repayment or a reimbursement — in one database transaction.
+  /// another account, the cash account or a card's bill), or a repayment of
+  /// something paid for someone — in one database transaction.
   Future<void> _openEditor(StatementRow row) async {
     final List<BankAccount> accounts =
         context.read<BankAccountProvider>().accounts;
@@ -783,6 +783,8 @@ class _StatementRowTile extends StatelessWidget {
         entry.title.toLowerCase().contains(other.toLowerCase());
 
     final bool linkedRow = entry.isTransfer || entry.isCardPayment;
+    // Money paid back is not income: the same neutral tone.
+    final bool neutral = linkedRow || entry.isRepayment;
     return TransactionRow(
       leading: _leading(entry),
       title: entry.title,
@@ -793,7 +795,7 @@ class _StatementRowTile extends StatelessWidget {
       currency: currency,
       // A transfer is neutral slate on both sides: the credit leg must not
       // read as income, and the debit leg must not read as spending.
-      tone: linkedRow
+      tone: neutral
           ? AmountTone.transfer
           : (entry.isCredit ? AmountTone.positive : AmountTone.negative),
       meta: <String>[

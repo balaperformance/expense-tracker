@@ -6,8 +6,8 @@ import '../models/receivable.dart';
 import '../services/schema_capabilities.dart';
 import 'paging.dart';
 
-/// `public.receivables` (migration 005, shared with the web app): money lent
-/// and purchases paid for someone else.
+/// `public.receivables` (migrations 005 and 014, shared with the web app):
+/// everything paid for someone — a purchase or money lent — and its repayments.
 ///
 /// What is owed is never read from a stored column: each claim's source (the
 /// lent debit or the purchase) and its repayments (ledger credits naming it)
@@ -25,8 +25,8 @@ class ReceivableRepository {
   /// `in (…)` lists are sent in chunks so a long one never overflows the URL.
   static const int _chunk = 100;
 
-  /// Every claim the user has, without figures. Small: one row per loan or
-  /// paid-for purchase.
+  /// Every claim the user has, without figures. Small: one row per expense
+  /// paid for someone.
   Future<List<Receivable>> fetchClaimLinks(String userId) async {
     await SchemaCapabilities.resolve(_client);
     if (!SchemaCapabilities.treatments) return const <Receivable>[];

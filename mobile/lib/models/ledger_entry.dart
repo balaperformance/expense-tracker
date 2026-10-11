@@ -18,6 +18,9 @@ extension LedgerDirectionWire on LedgerDirection {
 /// not spending, so it is derived here rather than stored as a category.
 const String cardPaymentLabel = 'Card bill payment';
 
+/// Money paid back for something paid for someone — never income.
+const String repaymentLabel = 'Repayment';
+
 /// What a statement printed about a movement beyond its figures — its
 /// reference (a UPI reference number), the other side's UPI ID and the time
 /// of day — kept on the movement's own ledger row (migration 007), the same
@@ -174,7 +177,15 @@ class LedgerEntry {
   /// derived here instead of being stored as a row in `categories`.
   String? get categoryLabel => isTransfer
       ? moneyTransferLabel
-      : (isCardPayment ? cardPaymentLabel : category?.name);
+      : isCardPayment
+          ? cardPaymentLabel
+          : isRepayment
+              ? repaymentLabel
+              : category?.name;
+
+  /// Money paid back for something paid for someone (migration 005): not
+  /// income.
+  bool get isRepayment => receivableId != null;
 
   /// Signed contribution to a balance.
   double get signedAmount => isDebit ? -amount : amount;

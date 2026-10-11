@@ -209,7 +209,7 @@ class StatementProvider extends AsyncProvider {
   }
 
   /// The "Record as" choices for a direction — the engine's `kindsFor` (the
-  /// web's `availableKinds`): loans and reimbursements only with 005.
+  /// web's `availableKinds`): repayments only with 005.
   Future<List<String>> treatmentKinds({required bool debit}) async {
     final Object? kinds = await _engine.call('kindsFor', <String, Object?>{
       'type': debit ? 'debit' : 'credit',

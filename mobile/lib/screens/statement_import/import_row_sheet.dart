@@ -9,8 +9,10 @@ import '../../core/utils/validators.dart';
 import '../../models/bank_account.dart';
 import '../../models/credit_card.dart';
 import '../../models/expense_category.dart';
+import '../../models/receivable.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/credit_card_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_import_provider.dart';
 import '../../services/schema_capabilities.dart';
@@ -21,6 +23,7 @@ import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/paid_for_field.dart';
 import '../../widgets/tag_field.dart';
 
 /// The other side of a transfer, as the review item stores it.
@@ -127,6 +130,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     'income': 'Income',
     'refund': 'Refund',
     'transfer': 'Transfer',
+    'reimbursement': 'Repayment',
   };
 
   late final TextEditingController _description =
@@ -141,6 +145,17 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   late final TextEditingController _notes =
       TextEditingController(text: widget.row.notes ?? '');
   final TextEditingController _tagDraft = TextEditingController();
+
+  /// Who it was paid for, or who is paying back; a repayment starts from the
+  /// payer the bank printed.
+  late final TextEditingController _person = TextEditingController(
+    text: widget.row.person.isNotEmpty
+        ? widget.row.person
+        : (widget.row.kind == 'reimbursement' ? (widget.row.counterparty ?? '') : ''),
+  );
+  late bool _reimbursable = widget.row.reimbursable;
+  late Map<String, Object?>? _settles = widget.row.settles;
+  bool _submitted = false;
   late DateTime _date = widget.row.date;
   late bool _debit = widget.row.isDebit;
   late String _kind = widget.row.kind;
@@ -194,6 +209,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     _source.dispose();
     _notes.dispose();
     _tagDraft.dispose();
+    _person.dispose();
     super.dispose();
   }
 
@@ -211,6 +227,9 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     final List<ExpenseCategory> categories =
         context.watch<CategoryProvider>().categories;
     final List<CreditCard> cards = context.watch<CreditCardProvider>().cards;
+    final List<ClaimSummary> claims = SchemaCapabilities.treatments
+        ? context.watch<ReceivableProvider?>()?.claims ?? const <ClaimSummary>[]
+        : const <ClaimSummary>[];
     // The row as it is now: a duplicate answered from here changes it while
     // the sheet is open.
     final ImportRow row = provider.rows.firstWhere(
@@ -326,16 +345,25 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           Text('Balance only — not income or spending',
               style: theme.textTheme.labelSmall),
         ],
+        if (_kind == 'reimbursement') ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          Text('Pays back something you paid for someone — not income',
+              style: theme.textTheme.labelSmall),
+        ],
         if (_kind == 'transfer') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
           ..._transferTarget(theme, accounts, cards),
+        ],
+        if (_kind == 'reimbursement') ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          ..._repayment(theme, provider, claims, settings.currency),
         ],
         const SizedBox(height: AppSpacing.lg),
         AmountField(
           controller: _amount,
           symbol: settings.currencySymbol,
           autofocus: false,
-          tone: _kind == 'transfer'
+          tone: _kind == 'transfer' || _kind == 'reimbursement'
               ? ToneColors.transfer(context)
               : (_debit ? ToneColors.expense(context) : ToneColors.income(context)),
         ),
@@ -393,6 +421,21 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
                     ))
                 .toList(),
           ),
+          if (SchemaCapabilities.treatments) ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            PaidForField(
+              value: _reimbursable,
+              onChanged: (bool value) => setState(() {
+                _reimbursable = value;
+                _error = null;
+                // A name to start from: the payee the bank printed.
+                if (value && _person.text.trim().isEmpty) _person.text = _payee.text.trim();
+              }),
+              person: _person,
+              people: knownPeople(claims),
+              submitted: _submitted,
+            ),
+          ],
         ],
         if (_kind == 'income') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
@@ -505,6 +548,133 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     ];
   }
 
+  /// What a repayment can pay back: anything paid for someone still owed,
+  /// and rows of this import paid for someone — theirs first. [left] is what
+  /// is still owed once the other repayments in this import are counted.
+  List<_SettleChoice> _settleChoices(
+    StatementImportProvider provider,
+    List<ClaimSummary> claims,
+    String currency,
+  ) {
+    final List<ImportRow> rows = provider.rows;
+    double taken(String key) => rows
+            .where((ImportRow r) =>
+                r.id != widget.row.id &&
+                r.selected &&
+                r.kind == 'reimbursement' &&
+                (r.settles?['receivableId'] ?? r.settles?['itemId']) == key)
+            .fold<int>(0, (int sum, ImportRow r) => sum + (r.amount * 100).round()) /
+        100;
+    final List<_SettleChoice> choices = <_SettleChoice>[
+      for (final ClaimSummary c in claims)
+        if (c.source != null &&
+            (c.status.isOpen || _settles?['receivableId'] == c.receivable.id))
+          _SettleChoice(
+            target: <String, Object?>{
+              'type': 'claim',
+              'receivableId': c.receivable.id,
+              'left': amountLeft(c),
+            },
+            person: c.receivable.person,
+            left: ((amountLeft(c) * 100).round() - (taken(c.receivable.id) * 100).round()) / 100,
+            label: '${c.source!.title} · ${Formatters.dayMonth(c.source!.date)}',
+          ),
+      for (final ImportRow r in rows)
+        if (r.id != widget.row.id &&
+            r.selected &&
+            r.isDebit &&
+            r.kind == 'expense' &&
+            r.reimbursable &&
+            r.person.trim().isNotEmpty)
+          _SettleChoice(
+            target: <String, Object?>{'type': 'pending', 'itemId': r.id},
+            person: r.person.trim(),
+            left: ((r.amount * 100).round() - (taken(r.id) * 100).round()) / 100,
+            label: '${r.description} · ${Formatters.dayMonth(r.date)} · in this statement',
+          ),
+    ];
+    final String key = personKey(_person.text);
+    return <_SettleChoice>[
+      ...choices.where((_SettleChoice c) => key.isNotEmpty && personKey(c.person) == key),
+      ...choices.where((_SettleChoice c) => key.isEmpty || personKey(c.person) != key),
+    ];
+  }
+
+  _SettleChoice? _chosen(List<_SettleChoice> choices) {
+    for (final _SettleChoice c in choices) {
+      if (c.key == _SettleChoice.keyOf(_settles)) return c;
+    }
+    return null;
+  }
+
+  /// From [person], paying back [what was paid for them].
+  List<Widget> _repayment(
+    ThemeData theme,
+    StatementImportProvider provider,
+    List<ClaimSummary> claims,
+    String currency,
+  ) {
+    final List<_SettleChoice> choices = _settleChoices(provider, claims, currency);
+    final _SettleChoice? chosen = _chosen(choices);
+    final double? value = Validators.parseAmount(_amount.text);
+    final double? after = chosen != null && value != null && value > 0
+        ? ((chosen.left * 100).round() - (value * 100).round()) / 100
+        : null;
+    String money(double amount) => Formatters.currency(amount, currencyCode: currency);
+    return <Widget>[
+      const FieldLabel('From', isRequired: true),
+      TextField(
+        controller: _person,
+        textCapitalization: TextCapitalization.words,
+        onChanged: (_) => setState(() {}),
+        decoration: const InputDecoration(
+          hintText: 'Name',
+          prefixIcon: Icon(Icons.person_outline_rounded, size: AppSpacing.iconMd),
+        ),
+      ),
+      const SizedBox(height: AppSpacing.md),
+      FieldLabel('Pays back',
+          isRequired: true, hint: _submitted && _settles == null ? 'Choose one' : null),
+      if (choices.isEmpty)
+        Text(
+          'Nothing paid for anyone is still owed. Mark the expense as paid for '
+          'someone first — on its own row here, or in Expenses.',
+          style: theme.textTheme.bodySmall,
+        )
+      else
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          children: choices
+              .map((_SettleChoice c) => AppChoiceChip(
+                    label: '${c.person} · ${money(c.left < 0 ? 0 : c.left)} left · ${c.label}',
+                    icon: Icons.handshake_outlined,
+                    selected: c.key == _SettleChoice.keyOf(_settles),
+                    onSelected: () => setState(() {
+                      _settles = c.target;
+                      if (_person.text.trim().isEmpty) _person.text = c.person;
+                      _error = null;
+                    }),
+                  ))
+              .toList(),
+        ),
+      if (after != null) ...<Widget>[
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          after == 0
+              ? 'This settles it.'
+              : after > 0
+                  ? '${money(after)} still owed after this.'
+                  : '${money(-after)} more than is still owed. It may already be recorded — '
+                      'choose something else, or record it as a refund.',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: after < 0 ? ToneColors.warning(context) : null,
+          ),
+        ),
+      ],
+    ];
+  }
+
   /// What the statement printed, unchanged, to check the row against.
   Widget _asPrinted(ThemeData theme, ImportRow row) {
     final List<String> lines = <String>[
@@ -543,6 +713,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
 
   Future<void> _save() async {
     final ImportRow row = widget.row;
+    setState(() => _submitted = true);
     final double? value = Validators.parseAmount(_amount.text);
     if (value == null || value <= 0 || value > 999999999) {
       setState(() => _error = 'Enter the amount shown on the statement.');
@@ -568,6 +739,27 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           : 'Choose where the money came from.');
       return;
     }
+    final bool paidFor = _kind == 'expense' && _reimbursable;
+    if (paidFor && _person.text.trim().isEmpty) {
+      setState(() => _error = 'Add who you paid for.');
+      return;
+    }
+    if (_kind == 'reimbursement') {
+      if (_settles == null) {
+        setState(() => _error = 'Choose what this pays back.');
+        return;
+      }
+      final List<ClaimSummary> claims =
+          context.read<ReceivableProvider?>()?.claims ?? const <ClaimSummary>[];
+      final _SettleChoice? chosen = _chosen(_settleChoices(
+          context.read<StatementImportProvider>(), claims, context.read<SettingsProvider>().currency));
+      if (chosen != null && (value * 100).round() > (chosen.left * 100).round()) {
+        setState(() => _error = 'This is more than is still owed on what it pays back. '
+            'It may already be recorded — choose something else, or record it as a refund.');
+        return;
+      }
+    }
+    final String person = _person.text.trim();
     final String description = _description.text.trim();
     final String payee = _payee.text.trim();
     final String source = _source.text.trim();
@@ -600,10 +792,39 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           (notes.isEmpty ? null : notes) != row.notes)
         'notes': notes.isEmpty ? null : notes,
       if (_taggable && tags.join('\n') != row.tags.join('\n')) 'tags': tags,
+      if (_kind == 'expense' && paidFor != row.reimbursable) 'reimbursable': paidFor,
+      if ((paidFor || _kind == 'reimbursement') && person != row.person) 'person': person,
+      if (_kind == 'reimbursement' &&
+          _SettleChoice.keyOf(_settles) != _SettleChoice.keyOf(row.settles))
+        'settles': _settles,
     };
     if (patch.isNotEmpty) {
       await context.read<StatementImportProvider>().edit(row.id, patch);
     }
     if (mounted) Navigator.of(context).pop('saved');
   }
+}
+
+/// One thing a repayment in the review can pay back: something paid for
+/// someone already recorded, or a row of this import paid for someone.
+class _SettleChoice {
+  const _SettleChoice({
+    required this.target,
+    required this.person,
+    required this.left,
+    required this.label,
+  });
+
+  /// The engine's settlement target, sent back unchanged.
+  final Map<String, Object?> target;
+  final String person;
+
+  /// Still owed once the other repayments in this import are counted.
+  final double left;
+  final String label;
+
+  String get key => keyOf(target);
+
+  static String keyOf(Map<String, Object?>? target) =>
+      target == null ? '' : '${target['type']}:${target['receivableId'] ?? target['itemId'] ?? target['expenseId']}';
 }

@@ -5,8 +5,9 @@ import '../core/theme/app_spacing.dart';
 import '../models/receivable.dart';
 import 'common/app_fields.dart';
 
-/// "Paid for someone else" on an expense: the purchase is owed back, so it
-/// leaves the user's own spending (migration 005). The web app's
+/// "Paid for someone else" on an expense: a purchase made for them, or money
+/// lent to them. It is owed back, so it leaves the user's own spending
+/// (migrations 005, 014); repayments are recorded against it. The web app's
 /// `PaidForToggle`, with its person field.
 class PaidForField extends StatelessWidget {
   const PaidForField({
@@ -125,7 +126,9 @@ class PaidForField extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            progress ?? 'Owed back to you — not counted as your spending.',
+            progress ??
+                'A purchase you paid for them, or money you lent them. Owed '
+                    'back to you — not counted as your spending.',
             style: theme.textTheme.labelSmall,
           ),
         ],

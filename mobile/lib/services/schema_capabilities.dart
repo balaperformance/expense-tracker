@@ -117,7 +117,7 @@ class SchemaCapabilities {
       if (!_merchant) 'expenses.merchant',
       if (!_transfers) 'account_transactions.counterparty_account_id',
       if (!_creditCards) 'credit card tables and columns (004)',
-      if (!_treatments) 'transfer linking, loans and reimbursements (005)',
+      if (!_treatments) 'transfer linking, paid for someone and repayments (005)',
       if (!_tags) 'tags (006)',
       if (!_statementDetails) 'statement references and UPI details (007)',
       if (!_notifications) 'push notifications (008, 009)',

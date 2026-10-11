@@ -15,6 +15,7 @@ import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/income_provider.dart';
 import '../../providers/payment_method_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_import_provider.dart';
@@ -63,13 +64,25 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
   Future<void> _init() async {
     final String? userId = context.read<AuthProvider>().userId;
     if (userId == null) return;
+    final ReceivableProvider? claims =
+        SchemaCapabilities.treatments ? context.read<ReceivableProvider?>() : null;
     await Future.wait(<Future<void>>[
       // Categories and payment methods are loaded when the session starts.
       context.read<BankAccountProvider>().load(userId: userId),
       if (SchemaCapabilities.creditCards)
         context.read<CreditCardProvider>().load(userId: userId),
+      // What is still owed: repayments are matched to it, and rows that look
+      // related are suggested.
+      if (claims != null) claims.load(userId: userId),
     ]);
     if (!mounted) return;
+    if (claims != null) {
+      await context.read<StatementImportProvider>().setClaims(
+            claims.claims,
+            currency: context.read<SettingsProvider>().currency,
+          );
+      if (!mounted) return;
+    }
     final List<BankAccount> accounts = _activeAccounts();
     BankAccount? initial;
     for (final BankAccount a in accounts) {
@@ -414,6 +427,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
                   onToggle: () => provider.toggle(r.id),
                   onDecide: (String decision) => provider.decideDuplicate(r.id, decision),
                   onEdit: () => _editRow(r),
+                  onAcceptHint: () => provider.acceptHint(r),
                 ))
             .toList(),
       ));
@@ -559,6 +573,8 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     context.read<DashboardProvider>().invalidate();
     context.read<BudgetProvider>().invalidate();
     context.read<ReportsProvider>().invalidate();
+    // Expenses paid for someone and repayments change what is owed.
+    context.read<ReceivableProvider?>()?.invalidate();
     context.read<ExpenseProvider>().refresh();
     context.read<IncomeProvider>().refresh();
     if (outcome != null && outcome.written > 0) {
@@ -578,11 +594,10 @@ List<String> _countLines(ImportCounts counts, {bool skipIncomeAndSpending = fals
       if (!skipIncomeAndSpending && counts.income > 0) '${counts.income} income',
       if (counts.transfers > 0)
         '${_n(counts.transfers, 'transfer', 'transfers')} between your accounts',
-      if (counts.lent > 0) '${_n(counts.lent, 'loan', 'loans')} given — owed back, not spending',
-      if (counts.repaid > 0)
-        '${_n(counts.repaid, 'repayment or reimbursement', 'repayments and reimbursements')} — not income',
       if (counts.paidFor > 0)
-        '${_n(counts.paidFor, 'purchase', 'purchases')} paid for someone else — not your spending',
+        '${_n(counts.paidFor, 'expense', 'expenses')} paid for someone else — owed back, not your spending',
+      if (counts.repaid > 0)
+        '${_n(counts.repaid, 'repayment', 'repayments')} of what you paid for someone — not income',
       if (counts.movements > 0)
         '${_n(counts.movements, 'refund, card bill or cash movement', 'refunds, card bills and cash movements')} (balance only)',
     ];
@@ -786,17 +801,17 @@ class _ImportRowTile extends StatelessWidget {
     required this.onToggle,
     required this.onDecide,
     required this.onEdit,
+    required this.onAcceptHint,
   });
 
   /// What a row still needs, in a word or two — the web review's wording.
   static const Map<String, String> _needs = <String, String>{
     'account': 'Choose account',
     'transferTarget': 'Choose account',
-    'loanPerson': 'Who?',
-    'loan': 'Which loan?',
-    'settles': 'Which purchase?',
+    'settles': 'Pays back what?',
     'settlePerson': 'Who?',
     'paidForPerson': 'Who?',
+    'tooMuch': 'More than owed',
   };
 
   final ImportRow row;
@@ -815,13 +830,18 @@ class _ImportRowTile extends StatelessWidget {
   final ValueChanged<String> onDecide;
   final VoidCallback onEdit;
 
+  /// Accepts the row's suggestion (a repayment, or paid for someone).
+  final VoidCallback onAcceptHint;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // Neither income nor spending: the neutral transfer tone.
     final bool balanceOnly = row.kind == 'refund' ||
         row.kind == 'transfer' ||
-        row.kind == 'loan' ||
-        row.kind == 'reimbursement';
+        row.kind == 'reimbursement' ||
+        (row.kind == 'expense' && row.reimbursable);
+    final String? hint = row.isDuplicate ? null : row.hint?['text'] as String?;
     final String? needs = row.problem == null ? null : (_needs[row.problem] ?? 'Add details');
     return Opacity(
       opacity: row.selected ? 1 : 0.55,
@@ -857,6 +877,10 @@ class _ImportRowTile extends StatelessWidget {
                         row.kindLabel,
                         if (row.kind == 'expense')
                           category?.name ?? 'Choose a category',
+                        if (row.kind == 'expense' && row.reimbursable && row.person.isNotEmpty)
+                          'for ${row.person}',
+                        if (row.kind == 'reimbursement' && row.person.isNotEmpty)
+                          'from ${row.person}',
                         if (row.kind == 'income' && (row.category ?? '').isNotEmpty)
                           row.category!,
                         if (targetLabel != null) targetLabel!,
@@ -900,6 +924,16 @@ class _ImportRowTile extends StatelessWidget {
                           for (final String tag in row.tags)
                             AppBadge(label: '#$tag'),
                         ],
+                      ),
+                    ],
+                    if (hint != null) ...<Widget>[
+                      const SizedBox(height: AppSpacing.xs),
+                      AppButton(
+                        label: hint,
+                        icon: Icons.handshake_outlined,
+                        size: AppButtonSize.small,
+                        variant: AppButtonVariant.tonal,
+                        onPressed: enabled ? onAcceptHint : null,
                       ),
                     ],
                     if (row.uncheckedDuplicate) ...<Widget>[
@@ -1031,7 +1065,7 @@ class _ResultView extends StatelessWidget {
                 '${outcome.expenses} expenses · ${outcome.income} income · '
                 '${outcome.movements} balance-only movements'
                 '${outcome.transfers > 0 ? ' · ${outcome.transfers} transfers between your accounts' : ''}'
-                '${outcome.other > 0 ? ' · ${outcome.other} loans and repayments' : ''}'
+                '${outcome.other > 0 ? ' · ${outcome.other} paid for someone or paid back' : ''}'
                 '${provider.multiAccount ? ' into the accounts the statement names.' : ' into ${account.displayLabel}.'}',
                 style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,

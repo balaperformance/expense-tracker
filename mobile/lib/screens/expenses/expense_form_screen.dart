@@ -34,9 +34,11 @@ import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/paid_for_field.dart';
 import '../../widgets/tag_field.dart';
+import 'paid_for_view.dart';
 import 'paste_sms_screen.dart';
 import 'quick_add_chips.dart';
 import 'receipt_scan_flow.dart';
+import 'repayment_sheet.dart';
 
 /// Create or edit an expense.
 ///
@@ -200,7 +202,15 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   /// Tags can be read and saved (migration 006).
   late final bool _tagsOffered;
 
-  /// Who this purchase was paid for, and the people already used. An edit
+  /// Records money paid back for [claim], then shows the claim as it is now.
+  Future<void> _repay(ClaimSummary claim) async {
+    final bool saved = await recordRepayment(context, claim);
+    final Expense? existing = widget.expense;
+    if (!saved || !mounted || existing == null) return;
+    setState(() => _claim = context.read<ReceivableProvider>().claimForExpense(existing.id) ?? _claim);
+  }
+
+  /// Who this expense was paid for, and the people already used. An edit
   /// always reads afresh: saving decides from it whether to unmark.
   Future<void> _loadClaim() async {
     if (!mounted) return;
@@ -652,6 +662,15 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                           'of ${Formatters.currency(claim.principal, currencyCode: settings.currency)} '
                           'paid back · ${claim.status.label}',
                 ),
+              if (claim != null && _paidFor) ...<Widget>[
+                const SizedBox(height: AppSpacing.md),
+                PaidForCard(
+                  claim: claim,
+                  currency: settings.currency,
+                  today: AppDateUtils.today(),
+                  onRepay: _saving ? null : () => _repay(claim),
+                ),
+              ],
               if (claim != null && !_paidFor && claim.received > 0) ...<Widget>[
                 const SizedBox(height: AppSpacing.sm),
                 AppNotice(
@@ -799,6 +818,16 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         _paidForOffered && _claimRead == _ClaimRead.known;
     if (paidForKnown && _paidFor && _paidForPerson.text.trim().isEmpty) {
       setState(() => _error = 'Add who you paid for.');
+      return;
+    }
+    // What has been paid back already can never be more than what was paid
+    // for them.
+    final ClaimSummary? claim = _claim;
+    final double? amount = Validators.parseAmount(_amount.text);
+    if (_paidFor && claim != null && amount != null &&
+        (amount * 100).round() < (claim.received * 100).round()) {
+      setState(() => _error = '${Formatters.currency(claim.received, currencyCode: context.read<SettingsProvider>().currency)} '
+          'has already been paid back, so the amount cannot be less than that.');
       return;
     }
     if (!formValid) return;

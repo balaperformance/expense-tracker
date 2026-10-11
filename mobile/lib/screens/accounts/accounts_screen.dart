@@ -7,7 +7,6 @@ import '../../core/theme/app_typography.dart';
 import '../../models/bank_account.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
-import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/schema_capabilities.dart';
 import '../../widgets/category_avatar.dart';
@@ -22,7 +21,6 @@ import '../statement_import/import_statement_screen.dart';
 import 'account_form_sheet.dart';
 import 'account_statement_screen.dart';
 import 'deposit_sheet.dart';
-import 'receivables_screen.dart';
 import 'transfer_sheet.dart';
 
 /// Bank accounts, presented the way a banking app presents them.
@@ -48,28 +46,13 @@ class _AccountsScreenState extends State<AccountsScreen> {
     if (!mounted) return;
     final String? userId = context.read<AuthProvider>().userId;
     if (userId == null) return;
-    // What is owed to the user (migration 005), for the summary row.
-    final ReceivableProvider? receivables =
-        SchemaCapabilities.treatments ? context.read<ReceivableProvider?>() : null;
-    await Future.wait(<Future<void>>[
-      context.read<BankAccountProvider>().load(userId: userId, force: force),
-      if (receivables != null) receivables.load(userId: userId, force: force),
-    ]);
-  }
-
-  Future<void> _openOwed() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => const ReceivablesScreen()),
-    );
-    if (mounted) await _load(force: true);
+    await context.read<BankAccountProvider>().load(userId: userId, force: force);
   }
 
   @override
   Widget build(BuildContext context) {
     final BankAccountProvider provider = context.watch<BankAccountProvider>();
     final SettingsProvider settings = context.watch<SettingsProvider>();
-    final bool owedAvailable = SchemaCapabilities.treatments &&
-        context.watch<ReceivableProvider?>() != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -82,12 +65,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
                 MaterialPageRoute<void>(builder: (_) => const CreditCardsScreen()),
               ),
               icon: const Icon(Icons.credit_card_rounded),
-            ),
-          if (owedAvailable)
-            IconButton(
-              tooltip: 'Owed to you',
-              onPressed: _openOwed,
-              icon: const Icon(Icons.handshake_outlined),
             ),
           if (provider.available && provider.hasAccounts)
             IconButton(
@@ -165,9 +142,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
     }
 
     final String currency = settings.currency;
-    final ReceivableProvider? owed = SchemaCapabilities.treatments
-        ? context.watch<ReceivableProvider?>()
-        : null;
 
     return RefreshIndicator(
       onRefresh: () => _load(force: true),
@@ -185,15 +159,6 @@ class _AccountsScreenState extends State<AccountsScreen> {
             accountCount: provider.balances.length,
             currency: currency,
           ),
-          if (owed != null && owed.openCount > 0) ...<Widget>[
-            const SizedBox(height: AppSpacing.md),
-            _OwedRow(
-              owed: owed.outstanding,
-              openCount: owed.openCount,
-              currency: currency,
-              onTap: _openOwed,
-            ),
-          ],
           if (provider.transfersAvailable) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
             Align(
@@ -344,46 +309,6 @@ class _TotalCard extends StatelessWidget {
           size: 44,
         ),
       ],
-    );
-  }
-}
-
-/// What others owe the user — loans and purchases paid for them — opening
-/// the "Owed to you" screen. Shown while anything is still owed.
-class _OwedRow extends StatelessWidget {
-  const _OwedRow({
-    required this.owed,
-    required this.openCount,
-    required this.currency,
-    required this.onTap,
-  });
-
-  final double owed;
-  final int openCount;
-  final String currency;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return SurfaceCard(
-      padding: EdgeInsets.zero,
-      child: AppListRow(
-        leading: IconWell(
-          icon: Icons.handshake_outlined,
-          tone: ToneColors.transfer(context),
-        ),
-        title: 'Owed to you',
-        subtitle: '$openCount open · loans and purchases paid for others',
-        trailing: MoneyText(
-          owed,
-          currency: currency,
-          tone: AmountTone.transfer,
-          emphasis: true,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        showChevron: true,
-        onTap: onTap,
-      ),
     );
   }
 }

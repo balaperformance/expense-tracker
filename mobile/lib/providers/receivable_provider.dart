@@ -1,19 +1,27 @@
 import 'dart:async';
 
+import '../core/errors/app_exception.dart';
+import '../core/utils/formatters.dart';
+import '../models/bank_account.dart';
+import '../models/ledger_entry.dart';
 import '../models/receivable.dart';
+import '../repositories/ledger_repository.dart';
 import '../repositories/receivable_repository.dart';
+import '../services/schema_capabilities.dart';
 import 'async_state.dart';
 
-/// Money owed to the user: every claim with its figures (migration 005).
+/// Money owed to the user: everything paid for someone — a purchase or money
+/// lent — with its figures (migrations 005 and 014).
 ///
-/// Read by the "Owed to you" screen, the Accounts screen's summary row and
-/// the expense form (who a purchase was paid for, and the people already
-/// used). Nothing here is stored: each read recomputes the figures from the
-/// claims' own rows.
+/// Read by the expense list (its "Paid for someone" view and the status on
+/// each row) and the expense form (who it was paid for, its repayments, and
+/// the people already used). Nothing here is stored: each read recomputes
+/// the figures from the claims' own rows.
 class ReceivableProvider extends AsyncProvider {
-  ReceivableProvider(this._repository);
+  ReceivableProvider(this._repository, {LedgerRepository? ledger}) : _ledger = ledger;
 
   final ReceivableRepository _repository;
+  final LedgerRepository? _ledger;
 
   List<ClaimSummary> _claims = const <ClaimSummary>[];
   String? _userId;
@@ -101,6 +109,40 @@ class ReceivableProvider extends AsyncProvider {
     _stale = true;
     final String? userId = _userId;
     if (userId != null && isReady) unawaited(load(userId: userId));
+  }
+
+  /// Records money paid back for [claim] into [account] — one credit, never
+  /// income. Refused when it is more than is still owed, so the same
+  /// repayment cannot be recorded twice; the database checks again
+  /// (migration 014).
+  Future<void> recordRepayment({
+    required ClaimSummary claim,
+    required BankAccount account,
+    required double amount,
+    required DateTime date,
+    required String currency,
+  }) async {
+    final LedgerRepository? ledger = _ledger;
+    if (ledger == null || !SchemaCapabilities.treatments) {
+      throw const AppException(
+          'Repayments need the 005 migration. Run ui/supabase/005_transaction_treatments.sql, then try again.');
+    }
+    final RepaymentProblem? problem = repaymentProblem(claim, amount);
+    if (problem != null) {
+      throw AppException(repaymentProblemMessage(
+          problem, Formatters.currency(amountLeft(claim), currencyCode: currency)));
+    }
+    await ledger.recordBankMovement(
+      accountId: account.id,
+      direction: LedgerDirection.credit,
+      amount: amount,
+      date: date,
+      description: 'Repayment from ${claim.receivable.person}',
+      treatment: repaymentTreatment(claim.receivable.id),
+    );
+    final String? userId = _userId;
+    _stale = true;
+    if (userId != null) await load(userId: userId, force: true);
   }
 
   void reset() {

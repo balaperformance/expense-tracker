@@ -22,7 +22,6 @@ import 'package:expense_tracker/services/schema_capabilities.dart';
 
 Receivable claim(
   String id, {
-  ReceivableKind kind = ReceivableKind.loan,
   String person = 'Arun',
   DateTime? due,
   String? note,
@@ -31,10 +30,8 @@ Receivable claim(
     Receivable(
       id: id,
       userId: 'u1',
-      kind: kind,
       person: person,
-      ledgerEntryId: kind == ReceivableKind.loan ? 'l-$id' : null,
-      expenseId: expenseId,
+      expenseId: expenseId ?? 'e-$id',
       dueDate: due,
       note: note,
     );
@@ -147,15 +144,22 @@ void main() {
         'due_date': '2026-10-01',
         'note': 'Concert tickets',
       });
-      expect(r.kind, ReceivableKind.reimbursable);
       expect(r.person, 'Someone');
+      expect(r.expenseId, 'e1');
       expect(r.dueDate, DateTime(2026, 10, 1));
       expect(r.title, 'Paid for Someone');
-      expect(claim('c2').title, 'Loan to Arun');
-      expect(
-        Receivable.fromMap(<String, dynamic>{'id': 'c3', 'user_id': 'u1', 'kind': 'x', 'person': 'Bea'}).kind,
-        ReceivableKind.loan,
-      );
+      // Money lent and purchases are one thing now: everything is "Paid for".
+      expect(claim('c2').title, 'Paid for Arun');
+      // A loan stored before migration 014 still reads, by its debit.
+      final Receivable legacy = Receivable.fromMap(<String, dynamic>{
+        'id': 'c3',
+        'user_id': 'u1',
+        'kind': 'loan',
+        'person': 'Bea',
+        'ledger_entry_id': 'l3',
+      });
+      expect(legacy.ledgerEntryId, 'l3');
+      expect(legacy.title, 'Paid for Bea');
     });
 
     test('status is decided in whole cents', () {
@@ -256,7 +260,6 @@ void main() {
 
   group('paid for someone else', () {
     final Receivable marked = claim('c1',
-        kind: ReceivableKind.reimbursable,
         expenseId: 'e9',
         due: DateTime(2026, 10, 5),
         note: 'Split later');
@@ -423,7 +426,7 @@ void main() {
       client,
       claims: summariseClaims(
         receivables: <Receivable>[
-          claim('c1', kind: ReceivableKind.reimbursable, expenseId: 'e9'),
+          claim('c1', expenseId: 'e9'),
           claim('c2', person: 'Bea'),
         ],
         sources: <String, ClaimSource>{

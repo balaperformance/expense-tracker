@@ -3,14 +3,17 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
+import '../../models/bank_account.dart';
 import '../../models/expense.dart';
 import '../../models/expense_filter.dart';
+import '../../models/receivable.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/budget_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/export/export_models.dart';
@@ -22,16 +25,24 @@ import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/transaction_tile.dart';
+import '../accounts/account_statement_screen.dart';
 import '../export/export_screen.dart';
 import '../shell/home_shell.dart';
 import 'expense_filter_sheet.dart';
 import 'expense_form_screen.dart';
+import 'paid_for_view.dart';
+import 'repayment_sheet.dart';
 
 /// The expense ledger.
 ///
 /// Rows are grouped into day cards with the day's total on the header, which
 /// is how a banking app presents a statement and the fastest way to answer
 /// "what did I spend on Tuesday?" without reading every line.
+///
+/// Everything paid for someone — a purchase made for them or money lent to
+/// them — is marked on its row with what is still owed, never counts in the
+/// day's spending total, and has a view of its own ("Paid for someone") with
+/// what each person owes and a button to record each repayment.
 class ExpensesScreen extends StatefulWidget {
   const ExpensesScreen({super.key});
 
@@ -41,7 +52,13 @@ class ExpensesScreen extends StatefulWidget {
 
 class _ExpensesScreenState extends State<ExpensesScreen> {
   final TextEditingController _search = TextEditingController();
+  final TextEditingController _paidForSearch = TextEditingController();
   final ScrollController _scroll = ScrollController();
+
+  /// Showing the "Paid for someone" view instead of every expense.
+  bool _paidForView = false;
+  PaidForShow _show = PaidForShow.open;
+  bool _opening = false;
 
   @override
   void initState() {
@@ -55,7 +72,21 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       if (SchemaCapabilities.creditCards && userId != null) {
         context.read<CreditCardProvider>().load(userId: userId);
       }
+      // What each row paid for someone still has owed.
+      _loadClaims();
     });
+  }
+
+  Future<void> _loadClaims({bool force = false}) async {
+    final String? userId = context.read<AuthProvider>().userId;
+    if (!SchemaCapabilities.treatments || userId == null) return;
+    // The accounts name where each one's money came from, and where a
+    // repayment can arrive.
+    final BankAccountProvider? accounts = context.read<BankAccountProvider?>();
+    await Future.wait(<Future<void>>[
+      context.read<ReceivableProvider>().load(userId: userId, force: force),
+      if (accounts != null) accounts.load(userId: userId),
+    ]);
   }
 
   @override
@@ -63,13 +94,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _search.dispose();
+    _paidForSearch.dispose();
     super.dispose();
   }
 
   /// Requests the next page a little before the user hits the bottom, so the
   /// list feels continuous rather than stalling.
   void _onScroll() {
-    if (!_scroll.hasClients) return;
+    if (!_scroll.hasClients || _paidForView) return;
     final double remaining =
         _scroll.position.maxScrollExtent - _scroll.position.pixels;
     if (remaining < 400) {
@@ -83,34 +115,64 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     final SettingsProvider settings = context.watch<SettingsProvider>();
     // Rebuild when the cards arrive, so a purchase shows its card's name.
     context.watch<CreditCardProvider>();
+    final ReceivableProvider claims = context.watch<ReceivableProvider>();
+    final bool treatments = SchemaCapabilities.treatments;
+    final bool paidForView = treatments && _paidForView;
+    final bool filtered = !paidForView && provider.filter.activeCount > 0;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Expenses'),
         actions: <Widget>[
-          IconButton(
-            tooltip: 'Export',
-            onPressed: () => _openExport(provider),
-            icon: const Icon(Icons.ios_share_rounded),
-          ),
-          IconButton(
-            tooltip: 'Sort',
-            onPressed: () => _openSort(provider),
-            icon: const Icon(Icons.swap_vert_rounded),
-          ),
-          _FilterButton(
-            count: provider.filter.activeCount,
-            onPressed: () => _openFilters(provider),
-          ),
+          if (!paidForView) ...<Widget>[
+            IconButton(
+              tooltip: 'Export',
+              onPressed: () => _openExport(provider),
+              icon: const Icon(Icons.ios_share_rounded),
+            ),
+            IconButton(
+              tooltip: 'Sort',
+              onPressed: () => _openSort(provider),
+              icon: const Icon(Icons.swap_vert_rounded),
+            ),
+            _FilterButton(
+              count: provider.filter.activeCount,
+              onPressed: () => _openFilters(provider),
+            ),
+          ],
           const NotificationBell(glass: false),
           const SizedBox(width: AppSpacing.xs),
         ],
         bottom: PreferredSize(
           preferredSize: Size.fromHeight(
-            provider.filter.activeCount > 0 ? 100 : 58,
+            (filtered ? 100 : 58) + (treatments ? 52 : 0),
           ),
           child: Column(
             children: <Widget>[
+              if (treatments)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.page,
+                    0,
+                    AppSpacing.page,
+                    AppSpacing.sm,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: SegmentedButton<bool>(
+                      segments: const <ButtonSegment<bool>>[
+                        ButtonSegment<bool>(value: false, label: Text('All expenses')),
+                        ButtonSegment<bool>(value: true, label: Text('Paid for someone')),
+                      ],
+                      selected: <bool>{paidForView},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (Set<bool> value) {
+                        setState(() => _paidForView = value.first);
+                        if (value.first) _loadClaims(force: true);
+                      },
+                    ),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
                   AppSpacing.page,
@@ -118,13 +180,20 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                   AppSpacing.page,
                   AppSpacing.md,
                 ),
-                child: SearchField(
-                  controller: _search,
-                  onChanged: provider.setSearch,
-                  hintText: 'Search merchant, note or description',
-                ),
+                child: paidForView
+                    ? SearchField(
+                        key: const ValueKey<String>('paid-for-search'),
+                        controller: _paidForSearch,
+                        onChanged: (_) => setState(() {}),
+                        hintText: 'Search by person or what was paid',
+                      )
+                    : SearchField(
+                        controller: _search,
+                        onChanged: provider.setSearch,
+                        hintText: 'Search merchant, note or description',
+                      ),
               ),
-              if (provider.filter.activeCount > 0)
+              if (filtered)
                 _ActiveFilterBar(
                   filter: provider.filter,
                   onClear: () {
@@ -136,14 +205,32 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           ),
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: provider.refresh,
-        child: _buildBody(provider, settings),
-      ),
+      body: paidForView
+          ? RefreshIndicator(
+              onRefresh: () => _loadClaims(force: true),
+              child: PaidForView(
+                provider: claims,
+                show: _show,
+                onShow: (PaidForShow show) => setState(() => _show = show),
+                search: _paidForSearch.text,
+                accounts: context.watch<BankAccountProvider?>()?.accounts ?? const <BankAccount>[],
+                cards: context.watch<CreditCardProvider>().cards,
+                currency: settings.currency,
+                onRefresh: () => _loadClaims(force: true),
+                onOpen: _openClaim,
+                onRepay: _repay,
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: () async {
+                await Future.wait(<Future<void>>[provider.refresh(), _loadClaims(force: true)]);
+              },
+              child: _buildBody(provider, settings, claims),
+            ),
     );
   }
 
-  Widget _buildBody(ExpenseProvider provider, SettingsProvider settings) {
+  Widget _buildBody(ExpenseProvider provider, SettingsProvider settings, ReceivableProvider claims) {
     if (provider.isInitialLoad) return const ListSkeleton();
 
     if (provider.hasError && provider.expenses.isEmpty) {
@@ -183,8 +270,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       );
     }
 
-    final List<_DayGroup> groups = _groupByDay(provider.expenses);
     final String currency = settings.currency;
+    final Map<String, ClaimSummary> paidFor = <String, ClaimSummary>{
+      for (final ClaimSummary c in claims.claims)
+        if (c.receivable.expenseId != null) c.receivable.expenseId!: c,
+    };
+    final List<_DayGroup> groups = _groupByDay(provider.expenses, paidFor);
 
     return ListView.builder(
       controller: _scroll,
@@ -229,6 +320,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
                       currency: currency,
                       showDate: false,
                       sourceLabel: _sourceLabel(expense),
+                      paidForPerson: paidFor[expense.id]?.receivable.person,
+                      paidForStatus: _paidForStatus(paidFor[expense.id], currency),
                       onTap: () => _editExpense(expense),
                     ),
                   ),
@@ -257,8 +350,19 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     return accounts.byId(expense.bankAccountId)?.nickname;
   }
 
-  /// Flattens the page into day groups so scanning a long list is easier.
-  List<_DayGroup> _groupByDay(List<Expense> expenses) {
+  /// "₹3,000 owed" or "Settled" for an expense paid for someone; null
+  /// otherwise.
+  static String? _paidForStatus(ClaimSummary? claim, String currency) {
+    if (claim == null) return null;
+    return claim.status.isOpen
+        ? '${Formatters.currency(amountLeft(claim), currencyCode: currency, compact: true)} owed'
+        : 'Settled';
+  }
+
+  /// Flattens the page into day groups so scanning a long list is easier. A
+  /// day's total is the user's own spending: what was paid for someone is
+  /// owed back, not spent.
+  List<_DayGroup> _groupByDay(List<Expense> expenses, Map<String, ClaimSummary> paidFor) {
     final List<_DayGroup> groups = <_DayGroup>[];
 
     for (final Expense expense in expenses) {
@@ -266,9 +370,50 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         groups.add(_DayGroup(expense.expenseDate));
       }
       groups.last.expenses.add(expense);
-      groups.last.total += expense.amount;
+      if (!paidFor.containsKey(expense.id)) groups.last.total += expense.amount;
     }
     return groups;
+  }
+
+  /// Opens what was paid for someone: its expense — or, for money lent before
+  /// migration 014 (no expense of its own), its account statement.
+  Future<void> _openClaim(ClaimSummary claim) async {
+    if (_opening) return;
+    final String? userId = context.read<AuthProvider>().userId;
+    final ClaimSource? source = claim.source;
+    if (userId == null || source == null) return;
+    final String? expenseId = claim.receivable.expenseId;
+    if (expenseId != null) {
+      setState(() => _opening = true);
+      Expense? expense;
+      try {
+        expense = await context.read<ExpenseProvider>().fetchById(userId: userId, id: expenseId);
+      } catch (_) {
+        expense = null;
+      }
+      if (!mounted) return;
+      setState(() => _opening = false);
+      if (expense == null) {
+        AppFeedback.error(context, 'That expense could not be opened.');
+        return;
+      }
+      await _editExpense(expense);
+      return;
+    }
+    final String? accountId = source.accountId;
+    final BankAccount? account = accountId == null ? null : context.read<BankAccountProvider>().byId(accountId);
+    if (account == null) {
+      AppFeedback.error(context, 'That account is no longer available.');
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => AccountStatementScreen(account: account)),
+    );
+    if (mounted) await _loadClaims(force: true);
+  }
+
+  Future<void> _repay(ClaimSummary claim) async {
+    await recordRepayment(context, claim);
   }
 
   Future<bool> _confirmDelete(Expense expense) async {
@@ -317,6 +462,8 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   void _invalidateDerived() {
     if (!mounted) return;
+    // Saving or deleting an expense can mark, unmark or remove what is owed.
+    context.read<ReceivableProvider?>()?.invalidate();
     context.read<DashboardProvider>().invalidate();
     context.read<BudgetProvider>().invalidate();
     context.read<ReportsProvider>().invalidate();

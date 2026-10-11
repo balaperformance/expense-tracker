@@ -157,6 +157,8 @@ class ExpenseTile extends StatelessWidget {
     this.onTap,
     this.showDate = true,
     this.sourceLabel,
+    this.paidForPerson,
+    this.paidForStatus,
   });
 
   final Expense expense;
@@ -170,8 +172,16 @@ class ExpenseTile extends StatelessWidget {
   /// which is the only layer that knows the account list.
   final String? sourceLabel;
 
+  /// Paid for someone (a purchase or money lent): who. Owed back, so the row
+  /// is not shown as spending.
+  final String? paidForPerson;
+
+  /// Where repaying it stands: "₹3,000 owed", "Settled".
+  final String? paidForStatus;
+
   @override
   Widget build(BuildContext context) {
+    final String? person = paidForPerson;
     return TransactionRow(
       leading: CategoryAvatar(
         icon: expense.category?.icon,
@@ -180,10 +190,11 @@ class ExpenseTile extends StatelessWidget {
       title: expense.title,
       amount: -expense.amount,
       currency: currency,
-      tone: AmountTone.negative,
+      tone: person != null ? AmountTone.transfer : AmountTone.negative,
+      trailingBelow: person != null ? paidForStatus : null,
       meta: <String>[
         if (showDate) Formatters.relativeDay(expense.expenseDate),
-        expense.categoryName,
+        if (person != null) 'Paid for $person' else expense.categoryName,
         if (sourceLabel != null)
           sourceLabel!
         else if (expense.paymentMethod != null)

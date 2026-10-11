@@ -237,8 +237,9 @@ class EngineJson {
       };
 
   /// A recorded ledger row in the web model's full shape, for finding a
-  /// transfer's other leg. [lent]: the row is money lent (a claim's source),
-  /// which is never a plain movement.
+  /// transfer's other leg. [lent]: the row is what was paid for someone (a
+  /// claim's source) with no expense of its own, which is never a plain
+  /// movement.
   static Map<String, Object?> ledgerEntry(LedgerEntry e, {bool lent = false}) =>
       <String, Object?>{
         'id': e.id,
@@ -258,7 +259,6 @@ class EngineJson {
         'claim': lent
             ? const <String, Object?>{
                 'receivableId': '',
-                'kind': 'loan',
                 'person': '',
                 'role': 'source',
               }

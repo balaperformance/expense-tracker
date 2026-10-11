@@ -128,12 +128,13 @@ class ExpenseTrackerApp extends StatelessWidget {
             tags: TagRepository(client),
           ),
         ),
-        // Money owed to the user (migration 005): loans and purchases paid
-        // for others, for the "Owed to you" screen and the expense form.
+        // Money owed to the user (migrations 005, 014): everything paid for
+        // someone — purchases and money lent — for the expense list's "Paid
+        // for someone" view and the expense form, which records repayments.
         // Follows the signed-in user, so one user's claims never outlive
         // their session.
         ChangeNotifierProxyProvider<AuthProvider, ReceivableProvider>(
-          create: (_) => ReceivableProvider(ReceivableRepository(client)),
+          create: (_) => ReceivableProvider(ReceivableRepository(client), ledger: ledgerRepository),
           update: (_, AuthProvider auth, ReceivableProvider? owed) =>
               owed!..attachUser(auth.userId),
         ),

@@ -91,9 +91,10 @@ LedgerEntry _entry({
       categoryId: categoryId,
     );
 
+/// Something paid for someone. [ledgerEntryId]: money lent before migration
+/// 014, a plain debit naming its claim.
 ClaimSummary _claim({
   String id = 'r1',
-  ReceivableKind kind = ReceivableKind.loan,
   String person = 'Arun',
   String? ledgerEntryId,
   String? expenseId,
@@ -107,7 +108,6 @@ ClaimSummary _claim({
     receivable: Receivable(
       id: id,
       userId: 'u1',
-      kind: kind,
       person: person,
       ledgerEntryId: ledgerEntryId,
       expenseId: expenseId,
@@ -144,8 +144,8 @@ class _Engine implements StatementEngine {
     switch (name) {
       case 'kindsFor':
         return args['type'] == 'debit'
-            ? <Object?>['expense', 'transfer', 'loan']
-            : <Object?>['income', 'refund', 'transfer', 'loan', 'reimbursement'];
+            ? <Object?>['expense', 'transfer']
+            : <Object?>['income', 'refund', 'transfer', 'reimbursement'];
       case 'treatmentPayload':
         return <String, Object?>{'type': 'from-engine', 'request': args['request']};
       case 'transferMatches':
@@ -450,27 +450,27 @@ void main() {
       expect(request['transferTarget'], <String, Object?>{'type': 'cash'});
     });
 
-    test('money lent', () {
+    test('money lent is an expense paid for that person', () {
       final Map<String, Object?> request = buildTreatmentRequest(
         entry: _entry(),
         account: _hdfc,
-        state: TreatmentState(
-          kind: TreatmentKind.loan,
-          person: 'Arun',
-          dueDate: DateTime(2026, 10, 1),
-          note: 'rent',
+        state: const TreatmentState(
+          kind: TreatmentKind.expense,
+          categoryId: 'c1',
+          reimbursable: true,
+          person: ' Arun ',
         ),
         amount: 1500,
         date: day,
         description: 'x',
       );
-      expect(request['person'], 'Arun');
-      expect(request['dueDate'], '2026-10-01');
-      expect(request['note'], 'rent');
+      expect(request['kind'], 'expense');
+      expect(request['reimbursablePerson'], 'Arun');
+      expect(request.containsKey('person'), isFalse);
       expect(request.containsKey('settles'), isFalse);
     });
 
-    test('a loan repaid, and purchases paid back', () {
+    test('money paid back, for something recorded or a purchase marked now', () {
       Map<String, Object?> credit(TreatmentState state) => buildTreatmentRequest(
             entry: _entry(direction: LedgerDirection.credit),
             account: _hdfc,
@@ -481,17 +481,10 @@ void main() {
           );
       expect(
         credit(const TreatmentState(
-          kind: TreatmentKind.loan,
-          settles: SettlementTarget.claim('r1', ReceivableKind.loan),
+          kind: TreatmentKind.reimbursement,
+          settles: SettlementTarget.claim('r1'),
         ))['settles'],
         <String, Object?>{'receivableId': 'r1'},
-      );
-      expect(
-        credit(const TreatmentState(
-          kind: TreatmentKind.reimbursement,
-          settles: SettlementTarget.claim('r2', ReceivableKind.reimbursable),
-        ))['settles'],
-        <String, Object?>{'receivableId': 'r2'},
       );
       expect(
         credit(const TreatmentState(
@@ -523,10 +516,10 @@ void main() {
       expect(initialTreatment(_entry(card: 'k1'), null).target, const TransferTarget.card('k1'));
     });
 
-    test('claims: money lent, a repayment, a purchase paid for someone', () {
+    test('claims: money lent before 014, a repayment, a purchase paid for someone', () {
       final List<ClaimSummary> claims = <ClaimSummary>[
         _claim(ledgerEntryId: 'e1'),
-        _claim(id: 'r2', kind: ReceivableKind.reimbursable, person: 'Meena', expenseId: 'x1'),
+        _claim(id: 'r2', person: 'Meena', expenseId: 'x1'),
       ];
       final LedgerEntry lent = _entry();
       LedgerEntry withId(LedgerEntry e, String id) => LedgerEntry(
@@ -540,15 +533,18 @@ void main() {
             receivableId: e.receivableId,
             categoryId: e.categoryId,
           );
+      // A plain debit naming its claim reads as an expense paid for them.
       final TreatmentState loan = initialTreatment(lent, claimOfEntry(lent, claims));
-      expect(loan.kind, TreatmentKind.loan);
+      expect(loan.kind, TreatmentKind.expense);
+      expect(loan.reimbursable, isTrue);
       expect(loan.person, 'Arun');
+      expect(isPaidForMovement(lent, claimOfEntry(lent, claims)), isTrue);
 
       final LedgerEntry repaid =
           withId(_entry(direction: LedgerDirection.credit, receivable: 'r1'), 'e2');
       final TreatmentState repayment = initialTreatment(repaid, claimOfEntry(repaid, claims));
-      expect(repayment.kind, TreatmentKind.loan);
-      expect(repayment.settles, const SettlementTarget.claim('r1', ReceivableKind.loan));
+      expect(repayment.kind, TreatmentKind.reimbursement);
+      expect(repayment.settles, const SettlementTarget.claim('r1'));
 
       final LedgerEntry purchase = withId(_entry(expenseId: 'x1', categoryId: 'c1'), 'e3');
       final TreatmentState paidFor = initialTreatment(purchase, claimOfEntry(purchase, claims));
@@ -559,7 +555,7 @@ void main() {
 
   test('what is still missing, in the web wording', () {
     String? message(TreatmentState state, {bool debit = true}) {
-      final TreatmentProblem? p = treatmentProblem(state, debit: debit);
+      final TreatmentProblem? p = treatmentProblem(state);
       return p == null ? null : treatmentProblemMessage(p, debit: debit);
     }
 
@@ -570,20 +566,14 @@ void main() {
     expect(message(const TreatmentState(kind: TreatmentKind.transfer)), 'Choose where the money went.');
     expect(message(const TreatmentState(kind: TreatmentKind.transfer), debit: false),
         'Choose where the money came from.');
-    expect(message(const TreatmentState(kind: TreatmentKind.loan, person: '  ')),
-        'Add who you lent the money to.');
-    expect(message(const TreatmentState(kind: TreatmentKind.loan), debit: false),
-        'Choose the loan this repays.');
-    expect(
-        message(
-            const TreatmentState(
-              kind: TreatmentKind.loan,
-              settles: SettlementTarget.claim('r2', ReceivableKind.reimbursable),
-            ),
-            debit: false),
-        'Choose the loan this repays.');
     expect(message(const TreatmentState(kind: TreatmentKind.reimbursement), debit: false),
-        'Choose the purchase this pays back.');
+        'Choose what this pays back.');
+    expect(
+        message(const TreatmentState(kind: TreatmentKind.reimbursement, settles: SettlementTarget.claim('r2')),
+            debit: false),
+        isNull);
+    expect(treatmentLabels[TreatmentKind.reimbursement], 'Repayment');
+    expect(fallbackKinds(debit: true, treatments: true), <String>['expense', 'transfer']);
     expect(
         message(const TreatmentState(kind: TreatmentKind.reimbursement, settles: SettlementTarget.expense('x7')),
             debit: false),
@@ -591,14 +581,13 @@ void main() {
     expect(message(const TreatmentState(kind: TreatmentKind.refund), debit: false), isNull);
   });
 
-  test('a loan offered for repayment leaves out what this movement already repaid', () {
+  test('what is offered for repayment leaves out what this movement already paid back', () {
     final List<SettleOption> options = claimOptions(
       claims: <ClaimSummary>[
         _claim(repayments: <ClaimRepayment>[_repayment('e1', 500), _repayment('e0', 200)]),
         // Settled, and not this movement's: not offered.
         _claim(id: 'r9', repayments: <ClaimRepayment>[_repayment('e8', 1500)]),
       ],
-      kind: ReceivableKind.loan,
       current: null,
       excludeEntryId: 'e1',
       currency: 'INR',
@@ -606,6 +595,9 @@ void main() {
     expect(options, hasLength(1));
     expect(options.single.received, 200);
     expect(leftAfter(options.single, 1300), 0);
+    // A repayment recorded twice would take back more than is owed: refused.
+    expect(overpays(options.single, 1300), isFalse);
+    expect(overpays(options.single, 1300.01), isTrue);
   });
 
   group('saving', () {
@@ -785,9 +777,11 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.text('Edit transaction'), findsOneWidget);
         expect(find.text('Record as'), findsOneWidget);
-        for (final String kind in <String>['Expense', 'Transfer', 'Loan']) {
+        for (final String kind in <String>['Expense', 'Transfer']) {
           expect(find.text(kind), findsOneWidget);
         }
+        // Money lent is an expense paid for someone: no kind of its own.
+        expect(find.text('Loan'), findsNothing);
         expect(find.text('Your own money moving — not income or spending'), findsOneWidget);
         expect(find.textContaining('Transfer to'), findsOneWidget);
         expect(find.text('Cash'), findsOneWidget);
@@ -840,18 +834,19 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('a repayment offers the open loans with what is left', (WidgetTester tester) async {
+    testWidgets('a repayment offers what is still owed, with what is left', (WidgetTester tester) async {
       ledger.claims = <ClaimSummary>[
-        _claim(ledgerEntryId: 'e0', repayments: <ClaimRepayment>[_repayment('e5', 500)]),
+        _claim(expenseId: 'x0', repayments: <ClaimRepayment>[_repayment('e5', 500)]),
       ];
       await pump(tester, _entry(direction: LedgerDirection.credit, amount: 1000));
-      for (final String kind in <String>['Income', 'Refund', 'Transfer', 'Loan', 'Reimbursement']) {
+      for (final String kind in <String>['Income', 'Refund', 'Transfer', 'Repayment']) {
         expect(find.text(kind), findsOneWidget);
       }
-      await tester.tap(find.text('Loan'));
+      expect(find.text('Loan'), findsNothing);
+      await tester.tap(find.text('Repayment'));
       await tester.pumpAndSettle();
-      expect(find.text('Repays a loan — not income'), findsOneWidget);
-      expect(find.textContaining('Repays'), findsWidgets);
+      expect(find.text('Pays back something you paid for someone — not income'), findsOneWidget);
+      expect(find.textContaining('Pays back'), findsWidgets);
       await tester.tap(find.text('Select'));
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('Arun ·').last);
@@ -863,15 +858,36 @@ void main() {
       await tester.pumpAndSettle();
       final Map<String, Object?> request =
           engine.argsOf('treatmentPayload').single['request']! as Map<String, Object?>;
-      expect(request['kind'], 'loan');
+      expect(request['kind'], 'reimbursement');
       expect(request['settles'], <String, Object?>{'receivableId': 'r1'});
     });
 
-    testWidgets('a reimbursement offers purchases to pay back', (WidgetTester tester) async {
-      await pump(tester, _entry(direction: LedgerDirection.credit, amount: 900));
-      await tester.tap(find.text('Reimbursement'));
+    testWidgets('a repayment of more than is still owed is refused and nothing is sent',
+        (WidgetTester tester) async {
+      ledger.claims = <ClaimSummary>[
+        _claim(expenseId: 'x0', repayments: <ClaimRepayment>[_repayment('e5', 500)]),
+      ];
+      await pump(tester, _entry(direction: LedgerDirection.credit, amount: 1200));
+      await tester.tap(find.text('Repayment'));
       await tester.pumpAndSettle();
-      expect(find.text('Pays back a purchase — not income'), findsOneWidget);
+      await tester.tap(find.text('Select'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Arun ·').last);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('more than is still owed'), findsOneWidget);
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('This is more than is still owed on what it pays back. It may already be recorded.'),
+          findsOneWidget);
+      expect(engine.argsOf('treatmentPayload'), isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a repayment offers purchases to pay back', (WidgetTester tester) async {
+      await pump(tester, _entry(direction: LedgerDirection.credit, amount: 900));
+      await tester.tap(find.text('Repayment'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pays back something you paid for someone — not income'), findsOneWidget);
       expect(find.textContaining('From'), findsWidgets);
       await tester.tap(find.text('Select'));
       await tester.pumpAndSettle();
@@ -884,27 +900,32 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('money lent asks who to, when it is due back and a note', (WidgetTester tester) async {
-      ledger.claims = <ClaimSummary>[_claim(id: 'r5', ledgerEntryId: 'e0', person: 'Meena')];
+    testWidgets('money lent is recorded as an expense paid for someone', (WidgetTester tester) async {
+      ledger.claims = <ClaimSummary>[_claim(id: 'r5', expenseId: 'x5', person: 'Meena')];
       await pump(tester, _entry());
-      await tester.tap(find.text('Loan'));
+      await tester.tap(find.text('Expense'));
       await tester.pumpAndSettle();
-      expect(find.text('Owed back to you — not spending'), findsOneWidget);
-      expect(find.textContaining('Lent to'), findsOneWidget);
-      expect(find.text('Due back (optional)'), findsOneWidget);
-      expect(find.text('Note (optional)'), findsOneWidget);
+      await tester.ensureVisible(find.text('Food & Dining'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Food & Dining'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Paid for someone else'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Paid for someone else'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
-      expect(find.text('Add who you lent the money to.'), findsOneWidget);
+      expect(find.text('Add who you paid for.'), findsOneWidget);
       // People already used are offered, so "Meena" stays one person.
+      await tester.ensureVisible(find.widgetWithText(ChoiceChip, 'Meena'));
       await tester.tap(find.widgetWithText(ChoiceChip, 'Meena'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       final Map<String, Object?> request =
           engine.argsOf('treatmentPayload').single['request']! as Map<String, Object?>;
-      expect(request['kind'], 'loan');
-      expect(request['person'], 'Meena');
+      expect(request['kind'], 'expense');
+      expect(request['reimbursablePerson'], 'Meena');
       expect(tester.takeException(), isNull);
     });
 
@@ -925,7 +946,7 @@ void main() {
         _claim(ledgerEntryId: 'e1', repayments: <ClaimRepayment>[_repayment('e7', 500)]),
       ];
       await pump(tester, _entry());
-      expect(find.text('Arun'), findsWidgets, reason: 'it opens as the loan to Arun');
+      expect(find.text('Arun'), findsWidgets, reason: 'it opens as paid for Arun');
       await tester.tap(find.text('Transfer'));
       await tester.pumpAndSettle();
       expect(find.textContaining('already paid back stays as plain money in on its account'),

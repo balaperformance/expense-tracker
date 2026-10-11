@@ -1,25 +1,24 @@
 import '../core/utils/date_utils.dart';
 
-/// Money owed to the user (migration 005, shared with the web app): money
-/// lent, and purchases paid on someone else's behalf.
+/// Money owed to the user (migrations 005 and 014, shared with the web app):
+/// everything paid for someone — a purchase made for them (on a card, from an
+/// account or in cash) or money lent to them. Each is an expense marked "Paid
+/// for someone".
 ///
-/// Nothing about what is owed is stored. A claim names its source — the lent
-/// debit or the purchase — and repayments are ledger credits that name the
-/// claim, so
+/// Nothing about what is owed is stored. A claim names its expense, and
+/// repayments are ledger credits that name the claim, so
 ///
-///   outstanding = source amount − every repayment received
+///   outstanding = the expense's amount − every repayment received
 ///
 /// is recalculated from the rows themselves after any edit or deletion. A
 /// port of the web app's `domain/receivables.ts`; every figure is in whole
 /// cents so thousands of repayments cannot drift.
-enum ReceivableKind { loan, reimbursable }
 
 /// Row of `public.receivables`.
 class Receivable {
   const Receivable({
     required this.id,
     required this.userId,
-    required this.kind,
     required this.person,
     this.ledgerEntryId,
     this.expenseId,
@@ -30,13 +29,13 @@ class Receivable {
 
   final String id;
   final String userId;
-  final ReceivableKind kind;
   final String person;
 
-  /// Money lent: the debit that paid it.
+  /// Money lent before migration 014: the plain debit that paid it. 014 turns
+  /// these into expenses.
   final String? ledgerEntryId;
 
-  /// Paid on someone's behalf: the purchase.
+  /// What was paid for them.
   final String? expenseId;
 
   final DateTime? dueDate;
@@ -51,9 +50,6 @@ class Receivable {
     return Receivable(
       id: map['id'] as String,
       userId: map['user_id'] as String,
-      kind: map['kind'] == 'reimbursable'
-          ? ReceivableKind.reimbursable
-          : ReceivableKind.loan,
       person: person.isEmpty ? 'Someone' : person,
       ledgerEntryId: map['ledger_entry_id'] as String?,
       expenseId: map['expense_id'] as String?,
@@ -63,9 +59,8 @@ class Receivable {
     );
   }
 
-  /// "Loan to Arun" / "Paid for Arun".
-  String get title =>
-      kind == ReceivableKind.loan ? 'Loan to $person' : 'Paid for $person';
+  /// "Paid for Arun".
+  String get title => 'Paid for $person';
 }
 
 /// The money that went out for a claim, read from its own row.
@@ -84,7 +79,7 @@ class ClaimSource {
   final double amount;
   final String title;
 
-  /// The bank account it left, for a lent debit or a bank-funded purchase.
+  /// The bank account it left, when it was paid from one.
   final String? accountId;
 
   /// The card it was charged to, for a card purchase.
@@ -281,12 +276,43 @@ List<PersonBalance> balancesByPerson(List<ClaimSummary> claims) {
     });
 }
 
+/// What is still owed on [claim]; never below zero.
+double amountLeft(ClaimSummary claim) => claim.outstanding < 0 ? 0 : claim.outstanding;
+
+/// What would be left on [claim] after [amount] more comes back.
+double outstandingAfter(ClaimSummary claim, double amount) =>
+    (_cents(claim.outstanding) - _cents(amount)) / 100;
+
+enum RepaymentProblem { amount, tooMuch, settled }
+
+/// Whether [amount] can be recorded as a repayment of [claim]: a positive
+/// amount, and no more than is still owed — so the same repayment cannot be
+/// recorded twice. The database refuses the same (migration 014).
+RepaymentProblem? repaymentProblem(ClaimSummary claim, double? amount) {
+  if (!claim.status.isOpen) return RepaymentProblem.settled;
+  if (amount == null || !amount.isFinite || _cents(amount) <= 0) return RepaymentProblem.amount;
+  return _cents(amount) > _cents(amountLeft(claim)) ? RepaymentProblem.tooMuch : null;
+}
+
+String repaymentProblemMessage(RepaymentProblem problem, String left) => switch (problem) {
+      RepaymentProblem.amount => 'Enter how much was paid back.',
+      RepaymentProblem.tooMuch =>
+        'Only $left is still owed. If more came back, it may already be recorded.',
+      RepaymentProblem.settled => 'This is already paid back in full.',
+    };
+
 /// Total still owed across open claims.
 double totalOutstanding(List<ClaimSummary> claims) =>
     claims
         .where((ClaimSummary c) => c.status.isOpen)
         .fold<int>(0, (int sum, ClaimSummary c) => sum + _cents(c.outstanding)) /
     100;
+
+/// The body of `record_bank_movement`'s p_treatment for money paid back
+/// against [receivableId] — what the engine's `treatmentPayload` builds for
+/// a repayment (the web app's services/receivables.ts sends the same).
+Map<String, Object?> repaymentTreatment(String receivableId) =>
+    <String, Object?>{'type': 'settlement', 'receivable_id': receivableId};
 
 /// "Due in 3 days", "Due today", "Overdue by 1 day"; null when there is no
 /// due date or nothing is owed.
@@ -303,7 +329,8 @@ String? dueText(ClaimSummary claim, DateTime today) {
   return 'Due in $days ${days == 1 ? 'day' : 'days'}';
 }
 
-/// Who a purchase was paid for, as the expense form saves it.
+/// Who an expense was paid for — a purchase or money lent — as the expense
+/// form saves it.
 class PaidForDraft {
   const PaidForDraft({required this.person, this.dueDate, this.note});
 

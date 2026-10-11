@@ -15,6 +15,7 @@ import 'package:expense_tracker/models/expense_category.dart';
 import 'package:expense_tracker/models/income.dart';
 import 'package:expense_tracker/models/ledger_entry.dart';
 import 'package:expense_tracker/models/payment_method.dart';
+import 'package:expense_tracker/models/receivable.dart';
 import 'package:expense_tracker/providers/statement_import_provider.dart';
 import 'package:expense_tracker/repositories/expense_repository.dart';
 import 'package:expense_tracker/repositories/income_repository.dart';
@@ -357,7 +358,6 @@ Map<String, Object?> countsOf(Map<String, Object?> args) {
     'movements': n('movement'),
     'transfers': n('transfer') + n('treatment'),
     'paidFor': 0,
-    'lent': 0,
     'repaid': 0,
   };
 }
@@ -1126,6 +1126,89 @@ void main() {
       });
       expect(MovementDetails.fromJson(<String, Object?>{'reference': null}), isNull);
       expect(MovementDetails.fromJson(null), isNull);
+    });
+  });
+
+  group('paid for someone', () {
+    setUp(() => SchemaCapabilities.debugOverride(treatments: true));
+
+    test('offers repayments, and suggests rows related to what is owed — applied only when accepted',
+        () async {
+      final List<ClaimSummary> claims = summariseClaims(
+        receivables: const <Receivable>[
+          Receivable(id: 'c1', userId: 'u1', person: 'Arun', expenseId: 'e1'),
+          Receivable(id: 'c2', userId: 'u1', person: 'Bea', expenseId: 'e2'),
+        ],
+        sources: <String, ClaimSource>{
+          'c1': ClaimSource(date: DateTime(2026, 9, 1), amount: 500, title: 'Lent to Arun'),
+          'c2': ClaimSource(date: DateTime(2026, 8, 1), amount: 200, title: 'Movie'),
+        },
+        repayments: <ClaimRepayment>[
+          ClaimRepayment(entryId: 'r1', receivableId: 'c1', accountId: 'a1', amount: 200, date: DateTime(2026, 9, 5)),
+          ClaimRepayment(entryId: 'r2', receivableId: 'c2', accountId: 'a1', amount: 200, date: DateTime(2026, 8, 5)),
+        ],
+        today: DateTime(2026, 9, 30),
+      );
+      final Map<String, Object?> hint = <String, Object?>{
+        'type': 'repayment',
+        'text': 'Paid back by Arun? Settles what you paid for them',
+        'edit': <String, Object?>{
+          'kind': 'reimbursement',
+          'person': 'Arun',
+          'settles': <String, Object?>{'type': 'claim', 'receivableId': 'c1', 'left': 300},
+        },
+      };
+      final FakeEngine engine = FakeEngine(<String, Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1', rows: 1)),
+        'view': (Map<String, Object?> args) => <String, Object?>{
+              'summary': <String, Object?>{'selected': 1},
+              'rows': <Object?>[
+                for (final Object? i in args['items']! as List<Object?>)
+                  <String, Object?>{'id': (i! as Map<String, Object?>)['id']},
+              ],
+            },
+        'paidForHints': (_) => <String, Object?>{'s1:0': hint},
+        'reduce': (Map<String, Object?> args) {
+          final Map<String, Object?> action = args['action']! as Map<String, Object?>;
+          return <Object?>[
+            for (final Object? i in args['items']! as List<Object?>)
+              (i! as Map<String, Object?>)['id'] == action['id']
+                  ? <String, Object?>{...(i as Map<String, Object?>), ...(action['patch']! as Map<String, Object?>)}
+                  : i,
+          ];
+        },
+        'kindsFor': (Map<String, Object?> args) => <Object?>[
+              if (args['type'] == 'credit') ...<Object?>['income', 'refund', 'transfer'],
+              if (args['type'] == 'credit' && args['treatments'] == true) 'reimbursement',
+            ],
+      });
+      final StatementImportProvider provider = providerFor(engine);
+      await provider.setClaims(claims, currency: 'INR');
+      await provider.addFile();
+
+      // A repayment can be chosen on the phone too.
+      expect(await provider.kindsFor(false), contains('reimbursement'));
+      // Only what is still owed is sent: Bea has paid it all back.
+      final Map<String, Object?> sent = engine.argsOf('paidForHints').last;
+      expect(sent['claims'], <Object?>[
+        <String, Object?>{'receivableId': 'c1', 'person': 'Arun', 'left': 300.0, 'date': '2026-09-01'},
+      ]);
+      expect(sent['people'], <String>['Arun', 'Bea']);
+      expect(sent['currency'], 'INR');
+
+      final ImportRow before = provider.rows.single;
+      expect(before.hint?['text'], 'Paid back by Arun? Settles what you paid for them');
+      expect(before.kind, 'expense', reason: 'a suggestion changes nothing by itself');
+      expect(engine.argsOf('reduce'), isEmpty);
+
+      await provider.acceptHint(before);
+      final Map<String, Object?> action = engine.argsOf('reduce').single['action']! as Map<String, Object?>;
+      expect(action['type'], 'edit');
+      expect(action['patch'], hint['edit']);
+      final ImportRow after = provider.rows.single;
+      expect(after.kind, 'reimbursement');
+      expect(after.person, 'Arun');
+      expect(after.settles, <String, Object?>{'type': 'claim', 'receivableId': 'c1', 'left': 300});
     });
   });
 }

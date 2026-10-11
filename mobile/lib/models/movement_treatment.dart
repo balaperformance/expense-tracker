@@ -15,6 +15,10 @@ import 'receivable.dart';
 /// into the body, so both apps send exactly the same thing. What is mirrored
 /// here is only what the form needs synchronously: the opening choice of a
 /// saved movement, what is still missing, and the wording.
+///
+/// Money lent is not a kind of its own: like a purchase made for someone, it
+/// is an expense paid for that person (migration 014), and money paid back is
+/// a repayment of it.
 
 /// The kinds, by the engine's names.
 class TreatmentKind {
@@ -24,7 +28,8 @@ class TreatmentKind {
   static const String income = 'income';
   static const String refund = 'refund';
   static const String transfer = 'transfer';
-  static const String loan = 'loan';
+
+  /// Money paid back for something paid for someone — shown as "Repayment".
   static const String reimbursement = 'reimbursement';
 }
 
@@ -33,35 +38,30 @@ const Map<String, String> treatmentLabels = <String, String>{
   TreatmentKind.income: 'Income',
   TreatmentKind.refund: 'Refund',
   TreatmentKind.transfer: 'Transfer',
-  TreatmentKind.loan: 'Loan',
-  TreatmentKind.reimbursement: 'Reimbursement',
+  TreatmentKind.reimbursement: 'Repayment',
 };
 
 /// Only until the engine answers `kindsFor` (the web's `availableKinds`),
 /// which decides: money out can't be income, money in can't be an expense,
-/// and loans and reimbursements need migration 005.
+/// and repayments need migration 005.
 List<String> fallbackKinds({required bool debit, required bool treatments}) =>
     (debit
-            ? const <String>[TreatmentKind.expense, TreatmentKind.transfer, TreatmentKind.loan]
+            ? const <String>[TreatmentKind.expense, TreatmentKind.transfer]
             : const <String>[
                 TreatmentKind.income,
                 TreatmentKind.refund,
                 TreatmentKind.transfer,
-                TreatmentKind.loan,
                 TreatmentKind.reimbursement,
               ])
-        .where((String k) =>
-            treatments || (k != TreatmentKind.loan && k != TreatmentKind.reimbursement))
+        .where((String k) => treatments || k != TreatmentKind.reimbursement)
         .toList();
 
 /// One line under "Record as" for the treatments that are neither income
 /// nor spending.
-String? treatmentHint(String kind, {required bool debit}) => switch (kind) {
+String? treatmentHint(String kind) => switch (kind) {
       TreatmentKind.refund => 'Balance only — not counted as income',
       TreatmentKind.transfer => 'Your own money moving — not income or spending',
-      TreatmentKind.loan =>
-        debit ? 'Owed back to you — not spending' : 'Repays a loan — not income',
-      TreatmentKind.reimbursement => 'Pays back a purchase — not income',
+      TreatmentKind.reimbursement => 'Pays back something you paid for someone — not income',
       _ => null,
     };
 
@@ -107,23 +107,17 @@ class TransferTarget {
   int get hashCode => Object.hash(type, accountId, cardId);
 }
 
-/// What a repayment or reimbursement pays back.
+/// What a repayment pays back.
 class SettlementTarget {
-  /// A loan or a paid-for purchase already recorded.
-  const SettlementTarget.claim(String this.receivableId, ReceivableKind this.kind)
-      : expenseId = null;
+  /// Something already recorded as paid for someone.
+  const SettlementTarget.claim(String this.receivableId) : expenseId = null;
 
-  /// A purchase not yet marked as paid for someone — marked now, for the
+  /// An expense not yet marked as paid for someone — marked now, for the
   /// person paying back.
-  const SettlementTarget.expense(String this.expenseId)
-      : receivableId = null,
-        kind = null;
+  const SettlementTarget.expense(String this.expenseId) : receivableId = null;
 
   final String? receivableId;
   final String? expenseId;
-
-  /// Null for a purchase not yet marked.
-  final ReceivableKind? kind;
 
   bool get isExpense => expenseId != null;
 
@@ -143,8 +137,6 @@ class TreatmentState {
     this.categoryId,
     this.target,
     this.person = '',
-    this.dueDate,
-    this.note = '',
     this.reimbursable = false,
     this.settles,
   });
@@ -153,12 +145,10 @@ class TreatmentState {
   final String? categoryId;
   final TransferTarget? target;
 
-  /// Who was lent to, who was paid for, or who is paying back.
+  /// Who it was paid for, or who is paying back.
   final String person;
-  final DateTime? dueDate;
-  final String note;
 
-  /// An expense paid on someone else's behalf: it is owed back and is not
+  /// An expense paid for someone — a purchase or money lent: owed back, not
   /// your spending.
   final bool reimbursable;
   final SettlementTarget? settles;
@@ -167,8 +157,6 @@ class TreatmentState {
 enum TreatmentProblem {
   category,
   transferTarget,
-  loanPerson,
-  loan,
   settles,
   settlePerson,
   paidForPerson,
@@ -176,7 +164,7 @@ enum TreatmentProblem {
 
 /// The first thing missing before the treatment can be saved, or null — the
 /// web's `treatmentProblem`.
-TreatmentProblem? treatmentProblem(TreatmentState state, {required bool debit}) {
+TreatmentProblem? treatmentProblem(TreatmentState state) {
   final String person = state.person.trim();
   final SettlementTarget? settles = state.settles;
   switch (state.kind) {
@@ -185,15 +173,8 @@ TreatmentProblem? treatmentProblem(TreatmentState state, {required bool debit}) 
       return state.reimbursable && person.isEmpty ? TreatmentProblem.paidForPerson : null;
     case TreatmentKind.transfer:
       return state.target == null ? TreatmentProblem.transferTarget : null;
-    case TreatmentKind.loan:
-      if (debit) return person.isEmpty ? TreatmentProblem.loanPerson : null;
-      return settles != null && !settles.isExpense && settles.kind == ReceivableKind.loan
-          ? null
-          : TreatmentProblem.loan;
     case TreatmentKind.reimbursement:
-      if (settles == null || (!settles.isExpense && settles.kind != ReceivableKind.reimbursable)) {
-        return TreatmentProblem.settles;
-      }
+      if (settles == null) return TreatmentProblem.settles;
       return settles.isExpense && person.isEmpty ? TreatmentProblem.settlePerson : null;
     default:
       return null;
@@ -205,15 +186,13 @@ String treatmentProblemMessage(TreatmentProblem problem, {required bool debit}) 
       TreatmentProblem.category => 'Choose a category for this expense.',
       TreatmentProblem.transferTarget =>
         debit ? 'Choose where the money went.' : 'Choose where the money came from.',
-      TreatmentProblem.loanPerson => 'Add who you lent the money to.',
-      TreatmentProblem.loan => 'Choose the loan this repays.',
-      TreatmentProblem.settles => 'Choose the purchase this pays back.',
+      TreatmentProblem.settles => 'Choose what this pays back.',
       TreatmentProblem.settlePerson => 'Add who is paying you back.',
       TreatmentProblem.paidForPerson => 'Add who you paid for.',
     };
 
 /// How a movement relates to a claim: the money that went out ([isSource]:
-/// money lent, a purchase paid for someone), or a repayment of it.
+/// an expense paid for someone), or a repayment of it.
 class EntryClaim {
   const EntryClaim({required this.summary, required this.isSource});
 
@@ -246,12 +225,18 @@ EntryClaim? claimOfEntry(LedgerEntry entry, List<ClaimSummary> claims) {
   return null;
 }
 
+/// A debit paid for someone with no expense of its own — money lent before
+/// migration 014 turned it into one. Owed back, not spending.
+bool isPaidForMovement(LedgerEntry entry, EntryClaim? claim) =>
+    claim != null && claim.isSource && entry.expenseId == null;
+
 /// The "Record as" choice and details of a movement already saved — what its
 /// edit sheet opens with (the web's `treatmentOfEntry`).
 TreatmentState initialTreatment(LedgerEntry entry, EntryClaim? claim) {
-  if (entry.expenseId != null) {
-    final bool paidFor =
-        claim != null && claim.isSource && claim.receivable.kind == ReceivableKind.reimbursable;
+  // Money lent before migration 014 was a plain debit naming its claim: an
+  // expense paid for them now.
+  if (entry.expenseId != null || (claim != null && claim.isSource)) {
+    final bool paidFor = claim != null && claim.isSource;
     return TreatmentState(
       kind: TreatmentKind.expense,
       categoryId: entry.categoryId,
@@ -274,16 +259,12 @@ TreatmentState initialTreatment(LedgerEntry entry, EntryClaim? claim) {
       target: TransferTarget.card(entry.creditCardId!),
     );
   }
-  if (claim != null && claim.isSource && claim.receivable.kind == ReceivableKind.loan) {
-    return TreatmentState(kind: TreatmentKind.loan, person: claim.receivable.person);
-  }
   final String? receivableId = entry.receivableId;
   if (receivableId != null) {
-    final ReceivableKind kind = claim?.receivable.kind ?? ReceivableKind.reimbursable;
     return TreatmentState(
-      kind: kind == ReceivableKind.loan ? TreatmentKind.loan : TreatmentKind.reimbursement,
+      kind: TreatmentKind.reimbursement,
       person: claim?.receivable.person ?? '',
-      settles: SettlementTarget.claim(receivableId, kind),
+      settles: SettlementTarget.claim(receivableId),
     );
   }
   // A plain movement: money out with no other record went to cash or an
@@ -312,13 +293,11 @@ String? newTransferAccountId(LedgerEntry entry, TreatmentState state) {
   return keepsTransfer(entry, state) ? null : target.accountId;
 }
 
-/// Whether the movement's own claim stops: money lent recorded as something
-/// else, or a paid-for purchase no longer paid for anyone.
+/// Whether the movement's own claim stops: no longer an expense paid for
+/// anyone.
 bool stopsOwnClaim(EntryClaim? own, TreatmentState state) {
   if (own == null || !own.isSource) return false;
-  return own.receivable.kind == ReceivableKind.loan
-      ? state.kind != TreatmentKind.loan
-      : state.kind != TreatmentKind.expense || !state.reimbursable;
+  return state.kind != TreatmentKind.expense || !state.reimbursable;
 }
 
 /// The web domain's `TreatmentRequest` for this edit, exactly as the web's
@@ -373,11 +352,6 @@ Map<String, Object?> buildTreatmentRequest({
           counterpartyLabel: account.nickname,
         );
       }
-    case TreatmentKind.loan when debit:
-      request['person'] = state.person;
-      request['dueDate'] =
-          state.dueDate == null ? null : AppDateUtils.toDateString(state.dueDate!);
-      request['note'] = state.note;
     default:
       final SettlementTarget? settles = state.settles;
       request['settles'] = settles == null
@@ -390,8 +364,7 @@ Map<String, Object?> buildTreatmentRequest({
 }
 
 // ---------------------------------------------------------------------------
-// What a repayment or reimbursement can pay back (ui/src/components/finance/
-// settleOptions.ts)
+// What a repayment can pay back (ui/src/components/finance/settleOptions.ts)
 // ---------------------------------------------------------------------------
 
 class SettleOption {
@@ -421,12 +394,11 @@ class SettleOption {
 
 int _cents(double value) => (value * 100).round();
 
-/// Open claims of [kind], plus the one [current] points at even if settled.
+/// Open claims, plus the one [current] points at even if settled.
 /// [excludeEntryId] is the movement being edited — its own earlier amount is
 /// not counted as already received.
 List<SettleOption> claimOptions({
   required List<ClaimSummary> claims,
-  required ReceivableKind kind,
   required SettlementTarget? current,
   required String? excludeEntryId,
   required String currency,
@@ -434,9 +406,7 @@ List<SettleOption> claimOptions({
   final String? currentId = current?.receivableId;
   return claims
       .where((ClaimSummary c) =>
-          c.receivable.kind == kind &&
-          c.source != null &&
-          (c.status.isOpen || c.receivable.id == currentId))
+          c.source != null && (c.status.isOpen || c.receivable.id == currentId))
       .map((ClaimSummary c) {
     final int counted = c.repayments
         .where((ClaimRepayment r) => r.entryId != excludeEntryId)
@@ -444,13 +414,11 @@ List<SettleOption> claimOptions({
     final double received = counted / 100;
     final double left = (_cents(c.principal) - counted) / 100;
     final ClaimSource source = c.source!;
-    final String day = Formatters.dayMonth(source.date);
-    final String what =
-        kind == ReceivableKind.loan ? 'lent $day' : '${source.title} · $day';
     return SettleOption(
-      target: SettlementTarget.claim(c.receivable.id, kind),
+      target: SettlementTarget.claim(c.receivable.id),
       label: '${c.receivable.person} · ${Formatters.currency(left, currencyCode: currency)} '
-          'left of ${Formatters.currency(c.principal, currencyCode: currency)} · $what',
+          'left of ${Formatters.currency(c.principal, currencyCode: currency)} · '
+          '${source.title} · ${Formatters.dayMonth(source.date)}',
       person: c.receivable.person,
       principal: c.principal,
       received: received,
@@ -493,8 +461,8 @@ List<SettleOption> purchaseOptions({
   }).toList();
 }
 
-/// A purchase a reimbursement can pay back, when it is not yet marked as
-/// paid for anyone.
+/// A purchase a repayment can pay back, when it is not yet marked as paid for
+/// anyone.
 class ClaimPurchase {
   const ClaimPurchase({
     required this.id,
@@ -513,7 +481,7 @@ class ClaimPurchase {
   final String? creditCardId;
 }
 
-/// Options for [person] first, so the right loan or purchase is near the top.
+/// Options for [person] first, so what they are paying back is near the top.
 List<SettleOption> byPersonFirst(List<SettleOption> options, String person) {
   final String key = personKey(person);
   if (key.isEmpty) return List<SettleOption>.of(options);
@@ -524,6 +492,11 @@ List<SettleOption> byPersonFirst(List<SettleOption> options, String person) {
 }
 
 /// What is left on [option] after [amount] more comes back: 0 settles it,
-/// below zero is overpaid.
+/// below zero would be more than is owed.
 double leftAfter(SettleOption option, double amount) =>
     (_cents(option.principal) - _cents(option.received) - _cents(amount)) / 100;
+
+/// Whether [amount] pays back more than [option] still has owed — refused,
+/// as it may already be recorded (the database refuses it too, migration 014).
+bool overpays(SettleOption? option, double? amount) =>
+    option != null && amount != null && amount > 0 && leftAfter(option, amount) < 0;

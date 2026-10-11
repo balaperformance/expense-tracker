@@ -296,7 +296,19 @@ class ExpenseRepository {
           .single();
 
       final Expense created = Expense.fromMap(row);
-      await _syncLedger(created, details: details);
+      try {
+        await _syncLedger(created, details: details);
+      } catch (_) {
+        // A new expense whose ledger movement could not be written is taken
+        // back out, so a failed save never leaves spending recorded with no
+        // balance change — and saving again cannot double it. Deleting it
+        // also removes a movement that did reach the database. Best effort:
+        // the original failure is what is reported.
+        try {
+          await _client.from(_table).delete().eq('id', created.id).eq('user_id', created.userId);
+        } catch (_) {}
+        rethrow;
+      }
       return created;
     } catch (error) {
       throw ErrorMapper.map(error);

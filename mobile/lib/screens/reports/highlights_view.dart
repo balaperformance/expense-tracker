@@ -138,9 +138,9 @@ class _HighlightsTabState extends State<HighlightsTab> {
         const SizedBox(height: AppSpacing.md),
         const AppNotice(
           message: 'Figures come from your recorded expenses, the same ones '
-              'Home and Budgets count. Transfers, loans and card bill payments '
-              'are never spending. Savings, yearly costs and next dates are '
-              'estimates from your history.',
+              'Home and Budgets count. Transfers, card bill payments and what '
+              'you paid for someone are never spending. Savings, yearly costs '
+              'and next dates are estimates from your history.',
         ),
       ];
     }

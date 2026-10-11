@@ -34,9 +34,9 @@ enum EditMovementResult { saved, delete }
 
 /// Changes how a recorded bank movement is recorded: expense, income,
 /// refund, transfer (to another account, the cash account, a card's bill, or
-/// an account not tracked here), money lent, a loan repaid, or a purchase
-/// paid back — plus who it was paid for, and its tags. The web app's
-/// EditMovementSheet, with its wording and its checks.
+/// an account not tracked here), or a repayment of something paid for
+/// someone — plus who an expense was paid for (a purchase or money lent), and
+/// its tags. The web app's EditMovementSheet, with its wording and its checks.
 ///
 /// Everything a change involves — an expense removed, the other transfer leg
 /// added or linked, a claim created — is saved by `apply_bank_treatment` in
@@ -77,7 +77,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
 
   static const Map<String, IconData> _kindIcons = <String, IconData>{
     TreatmentKind.transfer: Icons.swap_horiz_rounded,
-    TreatmentKind.loan: Icons.handshake_outlined,
     TreatmentKind.reimbursement: Icons.handshake_outlined,
   };
 
@@ -88,7 +87,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
       TextEditingController(text: widget.entry.description ?? '');
   final TextEditingController _source = TextEditingController();
   final TextEditingController _person = TextEditingController();
-  final TextEditingController _note = TextEditingController();
   final TextEditingController _tagDraft = TextEditingController();
 
   MovementEditContext? _data;
@@ -106,7 +104,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
 
   /// "No — add it": a new other leg even though a row matches.
   bool _addNewLeg = false;
-  DateTime? _dueDate;
   bool _reimbursable = false;
   SettlementTarget? _settles;
   late DateTime _date = widget.entry.txnDate;
@@ -145,7 +142,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
     _description.dispose();
     _source.dispose();
     _person.dispose();
-    _note.dispose();
     _tagDraft.dispose();
     super.dispose();
   }
@@ -162,7 +158,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
       if (!mounted) return;
       final EntryClaim? claim = claimOfEntry(widget.entry, data.claims);
       final TreatmentState initial = initialTreatment(widget.entry, claim);
-      final Receivable? own = claim != null && claim.isSource ? claim.receivable : null;
       setState(() {
         _data = data;
         _claim = claim;
@@ -172,8 +167,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
         _person.text = initial.person;
         _reimbursable = initial.reimbursable;
         _settles = initial.settles;
-        _dueDate = own?.dueDate;
-        _note.text = own?.note ?? '';
         _source.text = data.incomeSource ?? '';
         _tags = List<String>.of(data.tags ?? const <String>[]);
       });
@@ -201,8 +194,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
         categoryId: _categoryId,
         target: _target,
         person: _person.text,
-        dueDate: _dueDate,
-        note: _note.text,
         reimbursable: _reimbursable,
         settles: _settles,
       );
@@ -406,12 +397,12 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
     final LedgerEntry entry = widget.entry;
     final TreatmentState state = _state;
     final TreatmentProblem? problem =
-        _submitted ? treatmentProblem(state, debit: _debit) : null;
+        _submitted ? treatmentProblem(state) : null;
     final double? value = _value;
     final String amountText = value != null && value > 0
         ? Formatters.currency(value, currencyCode: currency)
         : 'this amount';
-    final String? hint = treatmentHint(_kind, debit: _debit);
+    final String? hint = treatmentHint(_kind);
 
     // The transfer as it is now, and whether this edit keeps it.
     final bool wasAccountTransfer = isAccountTransfer(entry);
@@ -421,9 +412,7 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
     final BankAccount? newTarget = _accountById(newTransferAccountId(entry, state));
     final EntryClaim? own = _claim != null && _claim!.isSource ? _claim : null;
     final bool stopsClaim = stopsOwnClaim(own, state);
-    final bool linkedTone = _kind == TreatmentKind.transfer ||
-        _kind == TreatmentKind.loan ||
-        _kind == TreatmentKind.reimbursement;
+    final bool linkedTone = _kind == TreatmentKind.transfer || _kind == TreatmentKind.reimbursement;
 
     return <Widget>[
       const FieldLabel('Record as'),
@@ -453,27 +442,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
           _matchChoice(theme, newTarget, amountText),
         ],
       ],
-      if (_kind == TreatmentKind.loan) ...<Widget>[
-        const SizedBox(height: AppSpacing.lg),
-        if (_debit)
-          ..._loanDetails(theme, data, problem == TreatmentProblem.loanPerson)
-        else
-          _settlementPicker(
-            theme,
-            label: 'Repays',
-            options: claimOptions(
-              claims: data.claims,
-              kind: ReceivableKind.loan,
-              current: _settles,
-              excludeEntryId: entry.id,
-              currency: currency,
-            ),
-            currency: currency,
-            missing: problem == TreatmentProblem.loan,
-            emptyText: 'No money lent is waiting to be repaid. Record the loan '
-                'first — on its money-out row, Record as Loan.',
-          ),
-      ],
       if (_kind == TreatmentKind.reimbursement) ...<Widget>[
         const SizedBox(height: AppSpacing.lg),
         _personField(
@@ -486,29 +454,12 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
         _settlementPicker(
           theme,
           label: 'Pays back',
-          options: byPersonFirst(
-            <SettleOption>[
-              ...claimOptions(
-                claims: data.claims,
-                kind: ReceivableKind.reimbursable,
-                current: _settles,
-                excludeEntryId: entry.id,
-                currency: currency,
-              ),
-              ...purchaseOptions(
-                purchases: _purchases,
-                claims: data.claims,
-                cards: widget.cards,
-                currency: currency,
-              ),
-            ],
-            _person.text,
-          ),
+          options: _repaymentOptions(data, currency),
           currency: currency,
           missing: problem == TreatmentProblem.settles,
           emptyText: _purchasesLoading
-              ? 'Loading recent purchases…'
-              : 'No purchases in the last few months to match.',
+              ? 'Loading recent expenses…'
+              : 'Nothing paid for anyone, and no expenses in the last few months to match.',
         ),
       ],
       if (wasAccountTransfer && !keeps && oldOther != null) ...<Widget>[
@@ -786,50 +737,25 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
     );
   }
 
-  /// Lent to [person], with an optional due date and note.
-  List<Widget> _loanDetails(ThemeData theme, MovementEditContext data, bool missing) {
-    return <Widget>[
-      _personField(theme, data, label: 'Lent to', missing: missing),
-      const SizedBox(height: AppSpacing.sm),
-      SelectField(
-        value: _dueDate == null ? null : 'Due back ${Formatters.dayMonthYear(_dueDate!)}',
-        placeholder: 'Due back (optional)',
-        icon: Icons.event_rounded,
-        enabled: !_busy,
-        onTap: _pickDueDate,
-        trailing: _dueDate == null
-            ? null
-            : IconButton(
-                tooltip: 'Clear due date',
-                icon: const Icon(Icons.close_rounded, size: AppSpacing.iconSm),
-                onPressed: _busy ? null : () => setState(() => _dueDate = null),
-              ),
-      ),
-      const SizedBox(height: AppSpacing.sm),
-      TextField(
-        controller: _note,
-        enabled: !_busy,
-        inputFormatters: <TextInputFormatter>[LengthLimitingTextInputFormatter(200)],
-        textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          hintText: 'Note (optional)',
-          prefixIcon: Icon(Icons.notes_rounded, size: AppSpacing.iconMd),
-        ),
-      ),
-    ];
-  }
-
-  Future<void> _pickDueDate() async {
-    final DateTime now = DateTime.now();
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _dueDate ?? _date,
-      firstDate: DateTime(now.year - 5),
-      lastDate: DateTime(now.year + 10, 12, 31),
-    );
-    if (picked == null || !mounted) return;
-    setState(() => _dueDate = DateTime(picked.year, picked.month, picked.day));
-  }
+  /// What a repayment can pay back: anything paid for someone, then
+  /// expenses not yet marked — theirs first.
+  List<SettleOption> _repaymentOptions(MovementEditContext data, String currency) => byPersonFirst(
+        <SettleOption>[
+          ...claimOptions(
+            claims: data.claims,
+            current: _settles,
+            excludeEntryId: widget.entry.id,
+            currency: currency,
+          ),
+          ...purchaseOptions(
+            purchases: _purchases,
+            claims: data.claims,
+            cards: widget.cards,
+            currency: currency,
+          ),
+        ],
+        _person.text,
+      );
 
   /// Free text with the people already used offered as suggestions, so
   /// "Arun" stays one person.
@@ -904,8 +830,8 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
       } else if (left > 0) {
         status = '${Formatters.currency(left, currencyCode: currency)} still owed after this.';
       } else {
-        status = '${Formatters.currency(-left, currencyCode: currency)} more than is owed — '
-            'it will show as overpaid.';
+        status = '${Formatters.currency(-left, currencyCode: currency)} more than is still owed. '
+            'It may already be recorded — choose something else, or record it as a refund.';
         statusTone = ToneColors.warning(context);
       }
     }
@@ -972,9 +898,7 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
     String currency,
     bool missing,
   ) {
-    final ClaimSummary? paidFor = own != null && own.receivable.kind == ReceivableKind.reimbursable
-        ? own.summary
-        : null;
+    final ClaimSummary? paidFor = own?.summary;
     return <Widget>[
       Align(
         alignment: Alignment.centerLeft,
@@ -1121,10 +1045,23 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
       return;
     }
     final TreatmentState state = _state;
-    final TreatmentProblem? missing = treatmentProblem(state, debit: _debit);
+    final TreatmentProblem? missing = treatmentProblem(state);
     if (missing != null) {
       setState(() => _error = treatmentProblemMessage(missing, debit: _debit));
       return;
+    }
+    final MovementEditContext? data = _data;
+    if (_kind == TreatmentKind.reimbursement && data != null) {
+      final String currency = context.read<SettingsProvider>().currency;
+      SettleOption? chosen;
+      for (final SettleOption o in _repaymentOptions(data, currency)) {
+        if (o.key == _settles?.key) chosen = o;
+      }
+      if (overpays(chosen, value)) {
+        setState(() => _error = 'This is more than is still owed on what it pays back. '
+            'It may already be recorded.');
+        return;
+      }
     }
     final Map<String, Object?> request = buildTreatmentRequest(
       entry: widget.entry,

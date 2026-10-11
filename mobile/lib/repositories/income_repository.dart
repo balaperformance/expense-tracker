@@ -145,7 +145,16 @@ class IncomeRepository {
           .single();
 
       final Income created = Income.fromMap(row);
-      await _syncLedger(created, details: details);
+      try {
+        await _syncLedger(created, details: details);
+      } catch (_) {
+        // No income left without its credit on the account: taken back out
+        // (see ExpenseRepository.create). The original failure is reported.
+        try {
+          await _client.from(_table).delete().eq('id', created.id).eq('user_id', created.userId);
+        } catch (_) {}
+        rethrow;
+      }
       return created;
     } catch (error) {
       throw ErrorMapper.map(error);
