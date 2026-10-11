@@ -42,6 +42,7 @@ class SchemaCapabilities {
   static bool _notificationInbox = false;
   static bool _notificationClear = false;
   static bool _cashAccount = false;
+  static bool _reconciliation = false;
 
   static bool get resolved => _resolved;
 
@@ -101,6 +102,11 @@ class SchemaCapabilities {
   /// in hand, which cash expenses come out of.
   static bool get cashAccount => _cashAccount;
 
+  /// `reconciliation_decisions` (migration 015): what the user decided while
+  /// reconciling a statement — links, "not the same", accepted — kept across
+  /// devices. Without it the decisions last as long as the screen.
+  static bool get reconciliation => _reconciliation;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -124,6 +130,7 @@ class SchemaCapabilities {
       if (!_notificationInbox) 'notification history (010)',
       if (!_cashAccount) 'cash balance (011)',
       if (!_notificationClear) 'clearing read notifications (012)',
+      if (!_reconciliation) 'statement reconciliation decisions (015)',
     ];
     return missing.join(', ');
   }
@@ -172,6 +179,9 @@ class SchemaCapabilities {
                   deniedMeansMissing: true),
               // 19: the cash account (011).
               _probe(client, 'bank_accounts', 'kind'),
+              // 20: statement reconciliation decisions (015).
+              _probe(client, 'reconciliation_decisions',
+                  'id, scope_type, scope_id, item_key, action, entry_id, note'),
             ]));
 
     _merchant = results[0];
@@ -187,6 +197,8 @@ class SchemaCapabilities {
     _notificationInbox = results[17];
     _notificationClear = _notificationInbox && results[18];
     _cashAccount = _bankAccounts && results[19];
+    // Decisions name ledger rows and card entries: only useful with accounts.
+    _reconciliation = _bankAccounts && results[20];
     _resolved = true;
   }
 
@@ -232,6 +244,7 @@ class SchemaCapabilities {
     bool? notificationInbox,
     bool? notificationClear,
     bool? cashAccount,
+    bool? reconciliation,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -246,6 +259,7 @@ class SchemaCapabilities {
     _notificationInbox = notificationInbox ?? _notificationInbox;
     _notificationClear = notificationClear ?? _notificationClear;
     _cashAccount = cashAccount ?? _cashAccount;
+    _reconciliation = reconciliation ?? _reconciliation;
     _resolved = true;
   }
 
@@ -264,5 +278,6 @@ class SchemaCapabilities {
     _notificationInbox = false;
     _notificationClear = false;
     _cashAccount = false;
+    _reconciliation = false;
   }
 }

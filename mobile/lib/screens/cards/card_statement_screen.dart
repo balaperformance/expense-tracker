@@ -25,6 +25,7 @@ import '../../widgets/stat_tiles.dart';
 import '../../widgets/transaction_tile.dart';
 import '../accounts/account_statement_screen.dart';
 import '../expenses/expense_form_screen.dart';
+import '../statement_import/import_statement_screen.dart';
 import 'card_form_sheet.dart';
 import 'card_payment_sheet.dart';
 import 'card_transaction_sheet.dart';
@@ -138,6 +139,13 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
           ],
         ),
         actions: <Widget>[
+          IconButton(
+            tooltip: 'Reconcile with a statement',
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => ImportStatementScreen(initialCardId: card.id),
+            )),
+            icon: const Icon(Icons.fact_check_outlined),
+          ),
           IconButton(
             tooltip: 'Edit card',
             onPressed: () => _openForm(card),

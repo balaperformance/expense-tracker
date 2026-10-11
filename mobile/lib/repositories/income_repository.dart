@@ -109,6 +109,22 @@ class IncomeRepository {
     }
   }
 
+  /// One income entry, for opening it from a statement reconciliation; null
+  /// when it has been deleted since.
+  Future<Income?> fetchById({required String userId, required String id}) async {
+    try {
+      final Map<String, dynamic>? row = await _client
+          .from(_table)
+          .select(_select)
+          .eq('user_id', userId)
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : Income.fromMap(row);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
   Future<Map<String, double>> fetchMonthlyTotals({
     required String userId,
     required DateTime from,

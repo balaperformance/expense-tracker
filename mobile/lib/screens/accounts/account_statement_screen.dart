@@ -126,6 +126,7 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
             tooltip: 'More',
             onSelected: (String value) {
               if (value == 'import') _openImport();
+              if (value == 'reconcile') _openImport(reconcile: true);
               if (value == 'export') _openExport(provider);
             },
             itemBuilder: (_) => <PopupMenuEntry<String>>[
@@ -136,6 +137,15 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
                   child: ListTile(
                     leading: Icon(Icons.upload_file_rounded),
                     title: Text('Import statement'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+              if (!widget.account.isCash)
+                const PopupMenuItem<String>(
+                  value: 'reconcile',
+                  child: ListTile(
+                    leading: Icon(Icons.fact_check_outlined),
+                    title: Text('Reconcile with a statement'),
                     contentPadding: EdgeInsets.zero,
                   ),
                 ),
@@ -312,9 +322,9 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
     }
   }
 
-  Future<void> _openImport() async {
+  Future<void> _openImport({bool reconcile = false}) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => ImportStatementScreen(initialAccountId: widget.account.id),
+      builder: (_) => ImportStatementScreen(initialAccountId: widget.account.id, reconcile: reconcile),
     ));
     if (!mounted) return;
     await context.read<StatementProvider>().load(force: true);

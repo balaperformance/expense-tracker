@@ -5,7 +5,10 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/bank_account.dart';
 import '../../models/credit_card.dart';
+import '../../models/expense.dart';
 import '../../models/expense_category.dart';
+import '../../models/income.dart';
+import '../../models/receivable.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/budget_provider.dart';
@@ -15,6 +18,7 @@ import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/income_provider.dart';
 import '../../providers/payment_method_provider.dart';
+import '../../providers/reconciliation_provider.dart';
 import '../../providers/receivable_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -28,18 +32,35 @@ import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/transaction_tile.dart';
+import '../accounts/account_statement_screen.dart';
+import '../cards/card_statement_screen.dart';
+import '../expenses/expense_form_screen.dart';
+import '../income/income_form_screen.dart';
 import 'import_row_sheet.dart';
+import 'reconcile_view.dart';
 
 enum _Filter { all, selected, duplicates, attention }
 
-/// Import a bank statement (PDF or Excel .xlsx) into one account.
+/// Import a bank statement (PDF or Excel .xlsx) into one account — or
+/// reconcile it: compare it with what the app recorded for the same days.
 ///
 /// The file is read on this phone by the same parsers the web app uses; it
 /// is never uploaded, and nothing is written until the user confirms.
 class ImportStatementScreen extends StatefulWidget {
-  const ImportStatementScreen({super.key, this.initialAccountId});
+  const ImportStatementScreen({
+    super.key,
+    this.initialAccountId,
+    this.initialCardId,
+    this.reconcile = false,
+  });
 
   final String? initialAccountId;
+
+  /// A credit card's statement: reconciled only.
+  final String? initialCardId;
+
+  /// Opens on the reconciliation rather than the import review.
+  final bool reconcile;
 
   @override
   State<ImportStatementScreen> createState() => _ImportStatementScreenState();
@@ -49,6 +70,15 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
   final TextEditingController _password = TextEditingController();
   _Filter _filter = _Filter.all;
 
+  /// Showing the reconciliation rather than the import review.
+  late bool _reconcile = widget.reconcile || widget.initialCardId != null;
+
+  /// The review items last reconciled: compared again when they change.
+  List<Map<String, Object?>>? _reconciledItems;
+
+  /// Kept from the tree while it is there: the session is forgotten as the screen closes.
+  ReconciliationProvider? _recon;
+
   @override
   void initState() {
     super.initState();
@@ -56,10 +86,19 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _recon = context.read<ReconciliationProvider?>();
+  }
+
+  @override
   void dispose() {
     _password.dispose();
+    _recon?.clear();
     super.dispose();
   }
+
+  bool _reconciling(StatementImportProvider provider) => _reconcile || provider.card != null;
 
   Future<void> _init() async {
     final String? userId = context.read<AuthProvider>().userId;
@@ -89,6 +128,9 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
       if (a.id == widget.initialAccountId) initial = a;
     }
     if (initial != null) _choose(initial);
+    for (final CreditCard c in context.read<CreditCardProvider>().cards) {
+      if (c.id == widget.initialCardId) _chooseCard(c);
+    }
   }
 
   /// The accounts a statement can belong to: open bank accounts. Cash in
@@ -111,6 +153,98 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         );
   }
 
+  /// A credit card's statement — reconciled only.
+  void _chooseCard(CreditCard card) {
+    final String? userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    setState(() => _reconcile = true);
+    context.read<StatementImportProvider>().begin(
+          userId: userId,
+          card: card,
+          accounts: context.read<BankAccountProvider>().accounts,
+          categories: context.read<CategoryProvider>().categories,
+          cards: context.read<CreditCardProvider>().cards,
+        );
+  }
+
+  /// Compares the session with what the app recorded. [reload]: read the
+  /// recorded transactions again (after the user fixed one).
+  Future<void> _reconcileNow(StatementImportProvider provider, {bool reload = false}) async {
+    final String? userId = context.read<AuthProvider>().userId;
+    final ReconciliationProvider? recon = _recon;
+    if (userId == null || recon == null || provider.statements.isEmpty) return;
+    final ReceivableProvider? claims =
+        SchemaCapabilities.treatments ? context.read<ReceivableProvider?>() : null;
+    if (reload && claims != null) await claims.load(userId: userId, force: true);
+    if (!mounted) return;
+    await recon.run(
+      userId: userId,
+      statements: provider.statements.map((ImportedStatement s) => s.json).toList(),
+      items: provider.itemsJson,
+      accounts: context.read<BankAccountProvider>().accounts,
+      cards: context.read<CreditCardProvider>().cards,
+      claims: claims?.claims ?? const <ClaimSummary>[],
+      currency: context.read<SettingsProvider>().currency,
+      cardId: provider.card?.id,
+      reload: reload,
+    );
+  }
+
+  /// "Add to app" from the reconciliation: the row, selected and open in the import review.
+  Future<void> _addToApp(StatementImportProvider provider, String itemId) async {
+    setState(() {
+      _reconcile = false;
+      _filter = _Filter.all;
+    });
+    ImportRow? row = provider.rows.where((ImportRow r) => r.id == itemId).firstOrNull;
+    if (row == null) return;
+    if (!row.selected) {
+      await provider.toggle(itemId);
+      row = provider.rows.where((ImportRow r) => r.id == itemId).firstOrNull ?? row;
+    }
+    if (mounted) await _editRow(row);
+  }
+
+  /// A recorded transaction opened from the reconciliation; compared again on return.
+  Future<void> _openTarget(StatementImportProvider provider, Map<String, Object?> target) async {
+    final NavigatorState navigator = Navigator.of(context);
+    final ReconciliationProvider? recon = _recon;
+    if (recon == null) return;
+    final String id = (target['id'] as String?) ?? '';
+    switch (target['type']) {
+      case 'expense':
+        final Expense? expense = await recon.expenseById(id);
+        if (!mounted) return;
+        if (expense == null) {
+          AppFeedback.info(context, 'That expense has been deleted.');
+        } else {
+          await navigator.push(MaterialPageRoute<void>(builder: (_) => ExpenseFormScreen(expense: expense)));
+        }
+      case 'income':
+        final Income? income = await recon.incomeById(id);
+        if (!mounted) return;
+        if (income == null) {
+          AppFeedback.info(context, 'That income entry has been deleted.');
+        } else {
+          await navigator.push(MaterialPageRoute<void>(builder: (_) => IncomeFormScreen(income: income)));
+        }
+      case 'movement':
+        final BankAccount? account = context
+            .read<BankAccountProvider>()
+            .accounts
+            .where((BankAccount a) => a.id == target['accountId'])
+            .firstOrNull;
+        if (account != null) {
+          await navigator.push(MaterialPageRoute<void>(builder: (_) => AccountStatementScreen(account: account)));
+        }
+      case 'cardEntry':
+        await navigator.push(MaterialPageRoute<void>(
+          builder: (_) => CardStatementScreen(cardId: (target['cardId'] as String?) ?? ''),
+        ));
+    }
+    if (mounted) await _reconcileNow(provider, reload: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final StatementImportProvider provider =
@@ -124,7 +258,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
       canPop: provider.importing == null,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Import statement'),
+          title: Text(_reconciling(provider) ? 'Reconcile statement' : 'Import statement'),
           actions: <Widget>[
             if (account != null && provider.hasRows && provider.outcome == null)
               IconButton(
@@ -137,7 +271,8 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         ),
         bottomNavigationBar: account != null &&
                 provider.hasRows &&
-                provider.outcome == null
+                provider.outcome == null &&
+                !_reconciling(provider)
             ? _ImportBar(
                 count: provider.selectedCount,
                 busy: busy,
@@ -183,9 +318,22 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
           ),
         );
       }
+      final List<CreditCard> cards =
+          SchemaCapabilities.creditCards ? context.watch<CreditCardProvider>().cards : const <CreditCard>[];
       return ListView(
         padding: const EdgeInsets.all(AppSpacing.page),
         children: <Widget>[
+          _ViewToggle(reconcile: _reconcile, onChanged: (bool v) => setState(() => _reconcile = v)),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            _reconcile
+                ? 'Compare a statement — new, or downloaded long ago — with what the app recorded for the same days: '
+                    'what matches, what is missing on either side, duplicates, amounts that differ, and whether the '
+                    'balances agree. Nothing is changed unless you choose to.'
+                : 'Add the transactions on a statement to the app. Rows already recorded are recognised and left out.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: AppSpacing.lg),
           Text('Which account is this statement for?',
               style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: AppSpacing.md),
@@ -200,6 +348,26 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
                     ))
                 .toList(),
           ),
+          if (_reconcile && cards.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            Text('Or a credit card', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.md),
+            CardList(
+              children: cards
+                  .map((CreditCard c) => AppListRow(
+                        leading: IconWell(
+                          icon: Icons.credit_card_rounded,
+                          tone: Theme.of(context).colorScheme.primary,
+                          size: AppSpacing.avatarSm,
+                        ),
+                        title: c.displayLabel,
+                        subtitle: 'Reconcile only — card rows are added on the card',
+                        showChevron: true,
+                        onTap: () => _chooseCard(c),
+                      ))
+                  .toList(),
+            ),
+          ],
           const SizedBox(height: AppSpacing.md),
           const AppNotice(
             icon: Icons.account_balance_outlined,
@@ -214,7 +382,17 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     }
 
     final ImportOutcome? outcome = provider.outcome;
-    if (outcome != null) return _ResultView(outcome: outcome, account: account);
+    if (outcome != null) {
+      return _ResultView(
+        outcome: outcome,
+        account: account,
+        onReconcile: () {
+          provider.reviewAgain();
+          setState(() => _reconcile = true);
+          _reconcileNow(provider, reload: true);
+        },
+      );
+    }
 
     final List<Widget> children = <Widget>[
       // A payment app's statement covers several accounts: its rows go to
@@ -228,6 +406,22 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
           ),
           title: 'Several accounts',
           subtitle: 'Each payment goes to the account the statement names',
+        )
+      else if (provider.card != null)
+        AppListRow(
+          leading: IconWell(
+            icon: Icons.credit_card_rounded,
+            tone: Theme.of(context).colorScheme.primary,
+            size: AppSpacing.avatarSm,
+          ),
+          title: provider.card!.displayLabel,
+          subtitle: 'Credit card · reconcile only',
+          trailing: provider.hasRows || busy
+              ? null
+              : TextButton(
+                  onPressed: () => provider.reset(),
+                  child: const Text('Change'),
+                ),
         )
       else
         AppListRow(
@@ -315,6 +509,28 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
             : null,
       ));
       children.add(const SizedBox(height: AppSpacing.sm));
+    }
+    if (provider.card == null) {
+      children.addAll(<Widget>[
+        _ViewToggle(reconcile: _reconcile, onChanged: (bool v) => setState(() => _reconcile = v)),
+        const SizedBox(height: AppSpacing.md),
+      ]);
+    }
+    if (_reconciling(provider)) {
+      // Compared again whenever the review items change (an account chosen, a row edited).
+      if (!identical(provider.itemsJson, _reconciledItems)) {
+        _reconciledItems = provider.itemsJson;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _reconcileNow(provider);
+        });
+      }
+      return ReconcileView(
+        currency: currency,
+        header: children,
+        onAddToApp: provider.card == null ? (String itemId) => _addToApp(provider, itemId) : null,
+        onOpen: (Map<String, Object?> target) => _openTarget(provider, target),
+        onRefresh: () => _reconcileNow(provider, reload: true),
+      );
     }
     children.add(_SummaryCard(summary: provider.summary, currency: currency));
     children.add(const SizedBox(height: AppSpacing.md));
@@ -1032,11 +1248,36 @@ class _ImportBar extends StatelessWidget {
   }
 }
 
+/// Reconcile or import — the screen's two jobs on the same statements.
+class _ViewToggle extends StatelessWidget {
+  const _ViewToggle({required this.reconcile, required this.onChanged});
+
+  final bool reconcile;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<bool>(
+          segments: const <ButtonSegment<bool>>[
+            ButtonSegment<bool>(value: true, label: Text('Reconcile'), icon: Icon(Icons.fact_check_outlined)),
+            ButtonSegment<bool>(value: false, label: Text('Import'), icon: Icon(Icons.download_rounded)),
+          ],
+          selected: <bool>{reconcile},
+          showSelectedIcon: false,
+          onSelectionChanged: (Set<bool> v) => onChanged(v.first),
+        ),
+      );
+}
+
 class _ResultView extends StatelessWidget {
-  const _ResultView({required this.outcome, required this.account});
+  const _ResultView({required this.outcome, required this.account, required this.onReconcile});
 
   final ImportOutcome outcome;
   final BankAccount account;
+
+  /// Back to the statements, to check what the import left unreconciled.
+  final VoidCallback onReconcile;
 
   @override
   Widget build(BuildContext context) {
@@ -1104,6 +1345,13 @@ class _ResultView extends StatelessWidget {
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
+        AppButton(
+          label: 'Check the reconciliation',
+          icon: Icons.fact_check_outlined,
+          variant: AppButtonVariant.secondary,
+          onPressed: onReconcile,
+        ),
+        const SizedBox(height: AppSpacing.sm),
         AppButton(
           label: 'Import another statement',
           icon: Icons.upload_file_rounded,

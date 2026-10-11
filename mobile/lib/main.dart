@@ -25,6 +25,7 @@ import 'providers/payment_method_provider.dart';
 import 'providers/receivable_provider.dart';
 import 'providers/reports_provider.dart';
 import 'providers/settings_provider.dart';
+import 'providers/reconciliation_provider.dart';
 import 'providers/statement_import_provider.dart';
 import 'providers/statement_provider.dart';
 import 'repositories/auth_repository.dart';
@@ -40,6 +41,7 @@ import 'repositories/notification_repository.dart';
 import 'repositories/payment_method_repository.dart';
 import 'repositories/profile_repository.dart';
 import 'repositories/receivable_repository.dart';
+import 'repositories/reconciliation_repository.dart';
 import 'repositories/tag_repository.dart';
 import 'screens/auth/auth_gate.dart';
 import 'services/ai/ai_chat_service.dart';
@@ -169,6 +171,18 @@ class ExpenseTrackerApp extends StatelessWidget {
             income: incomeRepository,
             ledger: ledgerRepository,
             tags: TagRepository(client),
+          ),
+        ),
+        // A statement compared with what the app recorded — the web app's
+        // own reconciliation, in the same offline engine.
+        ChangeNotifierProvider<ReconciliationProvider>(
+          create: (_) => ReconciliationProvider(
+            engine: MethodChannelStatementEngine(),
+            ledger: ledgerRepository,
+            cards: creditCardRepository,
+            expenses: expenseRepository,
+            income: incomeRepository,
+            decisions: ReconciliationRepository(client),
           ),
         ),
         ChangeNotifierProvider<CreditCardProvider>(

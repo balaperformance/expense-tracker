@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../core/errors/app_exception.dart';
 import '../../core/utils/date_utils.dart';
 import '../../models/bank_account.dart';
+import '../../models/card_statement.dart';
 import '../../models/credit_card.dart';
 import '../../models/expense.dart';
 import '../../models/expense_category.dart';
@@ -237,10 +238,15 @@ class EngineJson {
       };
 
   /// A recorded ledger row in the web model's full shape, for finding a
-  /// transfer's other leg. [lent]: the row is what was paid for someone (a
-  /// claim's source) with no expense of its own, which is never a plain
-  /// movement.
-  static Map<String, Object?> ledgerEntry(LedgerEntry e, {bool lent = false}) =>
+  /// transfer's other leg and for reconciling a statement. [lent]: the row is
+  /// what was paid for someone (a claim's source) with no expense of its own,
+  /// which is never a plain movement. [claim]: the claim it belongs to, when
+  /// known — {receivableId, person, role: 'source' | 'settles'}.
+  static Map<String, Object?> ledgerEntry(
+    LedgerEntry e, {
+    bool lent = false,
+    Map<String, Object?>? claim,
+  }) =>
       <String, Object?>{
         'id': e.id,
         'userId': e.userId,
@@ -256,14 +262,36 @@ class EngineJson {
         'counterpartyAccountId': e.counterpartyAccountId,
         'creditCardId': e.creditCardId,
         'receivableId': e.receivableId,
-        'claim': lent
-            ? const <String, Object?>{
-                'receivableId': '',
-                'person': '',
-                'role': 'source',
-              }
-            : null,
+        'claim': claim ??
+            (lent
+                ? const <String, Object?>{
+                    'receivableId': '',
+                    'person': '',
+                    'role': 'source',
+                  }
+                : null),
         'createdAt': _iso(e.createdAt),
-        'category': null,
+        'category': e.category == null ? null : category(e.category!),
+        if (e.reference != null) 'reference': e.reference,
+        if (e.upiId != null) 'upiId': e.upiId,
+      };
+
+  /// One movement on a card (a purchase, a bill payment or the card's own
+  /// entry) in the web model's shape — its key is the web's too.
+  static Map<String, Object?> cardEntry(CardEntry e) => <String, Object?>{
+        'key': e.key,
+        'source': e.source.name,
+        'id': e.id,
+        'cardId': e.cardId,
+        'kind': e.kind.name,
+        'direction': e.direction.wire,
+        'amount': e.amount,
+        'date': AppDateUtils.toDateString(e.date),
+        'description': e.description,
+        'category': e.category == null ? null : category(e.category!),
+        'accountId': e.accountId,
+        'originalExpenseId': e.originalExpenseId,
+        'reference': e.reference,
+        'createdAt': _iso(e.createdAt),
       };
 }

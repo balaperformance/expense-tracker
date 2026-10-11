@@ -1,0 +1,944 @@
+{
+ "statements": [
+  {
+   "id": "s",
+   "fileName": "sep.pdf",
+   "bankName": "Test Bank",
+   "parserLabel": "Test Bank",
+   "period": {
+    "from": "2026-09-01",
+    "to": "2026-09-30"
+   },
+   "openingBalance": 10000,
+   "closingBalance": 57311,
+   "accountPerRow": false
+  }
+ ],
+ "items": [
+  {
+   "id": "s:1",
+   "transactionDate": "2026-09-02",
+   "description": "NEFT CR-ACME PAYROLL",
+   "rawDescription": "NEFT CR-ACME PAYROLL",
+   "amount": 50000,
+   "transactionType": "credit",
+   "balance": null,
+   "kind": "income",
+   "category": "Other",
+   "categorySource": "fallback",
+   "categoryReason": null,
+   "bankAccountId": "a1",
+   "sourceStatementId": "s",
+   "reference": null,
+   "counterparty": "ACME Payroll",
+   "channel": "upi",
+   "confidence": 1,
+   "issues": [],
+   "fingerprint": "a1|2026-09-02|5000000|credit|neft cr acme payroll",
+   "duplicate": null,
+   "selected": true,
+   "categoryId": null,
+   "duplicateOverridden": false,
+   "duplicateDecision": null,
+   "edited": false,
+   "transferTarget": null,
+   "transferMatch": null,
+   "person": "",
+   "dueDate": null,
+   "note": "",
+   "reimbursable": false,
+   "settles": null
+  },
+  {
+   "id": "s:2",
+   "transactionDate": "2026-09-08",
+   "description": "POS BIGBAZAAR",
+   "rawDescription": "POS BIGBAZAAR",
+   "amount": 1200,
+   "transactionType": "debit",
+   "balance": null,
+   "kind": "expense",
+   "category": "Other",
+   "categorySource": "fallback",
+   "categoryReason": null,
+   "bankAccountId": "a1",
+   "sourceStatementId": "s",
+   "reference": null,
+   "counterparty": "Big Bazaar",
+   "channel": "upi",
+   "confidence": 1,
+   "issues": [],
+   "fingerprint": "a1|2026-09-08|120000|debit|pos bigbazaar",
+   "duplicate": null,
+   "selected": true,
+   "categoryId": null,
+   "duplicateOverridden": false,
+   "duplicateDecision": null,
+   "edited": false,
+   "transferTarget": null,
+   "transferMatch": null,
+   "person": "",
+   "dueDate": null,
+   "note": "",
+   "reimbursable": false,
+   "settles": null
+  },
+  {
+   "id": "s:3",
+   "transactionDate": "2026-09-12",
+   "description": "UPI/DR/5512/ZOMATO",
+   "rawDescription": "UPI/DR/5512/ZOMATO",
+   "amount": 540,
+   "transactionType": "debit",
+   "balance": null,
+   "kind": "expense",
+   "category": "Other",
+   "categorySource": "fallback",
+   "categoryReason": null,
+   "bankAccountId": "a1",
+   "sourceStatementId": "s",
+   "reference": null,
+   "counterparty": "Zomato",
+   "channel": "upi",
+   "confidence": 1,
+   "issues": [],
+   "fingerprint": "a1|2026-09-12|54000|debit|upi dr 5512 zomato",
+   "duplicate": null,
+   "selected": true,
+   "categoryId": null,
+   "duplicateOverridden": false,
+   "duplicateDecision": null,
+   "edited": false,
+   "transferTarget": null,
+   "transferMatch": null,
+   "person": "",
+   "dueDate": null,
+   "note": "",
+   "reimbursable": false,
+   "settles": null
+  },
+  {
+   "id": "s:4",
+   "transactionDate": "2026-09-15",
+   "description": "UPI/DR/6612/NETFLIX",
+   "rawDescription": "UPI/DR/6612/NETFLIX",
+   "amount": 649,
+   "transactionType": "debit",
+   "balance": null,
+   "kind": "expense",
+   "category": "Other",
+   "categorySource": "fallback",
+   "categoryReason": null,
+   "bankAccountId": "a1",
+   "sourceStatementId": "s",
+   "reference": null,
+   "counterparty": "Netflix",
+   "channel": "upi",
+   "confidence": 1,
+   "issues": [],
+   "fingerprint": "a1|2026-09-15|64900|debit|upi dr 6612 netflix",
+   "duplicate": null,
+   "selected": true,
+   "categoryId": null,
+   "duplicateOverridden": false,
+   "duplicateDecision": null,
+   "edited": false,
+   "transferTarget": null,
+   "transferMatch": null,
+   "person": "",
+   "dueDate": null,
+   "note": "",
+   "reimbursable": false,
+   "settles": null
+  },
+  {
+   "id": "s:5",
+   "transactionDate": "2026-09-20",
+   "description": "UPI/DR/7781/CHAI POINT",
+   "rawDescription": "UPI/DR/7781/CHAI POINT",
+   "amount": 300,
+   "transactionType": "debit",
+   "balance": null,
+   "kind": "expense",
+   "category": "Other",
+   "categorySource": "fallback",
+   "categoryReason": null,
+   "bankAccountId": "a1",
+   "sourceStatementId": "s",
+   "reference": null,
+   "counterparty": "Chai Point",
+   "channel": "upi",
+   "confidence": 1,
+   "issues": [],
+   "fingerprint": "a1|2026-09-20|30000|debit|upi dr 7781 chai point",
+   "duplicate": null,
+   "selected": true,
+   "categoryId": null,
+   "duplicateOverridden": false,
+   "duplicateDecision": null,
+   "edited": false,
+   "transferTarget": null,
+   "transferMatch": null,
+   "person": "",
+   "dueDate": null,
+   "note": "",
+   "reimbursable": false,
+   "settles": null
+  }
+ ],
+ "scopes": [
+  {
+   "key": "account:a1",
+   "type": "account",
+   "id": "a1",
+   "coverage": "full",
+   "from": "2026-09-01",
+   "to": "2026-09-30",
+   "fetchFrom": "2026-08-18",
+   "fetchToExclusive": "2026-10-15",
+   "ranges": [
+    {
+     "statementId": "s",
+     "from": "2026-09-01",
+     "to": "2026-09-30",
+     "full": true
+    }
+   ]
+  }
+ ],
+ "output": {
+  "result": {
+   "scopes": [
+    {
+     "key": "account:a1",
+     "type": "account",
+     "id": "a1",
+     "coverage": "full",
+     "from": "2026-09-01",
+     "to": "2026-09-30",
+     "gaps": [],
+     "statementIds": [
+      "s"
+     ],
+     "statement": {
+      "credits": 50000,
+      "debits": 2689,
+      "net": 47311,
+      "opening": 10000,
+      "closing": 57311,
+      "addsUp": true,
+      "unreadAmount": 0
+     },
+     "app": {
+      "credits": 50000,
+      "debits": 2950,
+      "net": 47050,
+      "opening": 10000,
+      "closing": 57050
+     },
+     "openingDifference": 0,
+     "closingDifference": 261,
+     "byKind": [
+      {
+       "kind": "spending",
+       "statement": 2689,
+       "app": 2950
+      },
+      {
+       "kind": "income",
+       "statement": 50000,
+       "app": 50000
+      }
+     ],
+     "counts": {
+      "matched": 3,
+      "missing": 2,
+      "duplicate": 1,
+      "mismatch": 1,
+      "review": 0,
+      "open": 4,
+      "resolved": 0,
+      "total": 7
+     }
+    }
+   ],
+   "items": [
+    {
+     "candidates": [],
+     "lineCandidates": [
+      {
+       "key": "2026-09-15|64900|debit|upi dr 6612 netflix#1",
+       "itemId": "s:4",
+       "scope": "account:a1",
+       "date": "2026-09-15",
+       "amount": 649,
+       "direction": "debit",
+       "description": "UPI/DR/6612/NETFLIX",
+       "rawDescription": "UPI/DR/6612/NETFLIX",
+       "counterparty": "Netflix",
+       "reference": null,
+       "upiId": null,
+       "time": null,
+       "kind": "spending",
+       "ownTransfer": false,
+       "statementIds": [
+        "s"
+       ],
+       "onFullStatement": true,
+       "confidence": 1,
+       "issues": [],
+       "sourceAccount": null
+      }
+     ],
+     "elsewhere": null,
+     "duplicateOf": null,
+     "key": "entry:l6",
+     "line": null,
+     "movement": {
+      "id": "l6",
+      "scope": "account:a1",
+      "date": "2026-09-17",
+      "amount": 700,
+      "direction": "debit",
+      "description": "Groceries",
+      "reference": null,
+      "upiId": null,
+      "kind": "spending",
+      "person": null,
+      "category": null,
+      "open": {
+       "type": "expense",
+       "id": "x-l6"
+      },
+      "expenseId": "x-l6",
+      "incomeId": null
+     },
+     "date": "2026-09-17",
+     "amount": 700,
+     "direction": "debit",
+     "kind": "spending",
+     "difference": null,
+     "status": "missing",
+     "issue": "notOnStatement",
+     "reasons": [
+      "not on the statement"
+     ],
+     "id": "account:a1|entry:l6",
+     "scope": "account:a1",
+     "decision": null,
+     "resolved": false,
+     "balanceEffect": 700
+    },
+    {
+     "candidates": [
+      {
+       "id": "l6",
+       "scope": "account:a1",
+       "date": "2026-09-17",
+       "amount": 700,
+       "direction": "debit",
+       "description": "Groceries",
+       "reference": null,
+       "upiId": null,
+       "kind": "spending",
+       "person": null,
+       "category": null,
+       "open": {
+        "type": "expense",
+        "id": "x-l6"
+       },
+       "expenseId": "x-l6",
+       "incomeId": null
+      },
+      {
+       "id": "l5",
+       "scope": "account:a1",
+       "date": "2026-09-20",
+       "amount": 300,
+       "direction": "debit",
+       "description": "Chai Point",
+       "reference": null,
+       "upiId": null,
+       "kind": "spending",
+       "person": null,
+       "category": null,
+       "open": {
+        "type": "expense",
+        "id": "x-l5"
+       },
+       "expenseId": "x-l5",
+       "incomeId": null
+      },
+      {
+       "id": "l3",
+       "scope": "account:a1",
+       "date": "2026-09-12",
+       "amount": 450,
+       "direction": "debit",
+       "description": "Zomato",
+       "reference": null,
+       "upiId": null,
+       "kind": "spending",
+       "person": null,
+       "category": null,
+       "open": {
+        "type": "expense",
+        "id": "x-l3"
+       },
+       "expenseId": "x-l3",
+       "incomeId": null
+      },
+      {
+       "id": "l4",
+       "scope": "account:a1",
+       "date": "2026-09-20",
+       "amount": 300,
+       "direction": "debit",
+       "description": "Chai Point",
+       "reference": null,
+       "upiId": null,
+       "kind": "spending",
+       "person": null,
+       "category": null,
+       "open": {
+        "type": "expense",
+        "id": "x-l4"
+       },
+       "expenseId": "x-l4",
+       "incomeId": null
+      },
+      {
+       "id": "l2",
+       "scope": "account:a1",
+       "date": "2026-09-07",
+       "amount": 1200,
+       "direction": "debit",
+       "description": "Big Bazaar",
+       "reference": null,
+       "upiId": null,
+       "kind": "spending",
+       "person": null,
+       "category": null,
+       "open": {
+        "type": "expense",
+        "id": "x-l2"
+       },
+       "expenseId": "x-l2",
+       "incomeId": null
+      }
+     ],
+     "lineCandidates": [],
+     "elsewhere": null,
+     "duplicateOf": null,
+     "key": "2026-09-15|64900|debit|upi dr 6612 netflix#1",
+     "line": {
+      "key": "2026-09-15|64900|debit|upi dr 6612 netflix#1",
+      "itemId": "s:4",
+      "scope": "account:a1",
+      "date": "2026-09-15",
+      "amount": 649,
+      "direction": "debit",
+      "description": "UPI/DR/6612/NETFLIX",
+      "rawDescription": "UPI/DR/6612/NETFLIX",
+      "counterparty": "Netflix",
+      "reference": null,
+      "upiId": null,
+      "time": null,
+      "kind": "spending",
+      "ownTransfer": false,
+      "statementIds": [
+       "s"
+      ],
+      "onFullStatement": true,
+      "confidence": 1,
+      "issues": [],
+      "sourceAccount": null
+     },
+     "movement": null,
+     "date": "2026-09-15",
+     "amount": 649,
+     "direction": "debit",
+     "kind": "spending",
+     "difference": null,
+     "status": "missing",
+     "issue": "notInApp",
+     "reasons": [
+      "nothing recorded with this amount nearby"
+     ],
+     "id": "account:a1|2026-09-15|64900|debit|upi dr 6612 netflix#1",
+     "scope": "account:a1",
+     "decision": null,
+     "resolved": false,
+     "balanceEffect": -649
+    },
+    {
+     "candidates": [],
+     "lineCandidates": [],
+     "elsewhere": null,
+     "duplicateOf": null,
+     "key": "2026-09-12|54000|debit|upi dr 5512 zomato#1",
+     "line": {
+      "key": "2026-09-12|54000|debit|upi dr 5512 zomato#1",
+      "itemId": "s:3",
+      "scope": "account:a1",
+      "date": "2026-09-12",
+      "amount": 540,
+      "direction": "debit",
+      "description": "UPI/DR/5512/ZOMATO",
+      "rawDescription": "UPI/DR/5512/ZOMATO",
+      "counterparty": "Zomato",
+      "reference": null,
+      "upiId": null,
+      "time": null,
+      "kind": "spending",
+      "ownTransfer": false,
+      "statementIds": [
+       "s"
+      ],
+      "onFullStatement": true,
+      "confidence": 1,
+      "issues": [],
+      "sourceAccount": null
+     },
+     "movement": {
+      "id": "l3",
+      "scope": "account:a1",
+      "date": "2026-09-12",
+      "amount": 450,
+      "direction": "debit",
+      "description": "Zomato",
+      "reference": null,
+      "upiId": null,
+      "kind": "spending",
+      "person": null,
+      "category": null,
+      "open": {
+       "type": "expense",
+       "id": "x-l3"
+      },
+      "expenseId": "x-l3",
+      "incomeId": null
+     },
+     "date": "2026-09-12",
+     "amount": 540,
+     "direction": "debit",
+     "kind": "spending",
+     "status": "mismatch",
+     "issue": "amount",
+     "difference": 90,
+     "reasons": [
+      "both name “Zomato”",
+      "same day",
+      "amounts differ"
+     ],
+     "id": "account:a1|2026-09-12|54000|debit|upi dr 5512 zomato#1",
+     "scope": "account:a1",
+     "decision": null,
+     "resolved": false,
+     "balanceEffect": -90
+    },
+    {
+     "candidates": [],
+     "lineCandidates": [
+      {
+       "key": "2026-09-15|64900|debit|upi dr 6612 netflix#1",
+       "itemId": "s:4",
+       "scope": "account:a1",
+       "date": "2026-09-15",
+       "amount": 649,
+       "direction": "debit",
+       "description": "UPI/DR/6612/NETFLIX",
+       "rawDescription": "UPI/DR/6612/NETFLIX",
+       "counterparty": "Netflix",
+       "reference": null,
+       "upiId": null,
+       "time": null,
+       "kind": "spending",
+       "ownTransfer": false,
+       "statementIds": [
+        "s"
+       ],
+       "onFullStatement": true,
+       "confidence": 1,
+       "issues": [],
+       "sourceAccount": null
+      }
+     ],
+     "elsewhere": null,
+     "duplicateOf": {
+      "id": "l4",
+      "scope": "account:a1",
+      "date": "2026-09-20",
+      "amount": 300,
+      "direction": "debit",
+      "description": "Chai Point",
+      "reference": null,
+      "upiId": null,
+      "kind": "spending",
+      "person": null,
+      "category": null,
+      "open": {
+       "type": "expense",
+       "id": "x-l4"
+      },
+      "expenseId": "x-l4",
+      "incomeId": null
+     },
+     "key": "entry:l5",
+     "line": null,
+     "movement": {
+      "id": "l5",
+      "scope": "account:a1",
+      "date": "2026-09-20",
+      "amount": 300,
+      "direction": "debit",
+      "description": "Chai Point",
+      "reference": null,
+      "upiId": null,
+      "kind": "spending",
+      "person": null,
+      "category": null,
+      "open": {
+       "type": "expense",
+       "id": "x-l5"
+      },
+      "expenseId": "x-l5",
+      "incomeId": null
+     },
+     "date": "2026-09-20",
+     "amount": 300,
+     "direction": "debit",
+     "kind": "spending",
+     "difference": null,
+     "status": "duplicate",
+     "issue": "appDuplicate",
+     "reasons": [
+      "same amount",
+      "same day",
+      "the statement shows it once"
+     ],
+     "id": "account:a1|entry:l5",
+     "scope": "account:a1",
+     "decision": null,
+     "resolved": false,
+     "balanceEffect": 300
+    },
+    {
+     "candidates": [],
+     "lineCandidates": [],
+     "elsewhere": null,
+     "duplicateOf": null,
+     "key": "2026-09-20|30000|debit|upi dr 7781 chai point#1",
+     "line": {
+      "key": "2026-09-20|30000|debit|upi dr 7781 chai point#1",
+      "itemId": "s:5",
+      "scope": "account:a1",
+      "date": "2026-09-20",
+      "amount": 300,
+      "direction": "debit",
+      "description": "UPI/DR/7781/CHAI POINT",
+      "rawDescription": "UPI/DR/7781/CHAI POINT",
+      "counterparty": "Chai Point",
+      "reference": null,
+      "upiId": null,
+      "time": null,
+      "kind": "spending",
+      "ownTransfer": false,
+      "statementIds": [
+       "s"
+      ],
+      "onFullStatement": true,
+      "confidence": 1,
+      "issues": [],
+      "sourceAccount": null
+     },
+     "movement": {
+      "id": "l4",
+      "scope": "account:a1",
+      "date": "2026-09-20",
+      "amount": 300,
+      "direction": "debit",
+      "description": "Chai Point",
+      "reference": null,
+      "upiId": null,
+      "kind": "spending",
+      "person": null,
+      "category": null,
+      "open": {
+       "type": "expense",
+       "id": "x-l4"
+      },
+      "expenseId": "x-l4",
+      "incomeId": null
+     },
+     "date": "2026-09-20",
+     "amount": 300,
+     "direction": "debit",
+     "kind": "spending",
+     "status": "matched",
+     "issue": "exact",
+     "difference": null,
+     "reasons": [
+      "same date",
+      "same amount",
+      "both name “Chai”"
+     ],
+     "id": "account:a1|2026-09-20|30000|debit|upi dr 7781 chai point#1",
+     "scope": "account:a1",
+     "decision": null,
+     "resolved": false,
+     "balanceEffect": 0
+    },
+    {
+     "candidates": [],
+     "lineCandidates": [],
+     "elsewhere": null,
+     "duplicateOf": null,
+     "key": "2026-09-08|120000|debit|pos bigbazaar#1",
+     "line": {
+      "key": "2026-09-08|120000|debit|pos bigbazaar#1",
+      "itemId": "s:2",
+      "scope": "account:a1",
+      "date": "2026-09-08",
+      "amount": 1200,
+      "direction": "debit",
+      "description": "POS BIGBAZAAR",
+      "rawDescription": "POS BIGBAZAAR",
+      "counterparty": "Big Bazaar",
+      "reference": null,
+      "upiId": null,
+      "time": null,
+      "kind": "spending",
+      "ownTransfer": false,
+      "statementIds": [
+       "s"
+      ],
+      "onFullStatement": true,
+      "confidence": 1,
+      "issues": [],
+      "sourceAccount": null
+     },
+     "movement": {
+      "id": "l2",
+      "scope": "account:a1",
+      "date": "2026-09-07",
+      "amount": 1200,
+      "direction": "debit",
+      "description": "Big Bazaar",
+      "reference": null,
+      "upiId": null,
+      "kind": "spending",
+      "person": null,
+      "category": null,
+      "open": {
+       "type": "expense",
+       "id": "x-l2"
+      },
+      "expenseId": "x-l2",
+      "incomeId": null
+     },
+     "date": "2026-09-08",
+     "amount": 1200,
+     "direction": "debit",
+     "kind": "spending",
+     "status": "matched",
+     "issue": "shifted",
+     "difference": null,
+     "reasons": [
+      "same amount",
+      "1 day apart",
+      "both name “Big”"
+     ],
+     "id": "account:a1|2026-09-08|120000|debit|pos bigbazaar#1",
+     "scope": "account:a1",
+     "decision": null,
+     "resolved": false,
+     "balanceEffect": 0
+    },
+    {
+     "candidates": [],
+     "lineCandidates": [],
+     "elsewhere": null,
+     "duplicateOf": null,
+     "key": "2026-09-02|5000000|credit|neft cr acme payroll#1",
+     "line": {
+      "key": "2026-09-02|5000000|credit|neft cr acme payroll#1",
+      "itemId": "s:1",
+      "scope": "account:a1",
+      "date": "2026-09-02",
+      "amount": 50000,
+      "direction": "credit",
+      "description": "NEFT CR-ACME PAYROLL",
+      "rawDescription": "NEFT CR-ACME PAYROLL",
+      "counterparty": "ACME Payroll",
+      "reference": null,
+      "upiId": null,
+      "time": null,
+      "kind": "income",
+      "ownTransfer": false,
+      "statementIds": [
+       "s"
+      ],
+      "onFullStatement": true,
+      "confidence": 1,
+      "issues": [],
+      "sourceAccount": null
+     },
+     "movement": {
+      "id": "l1",
+      "scope": "account:a1",
+      "date": "2026-09-02",
+      "amount": 50000,
+      "direction": "credit",
+      "description": "Salary",
+      "reference": null,
+      "upiId": null,
+      "kind": "income",
+      "person": null,
+      "category": null,
+      "open": {
+       "type": "income",
+       "id": "i-l1"
+      },
+      "expenseId": null,
+      "incomeId": "i-l1"
+     },
+     "date": "2026-09-02",
+     "amount": 50000,
+     "direction": "credit",
+     "kind": "income",
+     "status": "matched",
+     "issue": "exact",
+     "difference": null,
+     "reasons": [
+      "same date",
+      "same amount"
+     ],
+     "id": "account:a1|2026-09-02|5000000|credit|neft cr acme payroll#1",
+     "scope": "account:a1",
+     "decision": null,
+     "resolved": false,
+     "balanceEffect": 0
+    }
+   ],
+   "counts": {
+    "matched": 3,
+    "missing": 2,
+    "duplicate": 1,
+    "mismatch": 1,
+    "review": 0,
+    "open": 4,
+    "resolved": 0,
+    "total": 7
+   }
+  },
+  "texts": {
+   "items": {
+    "account:a1|entry:l6": {
+     "title": "Not on the statement",
+     "explanation": "Recorded in the app (₹700.00 out on 17 Sep) but not on the statement. If it didn't happen, delete it; if it was cash or another account, change its account."
+    },
+    "account:a1|2026-09-15|64900|debit|upi dr 6612 netflix#1": {
+     "title": "Not in the app",
+     "explanation": "The statement shows ₹649.00 out on 15 Sep that isn't recorded in the app. Add it from Import, or link it if it is recorded differently."
+    },
+    "account:a1|2026-09-12|54000|debit|upi dr 5512 zomato#1": {
+     "title": "Amount differs",
+     "explanation": "The statement shows ₹540.00, the app ₹450.00 — ₹90.00 more on the statement. Correct the amount in the app if the statement is right."
+    },
+    "account:a1|entry:l5": {
+     "title": "Recorded twice?",
+     "explanation": "The app has ₹300.00 on 20 Sep twice, the statement only once. If it's the same payment, delete the extra one."
+    },
+    "account:a1|2026-09-20|30000|debit|upi dr 7781 chai point#1": {
+     "title": "Matches",
+     "explanation": "Same date, amount and direction on the statement and in the app."
+    },
+    "account:a1|2026-09-08|120000|debit|pos bigbazaar#1": {
+     "title": "Matches, posted later",
+     "explanation": "Same amount, 1 day apart — the bank posted it later. Counted as a match."
+    },
+    "account:a1|2026-09-02|5000000|credit|neft cr acme payroll#1": {
+     "title": "Matches",
+     "explanation": "Same date, amount and direction on the statement and in the app."
+    }
+   },
+   "scopes": {
+    "account:a1": {
+     "label": "Savings ••1234",
+     "headline": "The app's balance on 30 Sep 2026 is ₹261.00 lower than the statement's",
+     "lines": [
+      "₹261.00 comes from the 4 discrepancies listed below."
+     ],
+     "agrees": false
+    }
+   },
+   "statements": {
+    "s": "Test Bank statement"
+   }
+  },
+  "constants": {
+   "statuses": [
+    "missing",
+    "mismatch",
+    "duplicate",
+    "review",
+    "matched"
+   ],
+   "tiles": [
+    "matched",
+    "missing",
+    "duplicate",
+    "mismatch",
+    "review"
+   ],
+   "statusLabels": {
+    "matched": "Matched",
+    "missing": "Missing",
+    "duplicate": "Possible duplicates",
+    "mismatch": "Mismatches",
+    "review": "To review"
+   },
+   "statusMarks": {
+    "matched": "✅",
+    "missing": "🔴",
+    "duplicate": "🟠",
+    "mismatch": "🟡",
+    "review": "🔵"
+   },
+   "statusHints": {
+    "matched": "On the statement and in the app, the same",
+    "missing": "On one side only",
+    "duplicate": "In the app more often than on the statement",
+    "mismatch": "Amount, direction, account or type differs",
+    "review": "Possible matches and rows to check"
+   },
+   "kinds": [
+    "spending",
+    "income",
+    "paidFor",
+    "repayment",
+    "transfer",
+    "cardBill",
+    "refund",
+    "charges",
+    "other"
+   ],
+   "kindLabels": {
+    "spending": "Spending",
+    "income": "Income",
+    "paidFor": "Paid for someone",
+    "repayment": "Repayments",
+    "transfer": "Transfers between your accounts",
+    "cardBill": "Card bill payments",
+    "refund": "Refunds & money back",
+    "charges": "Fees & interest",
+    "other": "Cash & other movements"
+   },
+   "countedKinds": [
+    "spending",
+    "income"
+   ]
+  }
+ }
+}

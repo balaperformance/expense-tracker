@@ -22,6 +22,16 @@ typedef _Recorded = ({
   List<Map<String, Object?>> recorded,
 });
 
+/// A credit card's statement is read like an account's: its rows carry the
+/// card's id. It is only ever reconciled, never imported.
+BankAccount cardAsAccount(CreditCard card) => BankAccount(
+      id: card.id,
+      userId: card.userId,
+      bankName: card.issuer,
+      nickname: card.cardName,
+      last4: card.last4,
+    );
+
 /// One reviewable statement row. A thin typed view over the engine's JSON —
 /// the engine owns the shape, so edits round-trip through it unchanged.
 class ImportRow {
@@ -316,6 +326,10 @@ class StatementImportProvider extends AsyncProvider {
 
   String? _userId;
   BankAccount? _account;
+
+  /// Set when the statement is a credit card's: it is reconciled only — a
+  /// card's purchases are added on the card itself.
+  CreditCard? _card;
   List<BankAccount> _accounts = <BankAccount>[];
   List<ExpenseCategory> _categories = <ExpenseCategory>[];
   List<CreditCard> _cards = <CreditCard>[];
@@ -341,7 +355,15 @@ class StatementImportProvider extends AsyncProvider {
   ImportOutcome? _outcome;
 
   BankAccount? get account => _account;
+
+  /// The card the statement is for, when it is a card's (reconcile only).
+  CreditCard? get card => _card;
   List<BankAccount> get accounts => List<BankAccount>.unmodifiable(_accounts);
+
+  /// The review items in the engine's shape — what a reconciliation compares.
+  /// A new list after every change, so a reader can tell when to compare
+  /// again; never modify it.
+  List<Map<String, Object?>> get itemsJson => _items;
   List<ImportedStatement> get statements =>
       List<ImportedStatement>.unmodifiable(_statements);
   List<ImportRow> get rows => _items
@@ -376,17 +398,23 @@ class StatementImportProvider extends AsyncProvider {
       .where((ImportRow r) => r.selected && r.uncheckedDuplicate)
       .length;
 
-  /// Starts a session for [account]. Picking another account starts over.
+  /// Starts a session for [account] — or, with [card], for a credit card's
+  /// statement, read like an account's with its rows carrying the card's id.
+  /// Picking another account or card starts over.
   void begin({
     required String userId,
-    required BankAccount account,
+    BankAccount? account,
+    CreditCard? card,
     required List<BankAccount> accounts,
     required List<ExpenseCategory> categories,
     required List<CreditCard> cards,
   }) {
-    if (_account?.id != account.id || _userId != userId) {
+    final BankAccount? target = account ?? (card == null ? null : cardAsAccount(card));
+    if (target == null) return;
+    if (_account?.id != target.id || _userId != userId) {
       _clearSession();
-      _account = account;
+      _account = target;
+      _card = account == null ? card : null;
       _userId = userId;
     }
     _accounts = accounts;
@@ -1059,6 +1087,13 @@ class StatementImportProvider extends AsyncProvider {
   }
 
   /// Starts a fresh session for the same account.
+  /// Leaves the import's result for the review again — to check the
+  /// reconciliation once the rows are in. Nothing is read or written.
+  void reviewAgain() {
+    _outcome = null;
+    safeNotify();
+  }
+
   void startOver() {
     final BankAccount? account = _account;
     final String? userId = _userId;
@@ -1090,6 +1125,7 @@ class StatementImportProvider extends AsyncProvider {
   void reset() {
     _clearSession();
     _account = null;
+    _card = null;
     _userId = null;
     safeNotify();
   }
