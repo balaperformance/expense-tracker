@@ -1,30 +1,25 @@
 import '../core/utils/date_utils.dart';
 import '../models/analytics.dart';
-import '../models/budget.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../models/income.dart';
-import '../repositories/budget_repository.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/income_repository.dart';
 import 'async_state.dart';
 
 /// Builds everything the dashboard shows in one pass.
 ///
-/// The five underlying reads are issued concurrently, and the result is cached
+/// The underlying reads are issued concurrently, and the result is cached
 /// until something invalidates it, so switching tabs does not re-query.
 class DashboardProvider extends AsyncProvider {
   DashboardProvider({
     required ExpenseRepository expenses,
     required IncomeRepository income,
-    required BudgetRepository budgets,
   })  : _expenses = expenses,
-        _income = income,
-        _budgets = budgets;
+        _income = income;
 
   final ExpenseRepository _expenses;
   final IncomeRepository _income;
-  final BudgetRepository _budgets;
 
   static const int _trendMonths = 6;
 
@@ -63,36 +58,35 @@ class DashboardProvider extends AsyncProvider {
     final DateTime trendEnd = AppDateUtils.addMonths(anchor, 1);
 
     try {
-      // Purchases paid for someone else are owed back, not spending.
-      final Set<String> paidFor =
-          await _expenses.fetchPaidForExpenseIds(userId: userId);
+      // Purchases paid for someone else are owed back, not spending. Only the
+      // expense trend needs them, so every other read starts at once.
+      final Future<Set<String>> paidForRead =
+          _expenses.fetchPaidForExpenseIds(userId: userId);
       final List<Object> results = await Future.wait(<Future<Object>>[
+        paidForRead,
         _expenses.fetchForMonth(userId: userId, month: anchor),
         _income.fetchForMonth(userId: userId, month: anchor),
-        _expenses.fetchMonthlyTotals(
-          userId: userId,
-          from: trendStart,
-          toExclusive: trendEnd,
-          exclude: paidFor,
-        ),
+        paidForRead.then((Set<String> paidFor) => _expenses.fetchMonthlyTotals(
+              userId: userId,
+              from: trendStart,
+              toExclusive: trendEnd,
+              exclude: paidFor,
+            )),
         _income.fetchMonthlyTotals(
           userId: userId,
           from: trendStart,
           toExclusive: trendEnd,
         ),
-        _budgets
-            .fetchOverall(userId: userId, month: anchor)
-            .then((Budget? b) => <Budget?>[b]),
       ]);
 
+      final Set<String> paidFor = results[0] as Set<String>;
       final List<Expense> monthExpenses =
-          personalSpending(results[0] as List<Expense>, paidFor);
-      final List<Income> monthIncome = results[1] as List<Income>;
+          personalSpending(results[1] as List<Expense>, paidFor);
+      final List<Income> monthIncome = results[2] as List<Income>;
       final Map<String, double> expenseTotals =
-          results[2] as Map<String, double>;
-      final Map<String, double> incomeTotals =
           results[3] as Map<String, double>;
-      final Budget? overall = (results[4] as List<Budget?>).first;
+      final Map<String, double> incomeTotals =
+          results[4] as Map<String, double>;
 
       final double totalExpense = monthExpenses.fold<double>(
         0,
@@ -112,12 +106,10 @@ class DashboardProvider extends AsyncProvider {
         trend: months
             .map((DateTime m) => MonthlyPoint(
                   month: m,
-                  expense: expenseTotals[_key(m)] ?? 0,
-                  income: incomeTotals[_key(m)] ?? 0,
+                  expense: expenseTotals[AppDateUtils.monthKey(m)] ?? 0,
+                  income: incomeTotals[AppDateUtils.monthKey(m)] ?? 0,
                 ))
             .toList(),
-        overallBudget: overall?.amount,
-        overallSpent: totalExpense,
       );
 
       _stale = false;
@@ -126,9 +118,6 @@ class DashboardProvider extends AsyncProvider {
       setError(error);
     }
   }
-
-  static String _key(DateTime date) =>
-      '${date.year}-${date.month.toString().padLeft(2, '0')}';
 
   void reset() {
     _data = null;

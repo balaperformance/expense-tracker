@@ -53,6 +53,10 @@ class AppDateUtils {
     );
   }
 
+  /// `yyyy-MM` — the key monthly totals are grouped under.
+  static String monthKey(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}';
+
   /// `yyyy-MM-dd` — the wire format for Postgres `date` columns.
   static String toDateString(DateTime date) {
     final String m = date.month.toString().padLeft(2, '0');

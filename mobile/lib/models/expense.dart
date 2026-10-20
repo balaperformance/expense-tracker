@@ -1,6 +1,7 @@
 import '../core/utils/date_utils.dart';
 import 'expense_category.dart';
 import 'payment_method.dart';
+import '../core/utils/text.dart';
 
 /// Row of `public.expenses`, optionally with its joined category and
 /// payment method.
@@ -20,6 +21,9 @@ class Expense {
     this.merchant,
     this.description,
     this.notes,
+    this.emiPlanId,
+    this.emiComponent,
+    this.statementDate,
     this.createdAt,
     this.updatedAt,
     this.category,
@@ -45,6 +49,15 @@ class Expense {
   final String? merchant;
   final String? description;
   final String? notes;
+
+  /// The EMI plan this is an instalment of (migration 016), and which part
+  /// ('principal', 'interest', 'tax' or 'fee').
+  final String? emiPlanId;
+  final String? emiComponent;
+
+  /// The card statement it was billed on, when an import knew it: it is
+  /// filed under that cycle, not the date's.
+  final DateTime? statementDate;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -87,6 +100,11 @@ class Expense {
       merchant: map['merchant'] as String?,
       description: map['description'] as String?,
       notes: map['notes'] as String?,
+      emiPlanId: map['emi_plan_id'] as String?,
+      emiComponent: map['emi_component'] as String?,
+      statementDate: map['statement_date'] == null
+          ? null
+          : AppDateUtils.parseDate(map['statement_date'] as String),
       createdAt: map['created_at'] == null
           ? null
           : DateTime.parse(map['created_at'] as String),
@@ -104,10 +122,13 @@ class Expense {
 
   /// Optional columns are included only when the migration that adds them has
   /// been applied, so the same code works before and after.
+  /// [includeEmi]: migration 016 is in place and the instalment columns
+  /// should be written (a new row); an edit leaves them as they are.
   Map<String, dynamic> toInsertMap({
     required bool includeMerchant,
     required bool includeBankLink,
     bool includeCardLink = false,
+    bool includeEmi = false,
   }) {
     final Map<String, dynamic> map = <String, dynamic>{
       'user_id': userId,
@@ -115,11 +136,12 @@ class Expense {
       'expense_date': AppDateUtils.toDateString(expenseDate),
       'category_id': categoryId,
       'payment_method_id': paymentMethodId,
-      'description': _blankToNull(description),
-      'notes': _blankToNull(notes),
+      'description': blankToNull(description),
+      'notes': blankToNull(notes),
     };
-    if (includeMerchant) map['merchant'] = _blankToNull(merchant);
+    if (includeMerchant) map['merchant'] = blankToNull(merchant);
     _writeFunding(map, includeBankLink, includeCardLink);
+    if (includeEmi) _writeEmi(map);
     return map;
   }
 
@@ -133,12 +155,19 @@ class Expense {
       'expense_date': AppDateUtils.toDateString(expenseDate),
       'category_id': categoryId,
       'payment_method_id': paymentMethodId,
-      'description': _blankToNull(description),
-      'notes': _blankToNull(notes),
+      'description': blankToNull(description),
+      'notes': blankToNull(notes),
     };
-    if (includeMerchant) map['merchant'] = _blankToNull(merchant);
+    if (includeMerchant) map['merchant'] = blankToNull(merchant);
     _writeFunding(map, includeBankLink, includeCardLink);
     return map;
+  }
+
+  void _writeEmi(Map<String, dynamic> map) {
+    map['emi_plan_id'] = emiPlanId;
+    map['emi_component'] = emiComponent;
+    map['statement_date'] =
+        statementDate == null ? null : AppDateUtils.toDateString(statementDate!);
   }
 
   /// One funding source: a card purchase must not also debit a bank account.
@@ -152,11 +181,6 @@ class Expense {
     final String? card = includeCardLink ? creditCardId : null;
     if (includeBankLink) map['bank_account_id'] = card != null ? null : bankAccountId;
     if (includeCardLink) map['credit_card_id'] = card;
-  }
-
-  static String? _blankToNull(String? value) {
-    final String? trimmed = value?.trim();
-    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
   }
 
   Expense copyWith({
@@ -181,6 +205,9 @@ class Expense {
       merchant: merchant ?? this.merchant,
       description: description ?? this.description,
       notes: notes ?? this.notes,
+      emiPlanId: emiPlanId,
+      emiComponent: emiComponent,
+      statementDate: statementDate,
       createdAt: createdAt,
       updatedAt: updatedAt,
       category: category,

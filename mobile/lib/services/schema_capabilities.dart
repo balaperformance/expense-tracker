@@ -43,6 +43,7 @@ class SchemaCapabilities {
   static bool _notificationClear = false;
   static bool _cashAccount = false;
   static bool _reconciliation = false;
+  static bool _emi = false;
 
   static bool get resolved => _resolved;
 
@@ -107,6 +108,11 @@ class SchemaCapabilities {
   /// devices. Without it the decisions last as long as the screen.
   static bool get reconciliation => _reconciliation;
 
+  /// `emi_plans`, the EMI columns on expenses, credit_card_transactions and
+  /// receivables (migration 016): card statement screenshots imported with
+  /// EMI instalments grouped, and EMIs someone else pays back. Builds on 005.
+  static bool get emi => _emi;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -131,6 +137,7 @@ class SchemaCapabilities {
       if (!_cashAccount) 'cash balance (011)',
       if (!_notificationClear) 'clearing read notifications (012)',
       if (!_reconciliation) 'statement reconciliation decisions (015)',
+      if (!_emi) 'card statement import and EMI plans (016)',
     ];
     return missing.join(', ');
   }
@@ -182,6 +189,14 @@ class SchemaCapabilities {
               // 20: statement reconciliation decisions (015).
               _probe(client, 'reconciliation_decisions',
                   'id, scope_type, scope_id, item_key, action, entry_id, note'),
+              // 21–24: card statement import and EMI plans (016).
+              _probe(client, 'emi_plans',
+                  'id, card_id, title, person, include_charges, purchase_amount, '
+                      'monthly_amount, tenure_months, start_date, category_id, is_closed'),
+              _probe(client, 'expenses', 'emi_plan_id, emi_component, statement_date'),
+              _probe(client, 'credit_card_transactions',
+                  'emi_plan_id, emi_component, statement_date'),
+              _probe(client, 'receivables', 'emi_plan_id'),
             ]));
 
     _merchant = results[0];
@@ -199,6 +214,8 @@ class SchemaCapabilities {
     _cashAccount = _bankAccounts && results[19];
     // Decisions name ledger rows and card entries: only useful with accounts.
     _reconciliation = _bankAccounts && results[20];
+    // One migration adds every part, and plans paid by someone else are claims.
+    _emi = _treatments && results.sublist(21, 25).every((bool present) => present);
     _resolved = true;
   }
 
@@ -245,6 +262,7 @@ class SchemaCapabilities {
     bool? notificationClear,
     bool? cashAccount,
     bool? reconciliation,
+    bool? emi,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -260,6 +278,7 @@ class SchemaCapabilities {
     _notificationClear = notificationClear ?? _notificationClear;
     _cashAccount = cashAccount ?? _cashAccount;
     _reconciliation = reconciliation ?? _reconciliation;
+    _emi = emi ?? _emi;
     _resolved = true;
   }
 
@@ -279,5 +298,6 @@ class SchemaCapabilities {
     _notificationClear = false;
     _cashAccount = false;
     _reconciliation = false;
+    _emi = false;
   }
 }

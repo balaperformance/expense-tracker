@@ -661,6 +661,21 @@ class StatementImportProvider extends AsyncProvider {
             'person': c.receivable.person,
             'left': amountLeft(c),
             'date': AppDateUtils.toDateString(c.source!.date),
+            // How far past 'left' a repayment may go: an EMI's rounding allowance.
+            if (c.source!.emiPlanId != null) 'allowance': c.allowance,
+            // An EMI someone else pays back: a credit of exactly one
+            // instalment is suggested even when the narration names nobody.
+            if (c.source!.emiPlanId != null)
+              'emi': <String, Object?>{
+                'title': c.source!.title.replaceFirst(RegExp(r'^EMI · '), ''),
+                'installments': <Map<String, Object?>>[
+                  for (final EmiClaimInstallment i in c.source!.installments)
+                    <String, Object?>{
+                      'date': AppDateUtils.toDateString(i.date),
+                      'amount': i.amount,
+                    },
+                ],
+              },
           },
     ];
     _people = knownPeople(claims);
@@ -818,11 +833,16 @@ class StatementImportProvider extends AsyncProvider {
         (byAccount[op['bankAccountId']! as String] ??= <DateTime>[])
             .add(AppDateUtils.parseDate(op['date']! as String));
       }
-      final List<Map<String, Object?>> fresh = <Map<String, Object?>>[];
-      for (final MapEntry<String, List<DateTime>> entry in byAccount.entries) {
-        final List<DateTime> dates = entry.value..sort();
-        fresh.addAll(await _existingBetween(dates.first, dates.last, <String>{entry.key}));
-      }
+      // One read per account, side by side; the order is kept.
+      final List<List<Map<String, Object?>>> perAccount = await Future.wait(
+        byAccount.entries.map((MapEntry<String, List<DateTime>> entry) {
+          final List<DateTime> dates = entry.value..sort();
+          return _existingBetween(dates.first, dates.last, <String>{entry.key});
+        }),
+      );
+      final List<Map<String, Object?>> fresh = <Map<String, Object?>>[
+        for (final List<Map<String, Object?>> rows in perAccount) ...rows,
+      ];
       final ImportPreview finalPlan = ImportPreview((await _engine.call('finalPlan', <String, Object?>{
         'plan': preview.json,
         'items': _items,
@@ -912,19 +932,25 @@ class StatementImportProvider extends AsyncProvider {
         )) as List<Object?>?) ??
         const <Object?>[];
     if (windows.isEmpty) return <String, String>{};
-    final Set<String> lent = await _ledger.fetchLentEntryIds(userId: userId);
-    final List<Map<String, Object?>> entries = <Map<String, Object?>>[];
-    for (final Object? window in windows) {
-      final Map<String, Object?> w = window! as Map<String, Object?>;
-      final List<LedgerEntry> rows = await _ledger.fetchForAccount(
-        userId: userId,
-        accountId: w['accountId']! as String,
-        from: AppDateUtils.parseDate(w['from']! as String),
-        toExclusive: AppDateUtils.parseDate(w['toExclusive']! as String),
-      );
-      entries.addAll(rows.map(
-          (LedgerEntry e) => EngineJson.ledgerEntry(e, lent: lent.contains(e.id))));
-    }
+    // The money-lent ids and every window's rows, read side by side.
+    final List<Object> read = await Future.wait(<Future<Object>>[
+      _ledger.fetchLentEntryIds(userId: userId),
+      Future.wait(windows.map((Object? window) {
+        final Map<String, Object?> w = window! as Map<String, Object?>;
+        return _ledger.fetchForAccount(
+          userId: userId,
+          accountId: w['accountId']! as String,
+          from: AppDateUtils.parseDate(w['from']! as String),
+          toExclusive: AppDateUtils.parseDate(w['toExclusive']! as String),
+        );
+      })),
+    ]);
+    final Set<String> lent = read[0] as Set<String>;
+    final List<List<LedgerEntry>> perWindow = read[1] as List<List<LedgerEntry>>;
+    final List<Map<String, Object?>> entries = <Map<String, Object?>>[
+      for (final List<LedgerEntry> rows in perWindow)
+        ...rows.map((LedgerEntry e) => EngineJson.ledgerEntry(e, lent: lent.contains(e.id))),
+    ];
     final Object? found = await _engine.call('autoMatches', <String, Object?>{
       'operations': operations,
       'entries': entries,

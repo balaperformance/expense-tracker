@@ -37,12 +37,12 @@ class _CardFormSheetState extends State<CardFormSheet> {
   late final TextEditingController _last4 =
       TextEditingController(text: widget.card?.last4 ?? '');
   late final TextEditingController _limit = TextEditingController(
-    text: widget.card == null ? '' : _trim(widget.card!.creditLimit),
+    text: widget.card == null ? '' : Formatters.amountInput(widget.card!.creditLimit),
   );
   late final TextEditingController _opening = TextEditingController(
     text: widget.card == null || widget.card!.openingOutstanding == 0
         ? ''
-        : _trim(widget.card!.openingOutstanding),
+        : Formatters.amountInput(widget.card!.openingOutstanding),
   );
   late final TextEditingController _notes =
       TextEditingController(text: widget.card?.notes ?? '');
@@ -57,11 +57,6 @@ class _CardFormSheetState extends State<CardFormSheet> {
   String? _error;
 
   bool get _isEditing => widget.card != null;
-
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-  }
 
   @override
   void dispose() {

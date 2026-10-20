@@ -254,7 +254,6 @@ class ReconciliationProvider extends AsyncProvider {
   Set<String> get countedKinds => _strings('countedKinds').toSet();
   String statusLabel(String status) => _label('statusLabels', status);
   String statusMark(String status) => _label('statusMarks', status);
-  String statusHint(String status) => _label('statusHints', status);
   String kindLabel(String kind) => _label('kindLabels', kind);
 
   @override

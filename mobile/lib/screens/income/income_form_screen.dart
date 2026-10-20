@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,11 +8,15 @@ import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
 import '../../models/bank_account.dart';
+import '../../models/emi_reimbursement.dart';
 import '../../models/income.dart';
 import '../../models/tag.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
+import '../../providers/credit_card_provider.dart';
+import '../../providers/dashboard_provider.dart';
 import '../../providers/income_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/schema_capabilities.dart';
 import '../../widgets/account_choice_chips.dart';
@@ -21,6 +27,7 @@ import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/tag_field.dart';
+import 'emi_reimbursement_fields.dart';
 
 /// Create or edit an income entry.
 ///
@@ -29,9 +36,12 @@ import '../../widgets/tag_field.dart';
 /// Fewer fields, because the `income` table stores only amount, source, date
 /// and description.
 class IncomeFormScreen extends StatefulWidget {
-  const IncomeFormScreen({super.key, this.income});
+  const IncomeFormScreen({super.key, this.income, this.emiReimbursement = false});
 
   final Income? income;
+
+  /// Opens on "Card EMI reimbursement" rather than income.
+  final bool emiReimbursement;
 
   bool get isEditing => income != null;
 
@@ -81,19 +91,47 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
   /// its own tags are known.
   bool get _showTags => _tagsOffered && (!widget.isEditing || _tagsRead);
 
+  // "Credit card EMI reimbursement (paid by someone else)": money in that pays
+  // back an EMI someone else owes — a repayment of the EMI's claim, never income.
+  late final bool _offerEmi =
+      SchemaCapabilities.emi && SchemaCapabilities.bankAccounts;
+  late bool _emiMode = _offerEmi && widget.emiReimbursement;
+  String? _emiCardId;
+  String? _planId;
+  String? _emiAccountId;
+  EmiReimbursementProblem? _emiProblem;
+  final TextEditingController _person = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     final Income? existing = widget.income;
     _bankAccountId = existing?.bankAccountId;
     _amount = TextEditingController(
-      text: existing == null ? '' : _trim(existing.amount),
+      text: existing == null ? '' : Formatters.amountInput(existing.amount),
     );
     _source = TextEditingController(text: existing?.source ?? '');
     _description = TextEditingController(text: existing?.description ?? '');
     _date = existing?.incomeDate ?? AppDateUtils.today();
+    _emiAccountId = existing?.bankAccountId;
     _tagsOffered = context.read<IncomeProvider>().tagsAvailable;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTags());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadTags();
+      _loadEmi();
+    });
+  }
+
+  /// The plans, card movements and claims the EMI choices are read from.
+  Future<void> _loadEmi() async {
+    if (!mounted || !_offerEmi) return;
+    final String? userId = context.read<AuthProvider>().userId;
+    if (userId == null) return;
+    await Future.wait(<Future<void>>[
+      context.read<CreditCardProvider>().load(userId: userId),
+      context.read<ReceivableProvider>().load(userId: userId),
+      context.read<BankAccountProvider>().load(userId: userId),
+    ]);
+    if (mounted) setState(() {});
   }
 
   /// The user's tags and, for an edit, the entry's own.
@@ -113,17 +151,13 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
     });
   }
 
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-  }
-
   @override
   void dispose() {
     _amount.dispose();
     _source.dispose();
     _description.dispose();
     _tagDraft.dispose();
+    _person.dispose();
     super.dispose();
   }
 
@@ -147,9 +181,11 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
         ],
       ),
       bottomNavigationBar: _SaveBar(
-        label: widget.isEditing ? 'Save changes' : 'Add income',
+        label: _emiMode
+            ? (widget.isEditing ? 'Save as reimbursement' : 'Record reimbursement')
+            : (widget.isEditing ? 'Save changes' : 'Add income'),
         busy: _saving,
-        onPressed: _save,
+        onPressed: _emiMode ? _saveEmi : _save,
       ),
       body: Form(
         key: _formKey,
@@ -170,6 +206,33 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
             ),
             const SizedBox(height: AppSpacing.xl),
 
+            if (_offerEmi) ...<Widget>[
+              const FieldLabel('Record as'),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<bool>(
+                  segments: const <ButtonSegment<bool>>[
+                    ButtonSegment<bool>(value: false, label: Text('Income')),
+                    ButtonSegment<bool>(
+                      value: true,
+                      label: Text('Card EMI reimbursement'),
+                    ),
+                  ],
+                  selected: <bool>{_emiMode},
+                  showSelectedIcon: false,
+                  onSelectionChanged: _saving
+                      ? null
+                      : (Set<bool> v) => setState(() {
+                            _emiMode = v.first;
+                            _error = null;
+                            _emiProblem = null;
+                          }),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
+            if (_emiMode) ..._emiFields(context, settings) else ...<Widget>[
             const FieldLabel('Source'),
             TextFormField(
               controller: _source,
@@ -263,6 +326,8 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
               ),
             ),
 
+            ],
+
             if (_error != null) ...<Widget>[
               const SizedBox(height: AppSpacing.lg),
               InlineError(message: _error!),
@@ -271,6 +336,137 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
         ),
       ),
     );
+  }
+
+  List<EmiReimbursementOption> _emiOptions() {
+    final CreditCardProvider cards = context.watch<CreditCardProvider>();
+    return emiReimbursementOptions(
+      plans: cards.allPlans,
+      claims: context.watch<ReceivableProvider>().claims,
+      cards: cards.cards,
+      entries: cards.isReady ? cards.allEntries : null,
+      keepPlanId: _planId,
+    );
+  }
+
+  EmiReimbursementOption? _optionFor(List<EmiReimbursementOption> options) {
+    for (final EmiReimbursementOption o in options) {
+      if (o.plan.id == _planId) return o;
+    }
+    return null;
+  }
+
+  List<Widget> _emiFields(BuildContext context, SettingsProvider settings) {
+    final List<EmiReimbursementOption> options = _emiOptions();
+    return <Widget>[
+      const FieldLabel('Date', isRequired: true),
+      DateField(
+        date: _date,
+        enabled: !_saving,
+        onChanged: (DateTime value) => setState(() => _date = value),
+      ),
+      const SizedBox(height: AppSpacing.lg),
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _amount,
+        builder: (BuildContext context, TextEditingValue value, _) =>
+            EmiReimbursementFields(
+          options: options,
+          cards: context.watch<CreditCardProvider>().cards,
+          cardId: _emiCardId,
+          onCard: (String? id) => setState(() => _emiCardId = id),
+          planId: _planId,
+          onPlan: (String id) => setState(() {
+            _planId = id;
+            _emiProblem = null;
+            _error = null;
+          }),
+          person: _person,
+          people: context.watch<ReceivableProvider>().people,
+          accounts: context.watch<BankAccountProvider>().accounts,
+          accountId: _emiAccountId,
+          onAccount: (String id) => setState(() => _emiAccountId = id),
+          amount: Validators.parseAmount(value.text),
+          onUseAmount: (double amount) => _amount.text = Formatters.amountInput(amount),
+          note: _description,
+          problem: _emiProblem,
+          currency: settings.currency,
+          enabled: !_saving,
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _saveEmi() async {
+    FocusScope.of(context).unfocus();
+    setState(() => _error = null);
+    // The amount field's own check first (required, a number, within the
+    // limit), with its message under the field — as in income mode.
+    if (!_formKey.currentState!.validate()) return;
+    final String currency = context.read<SettingsProvider>().currency;
+    final CreditCardProvider cards = context.read<CreditCardProvider>();
+    final EmiReimbursementOption? option = _optionFor(emiReimbursementOptions(
+      plans: cards.allPlans,
+      claims: context.read<ReceivableProvider>().claims,
+      cards: cards.cards,
+      entries: cards.isReady ? cards.allEntries : null,
+      keepPlanId: _planId,
+    ));
+    final double? amount = Validators.parseAmount(_amount.text);
+    final EmiReimbursementProblem? problem = emiReimbursementProblem(
+      option: option,
+      person: _person.text,
+      accountId: _emiAccountId,
+      amount: amount,
+    );
+    if (problem != null) {
+      setState(() {
+        _emiProblem = problem;
+        _error = emiReimbursementProblemMessage(problem, option, emiMoney(currency));
+      });
+      return;
+    }
+    setState(() => _saving = true);
+    final Income? existing = widget.income;
+    final ({bool ok, String? warning}) result = await cards.recordEmiReimbursement(
+      plan: option!.plan,
+      person: _person.text,
+      accountId: _emiAccountId!,
+      amount: amount!,
+      date: _date,
+      left: option.left,
+      allowance: option.allowance,
+      note: _description.text,
+      fromIncome: existing == null
+          ? null
+          : (id: existing.id, bankAccountId: existing.bankAccountId),
+    );
+    if (!mounted) return;
+    if (!result.ok) {
+      setState(() {
+        _saving = false;
+        _error = cards.errorMessage ?? 'Could not record the reimbursement.';
+      });
+      return;
+    }
+    // What a repayment moves: the balance it landed in, what is owed, the
+    // dashboard — and the income list when an income was replaced.
+    final String? userId = context.read<AuthProvider>().userId;
+    final BankAccountProvider accounts = context.read<BankAccountProvider>();
+    context.read<ReceivableProvider>().invalidate();
+    context.read<DashboardProvider?>()?.invalidate();
+    if (existing != null) unawaited(context.read<IncomeProvider>().refresh());
+    if (userId != null) {
+      accounts.invalidate();
+      unawaited(accounts.load(userId: userId, force: true));
+    }
+    AppFeedback.success(
+      context,
+      existing != null
+          ? 'Recorded as an EMI reimbursement — no longer income'
+          : 'EMI reimbursement recorded',
+    );
+    if (result.warning != null) AppFeedback.error(context, result.warning!);
+    Navigator.of(context).pop(true);
   }
 
   Future<void> _save() async {

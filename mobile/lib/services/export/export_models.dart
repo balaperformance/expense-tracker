@@ -9,6 +9,8 @@
 /// figure in every report is unit-testable without a device.
 library;
 
+import '../../core/utils/date_utils.dart';
+
 /// What a report is rendered to.
 enum ExportFormat { csv, pdf }
 
@@ -305,18 +307,13 @@ class ExportDateRange {
 
   /// The period token used in filenames.
   String get fileToken => isWholeMonth
-      ? '${start.year}-${_two(start.month)}'
-      : '${_iso(start)}_to_${_iso(endInclusive)}';
+      ? AppDateUtils.monthKey(start)
+      : '${AppDateUtils.toDateString(start)}_to_${AppDateUtils.toDateString(endInclusive)}';
 
   bool contains(DateTime date) {
     final DateTime day = DateTime(date.year, date.month, date.day);
     return !day.isBefore(start) && !day.isAfter(endInclusive);
   }
-
-  static String _iso(DateTime d) =>
-      '${d.year}-${_two(d.month)}-${_two(d.day)}';
-
-  static String _two(int value) => value.toString().padLeft(2, '0');
 
   @override
   bool operator ==(Object other) =>

@@ -97,7 +97,7 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
     super.initState();
     final SmsExpenseDraft draft = widget.draft;
 
-    _amount = TextEditingController(text: _plain(draft.amount));
+    _amount = TextEditingController(text: Formatters.amountInput(draft.amount));
     _merchant = TextEditingController(text: draft.merchant ?? '');
     _description = TextEditingController(text: _defaultDescription());
     _date = draft.date;
@@ -157,11 +157,6 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
     _merchant.dispose();
     _description.dispose();
     super.dispose();
-  }
-
-  static String _plain(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
   }
 
   // ---------------------------------------------------------------------

@@ -170,6 +170,10 @@ class StatementProvider extends AsyncProvider {
     return userId;
   }
 
+  /// The debits recorded as money lent (before migration 014), which are
+  /// never offered as a card bill payment.
+  Future<Set<String>> lentEntryIds() => _ledger.fetchLentEntryIds(userId: _requireUser);
+
   /// The claims, tags and income source [entry]'s edit sheet needs. Throws
   /// when the claims or the source cannot be read: opening without them
   /// could mistake money lent for a plain movement, and saving would then

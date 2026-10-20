@@ -5,6 +5,7 @@ import 'credit_card.dart';
 import 'ledger_entry.dart';
 import 'money_transfer.dart';
 import 'receivable.dart';
+import '../core/utils/money.dart';
 
 /// What a recorded bank movement is recorded as — the "Record as" choice of
 /// the account statement's edit sheet — held the way that sheet holds it.
@@ -374,6 +375,7 @@ class SettleOption {
     required this.principal,
     required this.received,
     this.person,
+    this.allowance = 0,
   });
 
   final SettlementTarget target;
@@ -389,10 +391,12 @@ class SettleOption {
   /// What has come back already, not counting this movement.
   final double received;
 
+  /// How far past what is owed a repayment may go: an EMI's rounding
+  /// allowance (₹1 per instalment billed), else 0.
+  final double allowance;
+
   String get key => target.key;
 }
-
-int _cents(double value) => (value * 100).round();
 
 /// Open claims, plus the one [current] points at even if settled.
 /// [excludeEntryId] is the movement being edited — its own earlier amount is
@@ -410,9 +414,9 @@ List<SettleOption> claimOptions({
       .map((ClaimSummary c) {
     final int counted = c.repayments
         .where((ClaimRepayment r) => r.entryId != excludeEntryId)
-        .fold<int>(0, (int sum, ClaimRepayment r) => sum + _cents(r.amount));
+        .fold<int>(0, (int sum, ClaimRepayment r) => sum + toCents(r.amount));
     final double received = counted / 100;
-    final double left = (_cents(c.principal) - counted) / 100;
+    final double left = (toCents(c.principal) - counted) / 100;
     final ClaimSource source = c.source!;
     return SettleOption(
       target: SettlementTarget.claim(c.receivable.id),
@@ -422,6 +426,7 @@ List<SettleOption> claimOptions({
       person: c.receivable.person,
       principal: c.principal,
       received: received,
+      allowance: c.allowance,
     );
   }).toList();
 }
@@ -494,9 +499,13 @@ List<SettleOption> byPersonFirst(List<SettleOption> options, String person) {
 /// What is left on [option] after [amount] more comes back: 0 settles it,
 /// below zero would be more than is owed.
 double leftAfter(SettleOption option, double amount) =>
-    (_cents(option.principal) - _cents(option.received) - _cents(amount)) / 100;
+    (toCents(option.principal) - toCents(option.received) - toCents(amount)) / 100;
 
-/// Whether [amount] pays back more than [option] still has owed — refused,
-/// as it may already be recorded (the database refuses it too, migration 014).
+/// Whether [amount] pays back more than [option] still has owed, plus an
+/// EMI's rounding allowance — refused, as it may already be recorded (the
+/// database refuses it too, migrations 014 and 017).
 bool overpays(SettleOption? option, double? amount) =>
-    option != null && amount != null && amount > 0 && leftAfter(option, amount) < 0;
+    option != null &&
+    amount != null &&
+    amount > 0 &&
+    -toCents(leftAfter(option, amount)) > toCents(option.allowance);

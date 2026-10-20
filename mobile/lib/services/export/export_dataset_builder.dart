@@ -14,6 +14,7 @@
 /// tell them from spending.
 library;
 
+import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/analytics.dart';
 import '../../models/bank_account.dart';
@@ -559,7 +560,7 @@ class ExportDatasetBuilder {
         _bucket(expenses, (Expense e) => e.expenseDate, (Expense e) => e.amount);
     final Map<String, int> counts = <String, int>{};
     for (final Expense e in expenses) {
-      final String key = _monthKey(e.expenseDate);
+      final String key = AppDateUtils.monthKey(e.expenseDate);
       counts[key] = (counts[key] ?? 0) + 1;
     }
 
@@ -613,14 +614,12 @@ class ExportDatasetBuilder {
   ) {
     final Map<String, double> out = <String, double>{};
     for (final T item in items) {
-      final String key = _monthKey(date(item));
+      final String key = AppDateUtils.monthKey(date(item));
       out[key] = (out[key] ?? 0) + value(item);
     }
     return out;
   }
 
-  static String _monthKey(DateTime date) =>
-      '${date.year}-${date.month.toString().padLeft(2, '0')}';
 
   static String _monthLabel(String key) {
     final List<String> parts = key.split('-');

@@ -28,7 +28,7 @@ class ReportsProvider extends AsyncProvider {
   String? _userId;
 
   DateTime get month => _month;
-  ReportData? get report => _cache[_key(_month)];
+  ReportData? get report => _cache[AppDateUtils.monthKey(_month)];
 
   @override
   bool get isEmptyData => report == null;
@@ -63,7 +63,7 @@ class ReportsProvider extends AsyncProvider {
     final String? id = _userId;
     if (id == null) return;
 
-    if (!force && _cache.containsKey(_key(_month))) {
+    if (!force && _cache.containsKey(AppDateUtils.monthKey(_month))) {
       setReady();
       return;
     }
@@ -74,18 +74,20 @@ class ReportsProvider extends AsyncProvider {
         AppDateUtils.trailingMonths(_month, _trendMonths);
 
     try {
-      // Purchases paid for someone else are owed back, not spending.
-      final Set<String> paidFor =
-          await _expenses.fetchPaidForExpenseIds(userId: id);
+      // Purchases paid for someone else are owed back, not spending. Only the
+      // expense trend needs them, so every other read starts at once.
+      final Future<Set<String>> paidForRead =
+          _expenses.fetchPaidForExpenseIds(userId: id);
       final List<Object> results = await Future.wait(<Future<Object>>[
+        paidForRead,
         _expenses.fetchForMonth(userId: id, month: _month),
         _income.fetchForMonth(userId: id, month: _month),
-        _expenses.fetchMonthlyTotals(
-          userId: id,
-          from: months.first,
-          toExclusive: AppDateUtils.addMonths(_month, 1),
-          exclude: paidFor,
-        ),
+        paidForRead.then((Set<String> paidFor) => _expenses.fetchMonthlyTotals(
+              userId: id,
+              from: months.first,
+              toExclusive: AppDateUtils.addMonths(_month, 1),
+              exclude: paidFor,
+            )),
         _income.fetchMonthlyTotals(
           userId: id,
           from: months.first,
@@ -93,18 +95,19 @@ class ReportsProvider extends AsyncProvider {
         ),
       ]);
 
+      final Set<String> paidFor = results[0] as Set<String>;
       final List<Expense> monthExpenses =
-          personalSpending(results[0] as List<Expense>, paidFor);
-      final List<Income> monthIncome = results[1] as List<Income>;
+          personalSpending(results[1] as List<Expense>, paidFor);
+      final List<Income> monthIncome = results[2] as List<Income>;
       final Map<String, double> expenseTotals =
-          results[2] as Map<String, double>;
-      final Map<String, double> incomeTotals =
           results[3] as Map<String, double>;
+      final Map<String, double> incomeTotals =
+          results[4] as Map<String, double>;
 
       final List<CategorySpend> breakdown =
           buildCategoryBreakdown(monthExpenses, categories);
 
-      _cache[_key(_month)] = ReportData(
+      _cache[AppDateUtils.monthKey(_month)] = ReportData(
         month: _month,
         totalExpense: monthExpenses.fold<double>(
           0,
@@ -118,8 +121,8 @@ class ReportsProvider extends AsyncProvider {
         trend: months
             .map((DateTime m) => MonthlyPoint(
                   month: m,
-                  expense: expenseTotals[_key(m)] ?? 0,
-                  income: incomeTotals[_key(m)] ?? 0,
+                  expense: expenseTotals[AppDateUtils.monthKey(m)] ?? 0,
+                  income: incomeTotals[AppDateUtils.monthKey(m)] ?? 0,
                 ))
             .toList(),
         transactionCount: monthExpenses.length,
@@ -131,9 +134,6 @@ class ReportsProvider extends AsyncProvider {
       setError(error);
     }
   }
-
-  static String _key(DateTime date) =>
-      '${date.year}-${date.month.toString().padLeft(2, '0')}';
 
   void reset() {
     _cache.clear();

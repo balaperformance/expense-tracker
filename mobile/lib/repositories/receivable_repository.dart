@@ -5,6 +5,7 @@ import '../core/utils/date_utils.dart';
 import '../models/receivable.dart';
 import '../services/schema_capabilities.dart';
 import 'paging.dart';
+import '../core/utils/money.dart';
 
 /// `public.receivables` (migrations 005 and 014, shared with the web app):
 /// everything paid for someone — a purchase or money lent — and its repayments.
@@ -19,8 +20,9 @@ class ReceivableRepository {
   final SupabaseClient _client;
 
   static const String _table = 'receivables';
-  static const String _select = 'id, user_id, kind, person, ledger_entry_id, '
-      'expense_id, due_date, note, created_at';
+  String get _select => 'id, user_id, kind, person, ledger_entry_id, '
+      'expense_id, due_date, note, created_at'
+      '${SchemaCapabilities.emi ? ', emi_plan_id' : ''}';
 
   /// `in (…)` lists are sent in chunks so a long one never overflows the URL.
   static const int _chunk = 100;
@@ -79,6 +81,8 @@ class ReceivableRepository {
           receivables.map((Receivable r) => r.ledgerEntryId).whereType<String>().toList();
       final List<String> expenseIds =
           receivables.map((Receivable r) => r.expenseId).whereType<String>().toList();
+      final List<String> planIds =
+          receivables.map((Receivable r) => r.emiPlanId).whereType<String>().toList();
       final String purchaseColumns = 'id, amount, expense_date, description'
           '${SchemaCapabilities.merchant ? ', merchant' : ''}'
           '${SchemaCapabilities.expenseBankLink ? ', bank_account_id' : ''}'
@@ -101,6 +105,8 @@ class ReceivableRepository {
             .not('receivable_id', 'is', null)
             .order('id'))),
       ]);
+      final Map<String, ClaimSource> emiSources =
+          planIds.isEmpty ? <String, ClaimSource>{} : await _emiClaimSources(userId, planIds);
 
       final Map<String, Map<String, dynamic>> lentById =
           <String, Map<String, dynamic>>{
@@ -145,6 +151,9 @@ class ReceivableRepository {
             ledgerEntryId: debitByExpense[expenseId],
             expenseId: expenseId,
           );
+        } else if (receivable.emiPlanId != null) {
+          final ClaimSource? source = emiSources[receivable.emiPlanId];
+          if (source != null) sources[receivable.id] = source;
         }
       }
 
@@ -168,6 +177,97 @@ class ReceivableRepository {
     } catch (error) {
       throw ErrorMapper.map(error);
     }
+  }
+
+  /// What an EMI claim is owed, by plan: every principal instalment billed
+  /// so far, plus the interest, GST and fees when the plan includes them —
+  /// the same sum the database's claim_principal() guards repayments with.
+  /// Dated at the first instalment (else the plan's start) so a repayment is
+  /// never "before" it was paid.
+  Future<Map<String, ClaimSource>> _emiClaimSources(
+    String userId,
+    List<String> planIds,
+  ) async {
+    final List<List<Map<String, dynamic>>> read =
+        await Future.wait(<Future<List<Map<String, dynamic>>>>[
+      _rowsWhereIn('emi_plans',
+          'id, card_id, title, include_charges, start_date, created_at', userId, 'id', planIds),
+      fetchAllPages(postgrestPages(() => _client
+          .from('expenses')
+          .select('id, emi_plan_id, amount, expense_date, statement_date')
+          .eq('user_id', userId)
+          .inFilter('emi_plan_id', planIds)
+          .order('id'))),
+      fetchAllPages(postgrestPages(() => _client
+          .from('credit_card_transactions')
+          .select('id, emi_plan_id, amount, direction, txn_date, statement_date')
+          .eq('user_id', userId)
+          .inFilter('emi_plan_id', planIds)
+          .order('id'))),
+    ]);
+    final Map<String, ClaimSource> sources = <String, ClaimSource>{};
+    for (final Map<String, dynamic> plan in read[0]) {
+      final String id = plan['id'] as String;
+      final bool includeCharges = plan['include_charges'] != false;
+      int total = 0;
+      String? first;
+      // One instalment per statement a component was billed on (its own date
+      // when no statement is known).
+      final Map<String, ({String date, int cents})> byStatement =
+          <String, ({String date, int cents})>{};
+      void add(Map<String, dynamic> row, String date, int amount) {
+        final String key =
+            (row['statement_date'] as String?)?.substring(0, 10) ?? date;
+        final ({String date, int cents}) known =
+            byStatement[key] ?? (date: date, cents: 0);
+        byStatement[key] = (
+          date: date.compareTo(known.date) > 0 ? date : known.date,
+          cents: known.cents + amount,
+        );
+      }
+
+      for (final Map<String, dynamic> row in read[1]) {
+        if (row['emi_plan_id'] != id) continue;
+        total += toCents(_amount(row['amount']));
+        final String date = (row['expense_date'] as String).substring(0, 10);
+        if (first == null || date.compareTo(first) < 0) first = date;
+        add(row, date, toCents(_amount(row['amount'])));
+      }
+      for (final Map<String, dynamic> row in read[2]) {
+        if (row['emi_plan_id'] != id) continue;
+        final String date = (row['txn_date'] as String).substring(0, 10);
+        if (first == null || date.compareTo(first) < 0) first = date;
+        if (!includeCharges) continue;
+        final int amount = row['direction'] == 'debit'
+            ? toCents(_amount(row['amount']))
+            : -toCents(_amount(row['amount']));
+        total += amount;
+        add(row, date, amount);
+      }
+      final List<({String date, int cents})> owed = byStatement.values
+          .where((({String date, int cents}) i) => i.cents > 0)
+          .toList()
+        ..sort((({String date, int cents}) a, ({String date, int cents}) b) =>
+            a.date.compareTo(b.date));
+      final String dated = first ??
+          (plan['start_date'] as String?)?.substring(0, 10) ??
+          ((plan['created_at'] as String?) ?? AppDateUtils.toDateString(AppDateUtils.today()))
+              .substring(0, 10);
+      sources[id] = ClaimSource(
+        date: AppDateUtils.parseDate(dated),
+        amount: total / 100,
+        title: 'EMI · ${_clean(plan['title']) ?? 'EMI'}',
+        cardId: plan['card_id'] as String?,
+        emiPlanId: id,
+        installments: owed
+            .map((({String date, int cents}) i) => EmiClaimInstallment(
+                  date: AppDateUtils.parseDate(i.date),
+                  amount: i.cents / 100,
+                ))
+            .toList(),
+      );
+    }
+    return sources;
   }
 
   /// The row [setExpensePaidFor] writes to mark a purchase — what the web app

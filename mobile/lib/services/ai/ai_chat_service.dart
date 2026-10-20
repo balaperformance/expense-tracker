@@ -201,7 +201,6 @@ class SupabaseAiChatService implements AiChatService {
         return AiChatException(
           AiChatFailure.rateLimited,
           serverMessage ?? 'You are sending messages quickly. Give it a moment.',
-          retryAfter: _retryAfter(details),
         );
       case 503:
         return code == 'not_configured'
@@ -224,11 +223,5 @@ class SupabaseAiChatService implements AiChatService {
           'Something went wrong. Please try again.',
         );
     }
-  }
-
-  static Duration? _retryAfter(Object? details) {
-    if (details is! Map) return null;
-    final Object? seconds = details['retry_after'];
-    return seconds is num ? Duration(seconds: seconds.toInt()) : null;
   }
 }

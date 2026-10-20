@@ -49,6 +49,19 @@ What the phone keeps from each row, exactly as the web import does:
 Loans and reimbursements are recorded from the web app; the phone's review
 offers expense, income, refund and transfer.
 
+## Card statement import and EMI plans
+
+A card's screen (*Import screenshots*, when migration `../ui/supabase/016_card_statement_emi.sql`
+has been run) reads screenshots of the card app's transaction list with ML Kit
+on the phone — the picked copies are deleted as soon as their text is out — and
+hands the positioned lines to the engine (`cardItems`, `cardSettle`, `cardView`,
+`cardReduce`, `cardPlan`, `cardFinalPlan`), the web app's own parser, duplicate
+rules, EMI grouping and import plan. The review, the EMI plan form and the
+writes (`CardImportProvider`, `EmiPlanRepository`) are Dart; each month's EMI
+principal, interest and GST stay their own rows and show as one line with a
+breakdown (`models/emi_plan.dart`). A plan someone else pays back is a claim of
+kind `emi`, so its repayments are recorded like any other.
+
 ## Push notifications
 
 > **Not supported in the APK at this time.** Notifications are supported on

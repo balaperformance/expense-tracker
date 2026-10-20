@@ -67,6 +67,9 @@ class Validators {
     return null;
   }
 
+  /// The largest amount the app records — the web's MAX_AMOUNT.
+  static const double maxAmount = 999999999;
+
   /// Amount must parse and be strictly greater than zero.
   static String? amount(String? value) {
     final String input = (value ?? '').trim();
@@ -74,7 +77,7 @@ class Validators {
     final double? parsed = double.tryParse(input.replaceAll(',', ''));
     if (parsed == null) return 'Enter a valid number';
     if (parsed <= 0) return 'Amount must be greater than 0';
-    if (parsed > 999999999) return 'Amount is too large';
+    if (parsed > maxAmount) return 'Amount is too large';
     return null;
   }
 

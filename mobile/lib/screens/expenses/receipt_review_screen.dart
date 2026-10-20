@@ -18,6 +18,8 @@ import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../core/utils/formatters.dart';
+import '../../core/utils/text.dart';
 
 /// Check what the scan read, before anything is saved.
 ///
@@ -82,7 +84,7 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
       paymentMethods: context.read<PaymentMethodProvider>().methods,
     );
 
-    _amount.text = prefill.amount == null ? '' : _plain(prefill.amount!);
+    _amount.text = prefill.amount == null ? '' : Formatters.amountInput(prefill.amount!);
     _merchant.text = prefill.merchant ?? '';
     _description.text = prefill.description ?? '';
     _date = prefill.date ?? AppDateUtils.today();
@@ -92,11 +94,6 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
       result: widget.result,
       categories: categories,
     );
-  }
-
-  static String _plain(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
   }
 
   @override
@@ -298,19 +295,14 @@ class _ReceiptReviewScreenState extends State<ReceiptReviewScreen> {
     Navigator.of(context).pop(
       ExpensePrefill(
         amount: amount,
-        merchant: _blankToNull(_merchant.text),
+        merchant: blankToNull(_merchant.text),
         date: _date,
-        description: _blankToNull(_description.text),
+        description: blankToNull(_description.text),
         categoryId: _categoryId,
         paymentMethodId: _paymentMethodId,
         source: ExpensePrefillSource.receiptScan,
       ),
     );
-  }
-
-  static String? _blankToNull(String value) {
-    final String trimmed = value.trim();
-    return trimmed.isEmpty ? null : trimmed;
   }
 }
 

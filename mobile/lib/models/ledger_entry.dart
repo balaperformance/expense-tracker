@@ -1,6 +1,7 @@
 import '../core/utils/date_utils.dart';
 import 'expense_category.dart';
 import 'money_transfer.dart';
+import '../core/utils/text.dart';
 
 /// Direction of an account movement.
 enum LedgerDirection { debit, credit }
@@ -35,7 +36,7 @@ class MovementDetails {
   final String? time;
 
   bool get isEmpty =>
-      _clean(reference) == null && _clean(upiId) == null && _clean(time) == null;
+      blankToNull(reference) == null && blankToNull(upiId) == null && blankToNull(time) == null;
 
   /// The engine's `details` object (`{reference, upiId, time}`), or null.
   static MovementDetails? fromJson(Object? json) {
@@ -51,20 +52,15 @@ class MovementDetails {
   /// The columns, cleaned exactly as the web app's `detailsColumns`: a
   /// reference of at most 64 characters, a UPI ID of 3 to 255, the time.
   Map<String, dynamic> toColumns() {
-    final String? ref = _clean(reference);
-    final String? upi = _clean(upiId);
+    final String? ref = blankToNull(reference);
+    final String? upi = blankToNull(upiId);
     return <String, dynamic>{
       'reference': ref == null ? null : (ref.length > 64 ? ref.substring(0, 64) : ref),
       'upi_id': upi == null || upi.length < 3
           ? null
           : (upi.length > 255 ? upi.substring(0, 255) : upi),
-      'txn_time': _clean(time),
+      'txn_time': blankToNull(time),
     };
-  }
-
-  static String? _clean(String? value) {
-    final String? trimmed = value?.trim();
-    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
   }
 }
 
@@ -235,7 +231,7 @@ class LedgerEntry {
         'direction': direction.wire,
         'amount': amount,
         'txn_date': AppDateUtils.toDateString(txnDate),
-        'description': _blankToNull(description),
+        'description': blankToNull(description),
         'category_id': categoryId,
         'expense_id': expenseId,
         'income_id': incomeId,
@@ -246,11 +242,6 @@ class LedgerEntry {
         if (counterpartyAccountId != null)
           'counterparty_account_id': counterpartyAccountId,
       };
-
-  static String? _blankToNull(String? value) {
-    final String? trimmed = value?.trim();
-    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
-  }
 }
 
 /// One printed statement line: a movement plus the balance after it.

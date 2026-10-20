@@ -34,7 +34,10 @@ class ExpenseRepository {
         SchemaCapabilities.expenseBankLink ? ', bank_account_id' : '';
     final String card =
         SchemaCapabilities.creditCards ? ', credit_card_id' : '';
-    return '$merchant$bank$card';
+    final String emi = SchemaCapabilities.emi
+        ? ', emi_plan_id, emi_component, statement_date'
+        : '';
+    return '$merchant$bank$card$emi';
   }
 
   String get _select => 'id, user_id, amount, category_id, payment_method_id, '
@@ -205,13 +208,36 @@ class ExpenseRepository {
               .eq('user_id', userId)
               .not('expense_id', 'is', null)
               .order('id')));
-      return rows
+      final Set<String> ids = rows
           .map((Map<String, dynamic> r) => r['expense_id'] as String?)
           .whereType<String>()
           .toSet();
+      if (SchemaCapabilities.emi) ids.addAll(await _emiPlanExpenseIds(userId));
+      return ids;
     } catch (error) {
       throw ErrorMapper.map(error);
     }
+  }
+
+  /// Ids of the principal instalments of every plan someone else pays back
+  /// (migration 016): never the user's own spending.
+  Future<List<String>> _emiPlanExpenseIds(String userId) async {
+    final List<Map<String, dynamic>> plans = await _client
+        .from('emi_plans')
+        .select('id')
+        .eq('user_id', userId)
+        .not('person', 'is', null);
+    final List<String> planIds =
+        plans.map((Map<String, dynamic> r) => r['id'] as String).toList();
+    if (planIds.isEmpty) return const <String>[];
+    final List<Map<String, dynamic>> rows =
+        await fetchAllPages(postgrestPages(() => _client
+            .from(_table)
+            .select('id')
+            .eq('user_id', userId)
+            .inFilter('emi_plan_id', planIds)
+            .order('id')));
+    return rows.map((Map<String, dynamic> r) => r['id'] as String).toList();
   }
 
   /// How many expenses the reports read at most: years of daily spending.
@@ -291,6 +317,7 @@ class ExpenseRepository {
             includeMerchant: SchemaCapabilities.merchant,
             includeBankLink: SchemaCapabilities.expenseBankLink,
             includeCardLink: SchemaCapabilities.creditCards,
+            includeEmi: SchemaCapabilities.emi,
           ))
           .select(_select)
           .single();

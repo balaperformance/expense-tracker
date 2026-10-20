@@ -49,7 +49,6 @@ class AuthProvider extends AsyncProvider {
   AuthStage get stage => _stage;
   User? get user => _user;
   String? get userId => _user?.id;
-  bool get isSignedIn => _stage == AuthStage.signedIn;
   bool get submitting => _submitting;
   String? get pendingConfirmationEmail => _pendingConfirmationEmail;
 
@@ -139,11 +138,6 @@ class AuthProvider extends AsyncProvider {
       }
       await _repository.signOut();
     });
-  }
-
-  void clearPendingConfirmation() {
-    _pendingConfirmationEmail = null;
-    safeNotify();
   }
 
   Future<bool> _submit(Future<void> Function() action) async {

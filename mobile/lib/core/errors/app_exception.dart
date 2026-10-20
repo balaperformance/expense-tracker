@@ -13,10 +13,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/validators.dart';
 
 class AppException implements Exception {
-  const AppException(this.message, {this.isAuthExpired = false});
+  const AppException(this.message);
 
   final String message;
-  final bool isAuthExpired;
 
   @override
   String toString() => 'AppException: $message';

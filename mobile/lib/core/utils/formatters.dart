@@ -14,6 +14,13 @@ class Formatters {
   static final DateFormat _shortMonth = DateFormat('MMM');
   static final DateFormat _weekday = DateFormat('EEEE');
 
+  /// An amount as a form field shows it: two decimals, with a whole amount
+  /// written without them ("1500", "1499.50").
+  static String amountInput(double value) {
+    final String text = value.toStringAsFixed(2);
+    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
+  }
+
   static String currency(
     num amount, {
     String currencyCode = AppConstants.defaultCurrencyCode,

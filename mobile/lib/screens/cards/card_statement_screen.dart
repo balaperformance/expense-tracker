@@ -9,10 +9,14 @@ import '../../core/utils/formatters.dart';
 import '../../models/bank_account.dart';
 import '../../models/card_statement.dart';
 import '../../models/credit_card.dart';
+import '../../models/emi_plan.dart';
+import '../../models/receivable.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/credit_card_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/card_widgets.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
@@ -27,8 +31,10 @@ import '../accounts/account_statement_screen.dart';
 import '../expenses/expense_form_screen.dart';
 import '../statement_import/import_statement_screen.dart';
 import 'card_form_sheet.dart';
+import 'card_import_screen.dart';
 import 'card_payment_sheet.dart';
 import 'card_transaction_sheet.dart';
+import 'emi_plan_sheet.dart';
 
 /// One card: what is owed, the latest bill, and a statement by billing cycle
 /// with the outstanding after every line.
@@ -59,6 +65,10 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
     await Future.wait(<Future<void>>[
       context.read<CreditCardProvider>().load(userId: userId, force: force),
       context.read<BankAccountProvider>().load(userId: userId),
+      // Someone else's EMI: what they have paid back comes from their claim.
+      if (SchemaCapabilities.emi)
+        context.read<ReceivableProvider?>()?.load(userId: userId, force: force) ??
+            Future<void>.value(),
     ]);
   }
 
@@ -139,6 +149,12 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
           ],
         ),
         actions: <Widget>[
+          if (SchemaCapabilities.emi)
+            IconButton(
+              tooltip: 'Import statement from screenshots',
+              onPressed: () => _openImport(card),
+              icon: const Icon(Icons.document_scanner_outlined),
+            ),
           IconButton(
             tooltip: 'Reconcile with a statement',
             onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -232,6 +248,13 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
                         variant: AppButtonVariant.tonal,
                         onPressed: () => _openTransaction(card, entries, null),
                       ),
+                      if (SchemaCapabilities.emi)
+                        AppButton(
+                          label: 'Import screenshots',
+                          icon: Icons.document_scanner_outlined,
+                          variant: AppButtonVariant.tonal,
+                          onPressed: () => _openImport(card),
+                        ),
                     ],
                   ),
                   if (!card.isActive) ...<Widget>[
@@ -244,6 +267,16 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
                   ],
                   const SizedBox(height: AppSpacing.md),
                   _LatestBill(overview: overview, currency: currency),
+                  if (SchemaCapabilities.emi) ...<Widget>[
+                    const SizedBox(height: AppSpacing.md),
+                    _EmiPlans(
+                      card: card,
+                      summaries: _planSummaries(context, card, entries),
+                      currency: currency,
+                      onAdd: () => _openPlanForm(card, null),
+                      onOpen: (EmiPlanSummary s) => _openPlan(card, s),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   _PeriodSummary(
                     statement: statement,
@@ -290,7 +323,7 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
                       ),
                     )
                   else
-                    ..._rows(context, statement, currency),
+                    ..._rows(context, card, statement, currency),
                 ],
               ),
             ),
@@ -300,22 +333,57 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
     );
   }
 
+  /// One plan's figures from its components, and its claim when someone
+  /// else pays it back.
+  List<EmiPlanSummary> _planSummaries(
+    BuildContext context,
+    CreditCard card,
+    List<CardEntry> entries,
+  ) {
+    final List<EmiPlan> plans = context.read<CreditCardProvider>().plansFor(card.id);
+    if (plans.isEmpty) return const <EmiPlanSummary>[];
+    final List<ClaimSummary> claims =
+        context.read<ReceivableProvider?>()?.claims ?? const <ClaimSummary>[];
+    return plans
+        .map((EmiPlan plan) => summariseEmiPlan(
+              plan: plan,
+              entries: entries,
+              card: card,
+              claim: claims
+                  .where((ClaimSummary c) => c.source?.emiPlanId == plan.id)
+                  .firstOrNull,
+            ))
+        .toList();
+  }
+
   List<Widget> _rows(
     BuildContext context,
+    CreditCard card,
     CardStatement statement,
     String currency,
   ) {
     final BankAccountProvider accounts = context.read<BankAccountProvider>();
+    final CreditCardProvider cards = context.read<CreditCardProvider>();
+    // One plan's components billed in one cycle are a single instalment line.
+    final List<StatementLine> lines = statementLines(statement.rows, card);
+    DateTime dateOf(StatementLine line) => switch (line) {
+          EntryLine(row: final CardStatementRow row) => row.entry.date,
+          InstallmentLine(installment: final EmiInstallment i) => i.date,
+        };
+    double deltaOf(StatementLine line) => switch (line) {
+          EntryLine(row: final CardStatementRow row) => -row.entry.outstandingDelta,
+          InstallmentLine(installment: final EmiInstallment i) => -i.total,
+        };
     final List<Widget> out = <Widget>[];
     int g = 0;
     int i = 0;
-    while (i < statement.rows.length) {
-      final DateTime day = statement.rows[i].entry.date;
-      final List<CardStatementRow> group = <CardStatementRow>[];
+    while (i < lines.length) {
+      final DateTime day = dateOf(lines[i]);
+      final List<StatementLine> group = <StatementLine>[];
       double net = 0;
-      while (i < statement.rows.length && statement.rows[i].entry.date == day) {
-        group.add(statement.rows[i]);
-        net -= statement.rows[i].entry.outstandingDelta;
+      while (i < lines.length && dateOf(lines[i]) == day) {
+        group.add(lines[i]);
+        net += deltaOf(lines[i]);
         i++;
       }
       out.add(DayHeader(
@@ -327,15 +395,24 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
       ));
       out.add(CardList(
         children: group
-            .map((CardStatementRow row) => _CardLine(
-                  row: row,
-                  currency: currency,
-                  accountName: accounts.byId(row.entry.accountId)?.nickname,
-                  onTap: row.entry.expense != null
-                      ? () => _openExpense(row.entry)
-                      : null,
-                  onLongPress: () => _onLongPress(row.entry),
-                ))
+            .map((StatementLine line) => switch (line) {
+                  EntryLine(row: final CardStatementRow row) => _CardLine(
+                      row: row,
+                      currency: currency,
+                      accountName: accounts.byId(row.entry.accountId)?.nickname,
+                      badge: _planBadge(row.entry, cards),
+                      onTap: row.entry.expense != null
+                          ? () => _openExpense(row.entry)
+                          : null,
+                      onLongPress: () => _onLongPress(row.entry),
+                    ),
+                  InstallmentLine() => _InstallmentLine(
+                      line: line,
+                      plan: cards.planById(line.installment.planId),
+                      currency: currency,
+                      onTap: () => _openInstallment(card, line),
+                    ),
+                })
             .toList(),
       ));
       g++;
@@ -350,7 +427,73 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
     return out;
   }
 
+  /// "EMI principal · paid for Arun" on a component of an EMI someone else
+  /// pays back; the component's part on any plan's row.
+  static String? _planBadge(CardEntry entry, CreditCardProvider cards) {
+    final String? planId = entry.emiPlanId;
+    if (planId == null) return null;
+    final EmiPlan? plan = cards.planById(planId);
+    final String part = entry.emiComponent == null
+        ? 'EMI'
+        : 'EMI ${(emiComponentLabels[entry.emiComponent] ?? entry.emiComponent!).toLowerCase()}';
+    if (plan == null) return part;
+    return plan.person != null ? '$part · paid for ${plan.person}' : '$part · ${plan.title}';
+  }
+
   // ---- Actions -------------------------------------------------------------
+
+  Future<void> _openImport(CreditCard card) async {
+    final bool? changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(builder: (_) => CardImportScreen(card: card)),
+    );
+    await _reloadAfter(changed ?? true);
+  }
+
+  Future<void> _openPlanForm(CreditCard card, EmiPlan? plan) async {
+    final bool? changed = await showAppSheet<bool>(
+      context: context,
+      builder: (_) => EmiPlanSheet(card: card, plan: plan),
+    );
+    await _reloadAfter(changed);
+  }
+
+  Future<void> _openPlan(CreditCard card, EmiPlanSummary summary) async {
+    final String currency = context.read<SettingsProvider>().currency;
+    final bool? edit = await showAppSheet<bool>(
+      context: context,
+      builder: (_) => _EmiPlanDetailSheet(summary: summary, currency: currency),
+    );
+    if (edit == true && mounted) await _openPlanForm(card, summary.plan);
+  }
+
+  Future<void> _openInstallment(CreditCard card, InstallmentLine line) async {
+    final String currency = context.read<SettingsProvider>().currency;
+    final CreditCardProvider cards = context.read<CreditCardProvider>();
+    final EmiPlan? plan = cards.planById(line.installment.planId);
+    final Object? choice = await showAppSheet<Object>(
+      context: context,
+      builder: (BuildContext sheet) => _InstallmentSheet(
+        line: line,
+        plan: plan,
+        currency: currency,
+        onOpenEntry: (CardEntry entry) => Navigator.of(sheet).pop(entry),
+        onOpenPlan: plan == null ? null : () => Navigator.of(sheet).pop(plan),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice is CardEntry) {
+      if (choice.source == CardEntrySource.expense) {
+        await _openExpense(choice);
+      } else {
+        await _confirmDelete(choice);
+      }
+    } else if (choice is EmiPlan) {
+      final EmiPlanSummary? summary = _planSummaries(context, card, cards.entriesFor(card.id))
+          .where((EmiPlanSummary s) => s.plan.id == choice.id)
+          .firstOrNull;
+      if (summary != null) await _openPlan(card, summary);
+    }
+  }
 
   Future<void> _reloadAfter(bool? changed) async {
     if (changed == true && mounted) {
@@ -842,6 +985,7 @@ class _CardLine extends StatelessWidget {
     required this.accountName,
     required this.onTap,
     required this.onLongPress,
+    this.badge,
   });
 
   final CardStatementRow row;
@@ -849,6 +993,9 @@ class _CardLine extends StatelessWidget {
   final String? accountName;
   final VoidCallback? onTap;
   final VoidCallback onLongPress;
+
+  /// The EMI plan the row belongs to, in a few words.
+  final String? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -878,11 +1025,383 @@ class _CardLine extends StatelessWidget {
             ? (entry.category?.name ?? 'Purchase')
             : entry.kind.label,
         if (source != null) source,
+        if (badge != null) badge!,
       ],
       trailingBelow:
           'Owed ${Formatters.currency(row.outstandingAfter, currencyCode: currency, compact: true)}',
       onTap: onTap,
       onLongPress: onLongPress,
+    );
+  }
+}
+
+/// One month's EMI as a single line: the total, with its breakdown underneath.
+class _InstallmentLine extends StatelessWidget {
+  const _InstallmentLine({
+    required this.line,
+    required this.plan,
+    required this.currency,
+    required this.onTap,
+  });
+
+  final InstallmentLine line;
+  final EmiPlan? plan;
+  final String currency;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final EmiInstallment i = line.installment;
+    final String title = plan == null
+        ? 'EMI instalment'
+        : plan!.person != null
+            ? 'EMI · ${plan!.title} · paid for ${plan!.person}'
+            : 'EMI · ${plan!.title}';
+    return TransactionRow(
+      leading: IconWell(
+        icon: Icons.all_inclusive_rounded,
+        tone: plan?.person != null
+            ? ToneColors.transfer(context)
+            : Theme.of(context).colorScheme.primary,
+      ),
+      title: title,
+      titleMaxLines: 2,
+      amount: -i.total,
+      currency: currency,
+      tone: plan?.person != null ? AmountTone.transfer : AmountTone.negative,
+      meta: <String>[
+        installmentBreakdown(
+            i, (double v) => Formatters.currency(v, currencyCode: currency, compact: true)),
+        '${i.entries.length} rows',
+      ],
+      trailingBelow:
+          'Owed ${Formatters.currency(line.outstandingAfter, currencyCode: currency, compact: true)}',
+      onTap: onTap,
+    );
+  }
+}
+
+/// The components of one instalment, each its own row on the card.
+class _InstallmentSheet extends StatelessWidget {
+  const _InstallmentSheet({
+    required this.line,
+    required this.plan,
+    required this.currency,
+    required this.onOpenEntry,
+    required this.onOpenPlan,
+  });
+
+  final InstallmentLine line;
+  final EmiPlan? plan;
+  final String currency;
+  final ValueChanged<CardEntry> onOpenEntry;
+  final VoidCallback? onOpenPlan;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final EmiInstallment i = line.installment;
+    Widget fact(String label, double value) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(label, style: theme.textTheme.labelSmall),
+            const SizedBox(height: AppSpacing.xxs),
+            MoneyText(value, currency: currency, style: theme.textTheme.titleSmall),
+          ],
+        );
+    return AppSheet(
+      title: 'EMI instalment · ${Formatters.currency(i.total, currencyCode: currency)}',
+      subtitle: '${Formatters.dayMonthYear(i.date)} · ${plan?.label ?? 'No plan'}',
+      children: <Widget>[
+        AppNotice(
+          message: plan?.person != null
+              ? 'Paid by ${plan!.person} month by month: the principal is not your '
+                  'spending, and what they send you is a repayment of this EMI.'
+              : 'The principal counts as your spending; the interest and GST are '
+                  "card charges. Each is its own row, shown here as one month's EMI.",
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Wrap(
+          spacing: AppSpacing.xl,
+          runSpacing: AppSpacing.md,
+          children: <Widget>[
+            fact('Principal', i.principal),
+            fact('Interest', i.interest),
+            fact('GST', i.tax),
+            if (i.fee != 0) fact('Fees', i.fee),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.md),
+        CardList(
+          dividerIndent: AppSpacing.md,
+          children: line.rows.reversed
+              .map((CardStatementRow row) => AppListRow(
+                    dense: true,
+                    title: row.entry.title,
+                    subtitle:
+                        '${emiComponentLabels[row.entry.emiComponent] ?? row.entry.kind.label} · ${Formatters.dayMonth(row.entry.date)}',
+                    trailing: MoneyText(row.entry.amount,
+                        currency: currency, style: theme.textTheme.titleSmall),
+                    showChevron: true,
+                    onTap: () => onOpenEntry(row.entry),
+                  ))
+              .toList(),
+        ),
+        if (onOpenPlan != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          AppButton(
+            label: 'Open the EMI plan',
+            icon: Icons.all_inclusive_rounded,
+            variant: AppButtonVariant.tonal,
+            onPressed: onOpenPlan,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The card's EMI plans: each with how far it has run and, for someone
+/// else's EMI, what they owe.
+class _EmiPlans extends StatelessWidget {
+  const _EmiPlans({
+    required this.card,
+    required this.summaries,
+    required this.currency,
+    required this.onAdd,
+    required this.onOpen,
+  });
+
+  final CreditCard card;
+  final List<EmiPlanSummary> summaries;
+  final String currency;
+  final VoidCallback onAdd;
+  final ValueChanged<EmiPlanSummary> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    if (summaries.isEmpty && !card.isActive) return const SizedBox.shrink();
+    final int running = summaries.where((EmiPlanSummary s) => !s.plan.isClosed).length;
+    return SurfaceCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.sm, 0),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('EMI plans', style: theme.textTheme.titleSmall),
+                      Text(
+                        summaries.isEmpty
+                            ? 'Purchases converted to monthly instalments'
+                            : '$running running',
+                        style: theme.textTheme.labelSmall,
+                      ),
+                    ],
+                  ),
+                ),
+                AppButton(
+                  label: 'Add',
+                  icon: Icons.add_rounded,
+                  size: AppButtonSize.small,
+                  variant: AppButtonVariant.ghost,
+                  onPressed: onAdd,
+                ),
+              ],
+            ),
+          ),
+          if (summaries.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.md),
+              child: Text(
+                'Import a statement from screenshots and its EMI rows are grouped '
+                'into instalments; or add a plan here and mark whose EMI it is.',
+                style: theme.textTheme.bodySmall,
+              ),
+            )
+          else
+            for (int i = 0; i < summaries.length; i++) ...<Widget>[
+              if (i > 0) const Divider(height: 1, indent: AppSpacing.rowDividerIndent),
+              _EmiPlanRow(summary: summaries[i], currency: currency, onTap: () => onOpen(summaries[i])),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _EmiPlanRow extends StatelessWidget {
+  const _EmiPlanRow({required this.summary, required this.currency, required this.onTap});
+
+  final EmiPlanSummary summary;
+  final String currency;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final EmiPlan plan = summary.plan;
+    final int? tenure = plan.tenureMonths;
+    final double? ratio = tenure == null || tenure == 0
+        ? null
+        : (summary.billedMonths / tenure).clamp(0, 1).toDouble();
+    final String? repayment = emiRepaymentText(
+        summary, (double v) => Formatters.currency(v, currencyCode: currency, compact: true));
+    final Color tone = plan.person != null ? ToneColors.transfer(context) : theme.colorScheme.primary;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
+        child: Row(
+          children: <Widget>[
+            IconWell(
+              icon: plan.person != null ? Icons.handshake_outlined : Icons.all_inclusive_rounded,
+              tone: tone,
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(plan.label, style: theme.textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: AppSpacing.xxs),
+                  Text(
+                    '${emiProgressText(summary)}'
+                    '${summary.billedTotal > 0 ? ' · ${Formatters.currency(summary.billedTotal, currencyCode: currency, compact: true)} billed' : ''}'
+                    '${plan.isClosed ? ' · closed' : ''}',
+                    style: theme.textTheme.labelSmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (ratio != null) ...<Widget>[
+                    const SizedBox(height: AppSpacing.xs),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                      child: LinearProgressIndicator(value: ratio, minHeight: 5, color: tone),
+                    ),
+                  ],
+                  if (repayment != null) ...<Widget>[
+                    const SizedBox(height: AppSpacing.xs),
+                    AppBadge(
+                      label: repayment,
+                      icon: Icons.handshake_outlined,
+                      tone: summary.repayment != null && summary.repayment!.status.isOpen ? tone : null,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One plan's figures: what has been billed, what is left, and — for someone
+/// else's EMI — what they owe. Pops true to edit the plan.
+class _EmiPlanDetailSheet extends StatelessWidget {
+  const _EmiPlanDetailSheet({required this.summary, required this.currency});
+
+  final EmiPlanSummary summary;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final EmiPlan plan = summary.plan;
+    final EmiRepayment? repayment = summary.repayment;
+    String money(double v) => Formatters.currency(v, currencyCode: currency);
+    Widget fact(String label, String value) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(label, style: theme.textTheme.labelSmall),
+            const SizedBox(height: AppSpacing.xxs),
+            Text(value, style: theme.textTheme.titleSmall),
+          ],
+        );
+    return AppSheet(
+      title: plan.title,
+      subtitle: plan.person != null ? 'Paid back by ${plan.person}' : 'Your own EMI',
+      footer: Row(
+        children: <Widget>[
+          const Spacer(),
+          AppButton(
+            label: 'Edit plan',
+            icon: Icons.edit_outlined,
+            variant: AppButtonVariant.tonal,
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
+        ],
+      ),
+      children: <Widget>[
+        Wrap(
+          spacing: AppSpacing.xl,
+          runSpacing: AppSpacing.md,
+          children: <Widget>[
+            fact('Billed so far', money(summary.billedTotal)),
+            fact('Principal billed', money(summary.billedPrincipal)),
+            fact('Interest & GST', money(summary.billedCharges)),
+            fact('Months', emiProgressText(summary)),
+            if (plan.purchaseAmount != null) fact('Purchase', money(plan.purchaseAmount!)),
+            if (summary.principalLeft != null) fact('Principal left', money(summary.principalLeft!)),
+            if (plan.monthlyAmount != null) fact('Monthly EMI', money(plan.monthlyAmount!)),
+            if (summary.endsOn != null) fact('Last instalment', Formatters.monthYear(summary.endsOn!)),
+          ],
+        ),
+        if (repayment != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          SurfaceCard(
+            tone: repayment.status.isOpen ? ToneColors.transfer(context) : ToneColors.income(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(emiRepaymentText(summary, money) ?? '', style: theme.textTheme.titleSmall),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '${money(repayment.expected)} billed '
+                  '${plan.includeCharges ? '(principal, interest and GST)' : '(principal only)'} · '
+                  '${money(repayment.received)} received. Record what they send as a repayment of '
+                  "this EMI — from the account it arrived in, or when importing that account's "
+                  'statement. It is never counted as income.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: AppSpacing.md),
+        if (summary.installments.isEmpty)
+          Text(
+            "No instalment billed yet. Import the card's statement and its EMI rows are matched to this plan.",
+            style: theme.textTheme.bodySmall,
+          )
+        else
+          CardList(
+            dividerIndent: AppSpacing.md,
+            children: summary.installments.reversed
+                .map((EmiInstallment i) => AppListRow(
+                      dense: true,
+                      title: 'Statement of ${Formatters.dayMonthYear(i.cycle.end)}',
+                      subtitle: installmentBreakdown(
+                          i, (double v) => Formatters.currency(v, currencyCode: currency, compact: true)),
+                      trailing: MoneyText(i.total, currency: currency, style: theme.textTheme.titleSmall),
+                    ))
+                .toList(),
+          ),
+        if (plan.notes != null && plan.notes!.trim().isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          Text(plan.notes!, style: theme.textTheme.bodySmall),
+        ],
+      ],
     );
   }
 }

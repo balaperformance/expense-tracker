@@ -1,3 +1,5 @@
+import '../core/utils/text.dart';
+
 /// What an account is: a bank account, or the user's cash in hand
 /// (`bank_accounts.kind`, migration 011 — one per user). The cash balance is
 /// an ordinary account in the ledger, so a withdrawal is a transfer into it
@@ -93,7 +95,7 @@ class BankAccount {
         'user_id': userId,
         'bank_name': bankName.trim(),
         'nickname': nickname.trim(),
-        'last4': _blankToNull(last4),
+        'last4': blankToNull(last4),
         'opening_balance': openingBalance,
         'is_active': isActive,
         // Only a cash account names its kind: the column defaults to 'bank',
@@ -104,15 +106,10 @@ class BankAccount {
   Map<String, dynamic> toUpdateMap() => <String, dynamic>{
         'bank_name': bankName.trim(),
         'nickname': nickname.trim(),
-        'last4': _blankToNull(last4),
+        'last4': blankToNull(last4),
         'opening_balance': openingBalance,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
-
-  static String? _blankToNull(String? value) {
-    final String? trimmed = value?.trim();
-    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
-  }
 
   BankAccount copyWith({
     String? bankName,

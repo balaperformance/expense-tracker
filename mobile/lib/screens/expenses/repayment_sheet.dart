@@ -65,11 +65,6 @@ double? _parseAmount(String text) {
   return value == null || !value.isFinite ? null : value;
 }
 
-String _input(double value) {
-  final String text = value.toStringAsFixed(2);
-  return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-}
-
 /// Money paid back for something paid for someone — a purchase or money
 /// lent. Starts at what is still owed and never takes more, so the same
 /// repayment cannot be recorded twice; paid in full, it shows as settled. One
@@ -86,7 +81,7 @@ class RepaymentSheet extends StatefulWidget {
 
 class _RepaymentSheetState extends State<RepaymentSheet> {
   late final TextEditingController _amount =
-      TextEditingController(text: _input(amountLeft(widget.claim)));
+      TextEditingController(text: Formatters.amountInput(amountLeft(widget.claim)));
   String? _accountId;
   DateTime _date = DateTime.now();
   bool _busy = false;
@@ -196,7 +191,7 @@ class _RepaymentSheetState extends State<RepaymentSheet> {
               variant: AppButtonVariant.tonal,
               onPressed: _busy
                   ? null
-                  : () => setState(() => _amount.text = _input(amountLeft(claim))),
+                  : () => setState(() => _amount.text = Formatters.amountInput(amountLeft(claim))),
             ),
             AppButton(
               label: 'Half',
@@ -205,14 +200,17 @@ class _RepaymentSheetState extends State<RepaymentSheet> {
               onPressed: _busy
                   ? null
                   : () => setState(() =>
-                      _amount.text = _input((amountLeft(claim) * 50).round() / 100)),
+                      _amount.text = Formatters.amountInput((amountLeft(claim) * 50).round() / 100)),
             ),
           ],
         ),
         if (after != null) ...<Widget>[
           const SizedBox(height: AppSpacing.sm),
           Text(
-            after < 0
+            after < 0 && (-after * 100).round() <= (claim.allowance * 100).round()
+                ? 'This settles it — ${Formatters.currency(-after, currencyCode: currency)} '
+                    'over, within the rounding allowed on an EMI.'
+                : after < 0
                 ? 'That is more than the $money still owed.'
                 : after == 0
                     ? 'This settles it.'

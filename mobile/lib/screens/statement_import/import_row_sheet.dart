@@ -136,7 +136,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   late final TextEditingController _description =
       TextEditingController(text: widget.row.description);
   late final TextEditingController _amount =
-      TextEditingController(text: _trim(widget.row.amount));
+      TextEditingController(text: Formatters.amountInput(widget.row.amount));
   late final TextEditingController _payee =
       TextEditingController(text: widget.row.counterparty ?? '');
   late final TextEditingController _source = TextEditingController(
@@ -167,11 +167,6 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   List<String> _debitKinds = const <String>['expense', 'transfer'];
   List<String> _creditKinds = const <String>['income', 'refund', 'transfer'];
   String? _error;
-
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-  }
 
   /// "13:05:00" or "13:05" → "13:05"; anything else → null.
   static String? _hhmm(String? value) {
@@ -574,9 +569,11 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
               'type': 'claim',
               'receivableId': c.receivable.id,
               'left': amountLeft(c),
+              if (c.allowance > 0) 'allowance': c.allowance,
             },
             person: c.receivable.person,
             left: ((amountLeft(c) * 100).round() - (taken(c.receivable.id) * 100).round()) / 100,
+            allowance: c.allowance,
             label: '${c.source!.title} · ${Formatters.dayMonth(c.source!.date)}',
           ),
       for (final ImportRow r in rows)
@@ -620,6 +617,10 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     final double? after = chosen != null && value != null && value > 0
         ? ((chosen.left * 100).round() - (value * 100).round()) / 100
         : null;
+    // Past what is left but within an EMI's rounding allowance: it still settles it.
+    final bool rounding = after != null &&
+        after < 0 &&
+        (-after * 100).round() <= ((chosen?.allowance ?? 0) * 100).round();
     String money(double amount) => Formatters.currency(amount, currencyCode: currency);
     return <Widget>[
       const FieldLabel('From', isRequired: true),
@@ -663,12 +664,14 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         Text(
           after == 0
               ? 'This settles it.'
-              : after > 0
+              : rounding
+                  ? 'This settles it — ${money(-after)} over, within the rounding allowed on an EMI.'
+                  : after > 0
                   ? '${money(after)} still owed after this.'
                   : '${money(-after)} more than is still owed. It may already be recorded — '
                       'choose something else, or record it as a refund.',
           style: theme.textTheme.labelSmall?.copyWith(
-            color: after < 0 ? ToneColors.warning(context) : null,
+            color: after < 0 && !rounding ? ToneColors.warning(context) : null,
           ),
         ),
       ],
@@ -753,7 +756,8 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           context.read<ReceivableProvider?>()?.claims ?? const <ClaimSummary>[];
       final _SettleChoice? chosen = _chosen(_settleChoices(
           context.read<StatementImportProvider>(), claims, context.read<SettingsProvider>().currency));
-      if (chosen != null && (value * 100).round() > (chosen.left * 100).round()) {
+      if (chosen != null &&
+          (value * 100).round() > (chosen.left * 100).round() + (chosen.allowance * 100).round()) {
         setState(() => _error = 'This is more than is still owed on what it pays back. '
             'It may already be recorded — choose something else, or record it as a refund.');
         return;
@@ -813,6 +817,7 @@ class _SettleChoice {
     required this.person,
     required this.left,
     required this.label,
+    this.allowance = 0,
   });
 
   /// The engine's settlement target, sent back unchanged.
@@ -822,6 +827,9 @@ class _SettleChoice {
   /// Still owed once the other repayments in this import are counted.
   final double left;
   final String label;
+
+  /// How far past [left] a repayment may go: an EMI's rounding allowance.
+  final double allowance;
 
   String get key => keyOf(target);
 

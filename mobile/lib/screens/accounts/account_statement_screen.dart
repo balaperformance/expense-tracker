@@ -393,8 +393,21 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
   /// direct delete.
   Future<void> _onLongPress(StatementRow row) async {
     final LedgerEntry entry = row.entry;
-    final bool linkable =
-        isLinkableDebit(entry) && _linkableCards().isNotEmpty;
+    // Only a plain debit can be offered as a card bill: read which are money
+    // lent first. If that read fails, the option is left out rather than risk
+    // turning money lent into a bill payment.
+    Set<String>? lentIds;
+    if (SchemaCapabilities.creditCards && !entry.isCardPayment && isLinkableDebit(entry)) {
+      try {
+        lentIds = await context.read<StatementProvider>().lentEntryIds();
+      } catch (_) {
+        lentIds = null;
+      }
+      if (!mounted) return;
+    }
+    final bool linkable = lentIds != null &&
+        isLinkableDebit(entry, lentIds: lentIds) &&
+        _linkableCards().isNotEmpty;
     if (!SchemaCapabilities.creditCards || (!entry.isCardPayment && !linkable)) {
       await _confirmDelete(row);
       return;

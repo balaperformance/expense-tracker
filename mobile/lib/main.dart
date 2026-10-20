@@ -12,6 +12,7 @@ import 'providers/ai_chat_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/bank_account_provider.dart';
 import 'providers/budget_provider.dart';
+import 'providers/card_import_provider.dart';
 import 'providers/category_provider.dart';
 import 'providers/credit_card_provider.dart';
 import 'providers/dashboard_provider.dart';
@@ -33,6 +34,7 @@ import 'repositories/bank_account_repository.dart';
 import 'repositories/budget_repository.dart';
 import 'repositories/category_repository.dart';
 import 'repositories/credit_card_repository.dart';
+import 'repositories/emi_plan_repository.dart';
 import 'repositories/expense_repository.dart';
 import 'repositories/export_repository.dart';
 import 'repositories/income_repository.dart';
@@ -150,7 +152,6 @@ class ExpenseTrackerApp extends StatelessWidget {
           create: (_) => DashboardProvider(
             expenses: expenseRepository,
             income: incomeRepository,
-            budgets: budgetRepository,
           ),
         ),
         ChangeNotifierProvider<BankAccountProvider>(
@@ -189,12 +190,25 @@ class ExpenseTrackerApp extends StatelessWidget {
           create: (_) => CreditCardProvider(
             repository: creditCardRepository,
             ledger: ledgerRepository,
+            plans: EmiPlanRepository(client),
+            income: incomeRepository,
           ),
         ),
         ChangeNotifierProvider<ReportsProvider>(
           create: (_) => ReportsProvider(
             expenses: expenseRepository,
             income: incomeRepository,
+          ),
+        ),
+        // A card statement from screenshots: read on the phone, grouped and
+        // checked by the web app's own engine.
+        ChangeNotifierProvider<CardImportProvider>(
+          create: (_) => CardImportProvider(
+            engine: MethodChannelStatementEngine(),
+            expenses: expenseRepository,
+            ledger: ledgerRepository,
+            cards: creditCardRepository,
+            plans: EmiPlanRepository(client),
           ),
         ),
         // Reports' insights run in the same offline engine as statement

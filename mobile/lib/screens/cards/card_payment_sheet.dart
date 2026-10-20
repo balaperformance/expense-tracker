@@ -62,13 +62,8 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
   void initState() {
     super.initState();
     final double due = _summary.lastStatement.remaining;
-    _amount = TextEditingController(text: due > 0 ? _trim(due) : '');
+    _amount = TextEditingController(text: due > 0 ? Formatters.amountInput(due) : '');
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshNearby());
-  }
-
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
   }
 
   @override
@@ -424,7 +419,7 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
 
   void _setAmount(double value) {
     setState(() {
-      _amount.text = _trim(value);
+      _amount.text = Formatters.amountInput(value);
       _linkId = null;
     });
     _refreshNearby();

@@ -1,4 +1,5 @@
 import '../core/utils/date_utils.dart';
+import '../core/utils/text.dart';
 
 /// Row of `public.income`.
 ///
@@ -63,8 +64,8 @@ class Income {
       'user_id': userId,
       'amount': amount,
       'income_date': AppDateUtils.toDateString(incomeDate),
-      'source': _blankToNull(source),
-      'description': _blankToNull(description),
+      'source': blankToNull(source),
+      'description': blankToNull(description),
     };
     if (includeBankLink) map['bank_account_id'] = bankAccountId;
     return map;
@@ -74,16 +75,11 @@ class Income {
     final Map<String, dynamic> map = <String, dynamic>{
       'amount': amount,
       'income_date': AppDateUtils.toDateString(incomeDate),
-      'source': _blankToNull(source),
-      'description': _blankToNull(description),
+      'source': blankToNull(source),
+      'description': blankToNull(description),
     };
     if (includeBankLink) map['bank_account_id'] = bankAccountId;
     return map;
-  }
-
-  static String? _blankToNull(String? value) {
-    final String? trimmed = value?.trim();
-    return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
   }
 
   Income copyWith({

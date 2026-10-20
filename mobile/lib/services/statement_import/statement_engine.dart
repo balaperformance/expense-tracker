@@ -292,6 +292,18 @@ class EngineJson {
         'accountId': e.accountId,
         'originalExpenseId': e.originalExpenseId,
         'reference': e.reference,
+        'emiPlanId': e.emiPlanId,
+        'emiComponent': e.emiComponent,
+        'statementDate': e.statementDate == null
+            ? null
+            : AppDateUtils.toDateString(e.statementDate!),
         'createdAt': _iso(e.createdAt),
+      };
+
+  /// A billing cycle in the web model's shape (ISO dates).
+  static Map<String, Object?> cycle(BillingCycle c) => <String, Object?>{
+        'start': AppDateUtils.toDateString(c.start),
+        'end': AppDateUtils.toDateString(c.end),
+        'dueDate': AppDateUtils.toDateString(c.dueDate),
       };
 }

@@ -202,11 +202,10 @@ enum AiChatFailure {
 }
 
 class AiChatException implements Exception {
-  const AiChatException(this.kind, this.message, {this.retryAfter});
+  const AiChatException(this.kind, this.message);
 
   final AiChatFailure kind;
   final String message;
-  final Duration? retryAfter;
 
   /// Whether the same message is worth sending again unchanged.
   bool get isRetryable => switch (kind) {

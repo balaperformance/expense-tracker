@@ -35,26 +35,6 @@ class BudgetRepository {
     }
   }
 
-  /// The overall (category-less) budget for a month, or null if unset.
-  Future<Budget?> fetchOverall({
-    required String userId,
-    required DateTime month,
-  }) async {
-    try {
-      final Map<String, dynamic>? row = await _client
-          .from(_table)
-          .select(_select)
-          .eq('user_id', userId)
-          .eq('month', AppDateUtils.toDateString(AppDateUtils.firstDayOf(month)))
-          .isFilter('category_id', null)
-          .maybeSingle();
-
-      return row == null ? null : Budget.fromMap(row);
-    } catch (error) {
-      throw ErrorMapper.map(error);
-    }
-  }
-
   /// Creates or replaces the budget for a (category, month) pair.
   ///
   /// Implemented as find-then-write rather than `upsert` because the table has

@@ -37,9 +37,11 @@ class CreditCardRepository {
       'id, user_id, card_name, issuer, network, last4, credit_limit, '
       'opening_outstanding, statement_day, payment_due_day, '
       'payment_account_id, is_active, notes, created_at';
-  static const String _transactionSelect =
+  /// The instalment columns are selected only once migration 016 exists.
+  String get _transactionSelect =>
       'id, user_id, card_id, kind, direction, amount, txn_date, description, '
-      'reference, original_expense_id, created_at';
+      'reference, original_expense_id, created_at'
+      '${SchemaCapabilities.emi ? ', emi_plan_id, emi_component, statement_date' : ''}';
 
   /// Fees, interest, refunds and cashback since [from], signed the way the
   /// reports read them: a fee or interest is a positive charge (a credit of
@@ -167,6 +169,9 @@ class CreditCardRepository {
     String? description,
     String? reference,
     String? originalExpenseId,
+    String? emiPlanId,
+    String? emiComponent,
+    DateTime? statementDate,
   }) async {
     String? blank(String? value) {
       final String? trimmed = value?.trim();
@@ -185,6 +190,13 @@ class CreditCardRepository {
         'reference': blank(reference),
         'original_expense_id':
             kind == CardTransactionKind.refund ? originalExpenseId : null,
+        if (SchemaCapabilities.emi) ...<String, dynamic>{
+          'emi_plan_id': emiPlanId,
+          'emi_component': emiComponent,
+          'statement_date': statementDate == null
+              ? null
+              : AppDateUtils.toDateString(statementDate),
+        },
       });
     } catch (error) {
       throw ErrorMapper.map(error);

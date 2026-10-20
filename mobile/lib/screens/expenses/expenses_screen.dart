@@ -26,6 +26,7 @@ import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/transaction_tile.dart';
 import '../accounts/account_statement_screen.dart';
+import '../cards/card_statement_screen.dart';
 import '../export/export_screen.dart';
 import '../shell/home_shell.dart';
 import 'expense_filter_sheet.dart';
@@ -44,7 +45,11 @@ import 'repayment_sheet.dart';
 /// day's spending total, and has a view of its own ("Paid for someone") with
 /// what each person owes and a button to record each repayment.
 class ExpensesScreen extends StatefulWidget {
-  const ExpensesScreen({super.key});
+  const ExpensesScreen({super.key, this.initialPaidFor = false});
+
+  /// Opens on the "Paid for someone" view (from the income screen's EMI
+  /// reimbursements line).
+  final bool initialPaidFor;
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -56,7 +61,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
   final ScrollController _scroll = ScrollController();
 
   /// Showing the "Paid for someone" view instead of every expense.
-  bool _paidForView = false;
+  late bool _paidForView = widget.initialPaidFor;
   PaidForShow _show = PaidForShow.open;
   bool _opening = false;
 
@@ -139,7 +144,13 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               count: provider.filter.activeCount,
               onPressed: () => _openFilters(provider),
             ),
-          ],
+          ] else
+            // As on the web: Add from the paid-for view starts as paid for someone.
+            IconButton(
+              tooltip: 'Add expense paid for someone',
+              onPressed: _addExpense,
+              icon: const Icon(Icons.add_rounded),
+            ),
           const NotificationBell(glass: false),
           const SizedBox(width: AppSpacing.xs),
         ],
@@ -400,6 +411,15 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
       await _editExpense(expense);
       return;
     }
+    // An EMI paid back by someone else lives on its card: open that card.
+    final String? cardId = source.cardId;
+    if (source.accountId == null && cardId != null) {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(builder: (_) => CardStatementScreen(cardId: cardId)),
+      );
+      if (mounted) await _loadClaims(force: true);
+      return;
+    }
     final String? accountId = source.accountId;
     final BankAccount? account = accountId == null ? null : context.read<BankAccountProvider>().byId(accountId);
     if (account == null) {
@@ -455,7 +475,12 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   Future<void> _addExpense() async {
     final bool? saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const ExpenseFormScreen()),
+      MaterialPageRoute<bool>(
+        // From the paid-for view, a new expense starts as paid for someone.
+        builder: (_) => ExpenseFormScreen(
+          initialPaidFor: SchemaCapabilities.treatments && _paidForView,
+        ),
+      ),
     );
     if (saved == true) _invalidateDerived();
   }

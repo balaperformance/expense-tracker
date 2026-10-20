@@ -30,14 +30,4 @@ class SupabaseService {
   static GoTrueClient get auth => Supabase.instance.client.auth;
 
   static String? get currentUserId => auth.currentUser?.id;
-
-  /// Throws when a repository is used without a session. Guards against
-  /// writing rows with a null `user_id`, which RLS would reject anyway.
-  static String get requireUserId {
-    final String? id = currentUserId;
-    if (id == null) {
-      throw StateError('You are signed out. Please sign in again.');
-    }
-    return id;
-  }
 }

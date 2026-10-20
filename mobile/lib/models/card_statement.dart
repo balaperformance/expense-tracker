@@ -19,6 +19,7 @@ import 'expense.dart';
 import 'expense_category.dart';
 import 'ledger_entry.dart';
 import 'money_transfer.dart';
+import '../core/utils/money.dart';
 
 // ---------------------------------------------------------------------------
 // Entries
@@ -83,6 +84,9 @@ class CardEntry {
     this.accountId,
     this.originalExpenseId,
     this.reference,
+    this.emiPlanId,
+    this.emiComponent,
+    this.statementDate,
     this.createdAt,
     this.expense,
   });
@@ -105,12 +109,25 @@ class CardEntry {
   final String? accountId;
   final String? originalExpenseId;
   final String? reference;
+
+  /// The EMI plan this is an instalment component of (migration 016).
+  final String? emiPlanId;
+  final String? emiComponent;
+
+  /// The statement it was billed on, when the import knew it. The cycle it
+  /// is filed under then comes from this date, not the transaction date.
+  final DateTime? statementDate;
   final DateTime? createdAt;
 
   /// The purchase's own expense row, so it can be opened and edited there.
   final Expense? expense;
 
   bool get isCharge => direction == LedgerDirection.debit;
+
+  /// The date the entry is filed under: the statement it was billed on when
+  /// known (a 20 Aug charge billed on 20 Sep belongs to September), else the
+  /// transaction date, which the card's statement day places in a cycle.
+  DateTime get billingDate => statementDate ?? date;
 
   /// What the entry does to the outstanding.
   double get outstandingDelta => isCharge ? amount : -amount;
@@ -134,6 +151,9 @@ class CardEntry {
       date: expense.expenseDate,
       description: expense.title,
       category: expense.category,
+      emiPlanId: expense.emiPlanId,
+      emiComponent: expense.emiComponent,
+      statementDate: expense.statementDate,
       createdAt: expense.createdAt,
       expense: expense,
     );
@@ -151,6 +171,9 @@ class CardEntry {
         description: t.description,
         originalExpenseId: t.originalExpenseId,
         reference: t.reference,
+        emiPlanId: t.emiPlanId,
+        emiComponent: t.emiComponent,
+        statementDate: t.statementDate,
         createdAt: t.createdAt,
       );
 
@@ -174,7 +197,6 @@ class CardEntry {
   }
 }
 
-int _cents(double value) => (value * 100).round();
 double _fromCents(int cents) => cents / 100;
 
 /// Oldest first; same-day movements by insertion time, then key — stable across reloads.
@@ -193,9 +215,9 @@ List<CardEntry> orderEntries(Iterable<CardEntry> entries) {
 
 /// Opening outstanding plus every entry, in whole cents.
 double outstandingOf(double openingOutstanding, Iterable<CardEntry> entries) {
-  int total = _cents(openingOutstanding);
+  int total = toCents(openingOutstanding);
   for (final CardEntry e in entries) {
-    total += _cents(e.outstandingDelta);
+    total += toCents(e.outstandingDelta);
   }
   return _fromCents(total);
 }
@@ -203,7 +225,7 @@ double outstandingOf(double openingOutstanding, Iterable<CardEntry> entries) {
 double _sum(Iterable<CardEntry> entries) {
   int total = 0;
   for (final CardEntry e in entries) {
-    total += _cents(e.amount);
+    total += toCents(e.amount);
   }
   return _fromCents(total);
 }
@@ -283,6 +305,23 @@ BillingCycle cycleContaining(DateTime date, int statementDay, int dueDay) {
 BillingCycle cardCycleContaining(CreditCard card, DateTime date) =>
     cycleContaining(date, card.statementDay, card.paymentDueDay);
 
+/// The cycle an entry is filed under: the one containing its billing date.
+BillingCycle cardCycleOf(CreditCard card, CardEntry entry) =>
+    cardCycleContaining(card, entry.billingDate);
+
+/// The closed cycles a card has statements for, newest first: from the
+/// cycle before the open one, [count] of them.
+List<BillingCycle> recentCycles(CreditCard card, DateTime today, {int count = 12}) {
+  final List<BillingCycle> cycles = <BillingCycle>[];
+  BillingCycle cycle = cardCycleContaining(
+      card, _addDays(cardCycleContaining(card, today).start, -1));
+  for (int i = 0; i < count; i++) {
+    cycles.add(cycle);
+    cycle = cardCycleContaining(card, _addDays(cycle.start, -1));
+  }
+  return cycles;
+}
+
 // ---------------------------------------------------------------------------
 // Statement
 // ---------------------------------------------------------------------------
@@ -341,10 +380,12 @@ class CardStatement {
   final double credits;
 }
 
-/// Walks every entry oldest-first from the opening outstanding, so a period's
-/// opening figure includes all earlier history. [from]/[to] bound the rows
-/// shown (inclusive); the filter is applied after the walk so it never
-/// corrupts the running figure, and the totals describe the rows shown.
+/// A period's rows are the entries whose billing date falls in [from, to]
+/// (inclusive), walked oldest-first from the opening outstanding — the
+/// opening outstanding plus everything billed before the period, whatever
+/// its transaction date, so a period's opening figure includes all earlier
+/// history. The filter is applied after the walk so it never corrupts the
+/// running figure, and the totals describe the rows shown.
 CardStatement buildCardStatement({
   required double openingOutstanding,
   required Iterable<CardEntry> entries,
@@ -352,16 +393,18 @@ CardStatement buildCardStatement({
   DateTime? to,
   CardStatementFilter filter = CardStatementFilter.all,
 }) {
-  int running = _cents(openingOutstanding);
-  int opening = running;
+  final List<CardEntry> ordered = orderEntries(entries);
+  bool before(CardEntry e) => from != null && e.billingDate.isBefore(from);
+  bool after(CardEntry e) => to != null && e.billingDate.isAfter(to);
+  int opening = toCents(openingOutstanding);
+  for (final CardEntry e in ordered.where(before)) {
+    opening += toCents(e.outstandingDelta);
+  }
+  int running = opening;
   final List<CardStatementRow> rows = <CardStatementRow>[];
-  for (final CardEntry entry in orderEntries(entries)) {
-    if (to != null && entry.date.isAfter(to)) break;
-    running += _cents(entry.outstandingDelta);
-    if (from != null && entry.date.isBefore(from)) {
-      opening = running;
-      continue;
-    }
+  for (final CardEntry entry in ordered) {
+    if (before(entry) || after(entry)) continue;
+    running += toCents(entry.outstandingDelta);
     if (filter.matches(entry)) {
       rows.add(CardStatementRow(
         entry: entry,
@@ -483,25 +526,25 @@ CardSummary summariseCard(
   final BillingCycle currentCycle = cardCycleContaining(card, day);
   final double unbilled = _sum(own.where((CardEntry e) =>
       e.isCharge &&
-      !e.date.isBefore(currentCycle.start) &&
-      !e.date.isAfter(currentCycle.end)));
+      !e.billingDate.isBefore(currentCycle.start) &&
+      !e.billingDate.isAfter(currentCycle.end)));
 
   final BillingCycle cycle =
       cardCycleContaining(card, _addDays(currentCycle.start, -1));
   final double balance = outstandingOf(
     card.openingOutstanding,
-    own.where((CardEntry e) => !e.date.isAfter(cycle.end)),
+    own.where((CardEntry e) => !e.billingDate.isAfter(cycle.end)),
   );
-  final double credited = _sum(
-      own.where((CardEntry e) => !e.isCharge && e.date.isAfter(cycle.end)));
+  final double credited = _sum(own
+      .where((CardEntry e) => !e.isCharge && e.billingDate.isAfter(cycle.end)));
   final double remaining = balance > 0
-      ? _fromCents(_cents(balance) - _cents(credited)).clamp(0, double.infinity)
+      ? _fromCents(toCents(balance) - toCents(credited)).clamp(0, double.infinity)
       : 0;
 
   final DueStatus status;
-  if (_cents(balance) <= 0) {
+  if (toCents(balance) <= 0) {
     status = DueStatus.nothingDue;
-  } else if (_cents(remaining) <= 0) {
+  } else if (toCents(remaining) <= 0) {
     status = DueStatus.paid;
   } else {
     status = day.isAfter(cycle.dueDate) ? DueStatus.overdue : DueStatus.due;
@@ -510,11 +553,11 @@ CardSummary summariseCard(
   return CardSummary(
     outstanding: outstanding,
     available: limit > 0
-        ? _fromCents(_cents(limit) - _cents(outstanding))
+        ? _fromCents(toCents(limit) - toCents(outstanding))
             .clamp(0, double.infinity)
         : 0,
     overLimit: limit > 0
-        ? _fromCents(_cents(outstanding) - _cents(limit))
+        ? _fromCents(toCents(outstanding) - toCents(limit))
             .clamp(0, double.infinity)
         : 0,
     utilisation: limit > 0 && outstanding > 0 ? outstanding / limit : 0,
@@ -601,7 +644,7 @@ CardPaymentProblem? checkCardPayment(
   if (draft.fromAccount &&
       availableBalance != null &&
       availableBalance.isFinite &&
-      _cents(amount) > _cents(availableBalance)) {
+      toCents(amount) > toCents(availableBalance)) {
     return CardPaymentProblem.insufficientFunds;
   }
   return null;
@@ -622,12 +665,17 @@ String cardPaymentDescription(CreditCard card, String? note) {
 /// A bank debit that can be recognised as a bill payment: entered by hand or
 /// imported from a statement — not an expense, income or transfer leg, and
 /// not already linked to a card.
-bool isLinkableDebit(LedgerEntry entry) =>
+///
+/// Money lent stays money lent (as on the web, where such a debit carries its
+/// claim): [lentIds] are the debits recorded as money lent, which are never
+/// offered as a card payment — change them from their edit sheet instead.
+bool isLinkableDebit(LedgerEntry entry, {Set<String> lentIds = const <String>{}}) =>
     entry.isDebit &&
     entry.expenseId == null &&
     entry.incomeId == null &&
     entry.transferGroupId == null &&
-    entry.creditCardId == null;
+    entry.creditCardId == null &&
+    !lentIds.contains(entry.id);
 
 const int paymentMatchDays = 3;
 
@@ -640,11 +688,11 @@ List<LedgerEntry> findLinkableDebits(
   DateTime date, {
   int nearbyDays = paymentMatchDays,
 }) {
-  final int wanted = _cents(amount);
+  final int wanted = toCents(amount);
   final List<LedgerEntry> hits = entries
       .where((LedgerEntry e) =>
           isLinkableDebit(e) &&
-          _cents(e.amount) == wanted &&
+          toCents(e.amount) == wanted &&
           _daysBetween(e.txnDate, date).abs() <= nearbyDays)
       .toList();
   hits.sort((LedgerEntry a, LedgerEntry b) {
@@ -666,12 +714,12 @@ List<LedgerEntry> findExpenseDebits(
   DateTime date, {
   int nearbyDays = paymentMatchDays,
 }) {
-  final int wanted = _cents(amount);
+  final int wanted = toCents(amount);
   return entries
       .where((LedgerEntry e) =>
           e.isDebit &&
           e.expenseId != null &&
-          _cents(e.amount) == wanted &&
+          toCents(e.amount) == wanted &&
           _daysBetween(e.txnDate, date).abs() <= nearbyDays)
       .toList();
 }

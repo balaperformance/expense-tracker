@@ -65,7 +65,7 @@ class _CardTransactionSheetState extends State<CardTransactionSheet> {
 
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final TextEditingController _amount = TextEditingController(
-    text: widget.refundOf == null ? '' : _trim(widget.refundOf!.amount),
+    text: widget.refundOf == null ? '' : Formatters.amountInput(widget.refundOf!.amount),
   );
   late final TextEditingController _description = TextEditingController(
     text: widget.refundOf == null ? '' : 'Refund: ${widget.refundOf!.title}',
@@ -78,11 +78,6 @@ class _CardTransactionSheetState extends State<CardTransactionSheet> {
   DateTime _date = AppDateUtils.today();
   bool _saving = false;
   String? _error;
-
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-  }
 
   @override
   void dispose() {

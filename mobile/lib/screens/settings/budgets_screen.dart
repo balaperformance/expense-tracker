@@ -225,7 +225,7 @@ class BudgetEditorSheet extends StatefulWidget {
 class _BudgetEditorSheetState extends State<BudgetEditorSheet> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   late final TextEditingController _amount = TextEditingController(
-    text: widget.existing == null ? '' : _trim(widget.existing!.amount),
+    text: widget.existing == null ? '' : Formatters.amountInput(widget.existing!.amount),
   );
 
   late String? _categoryId = widget.existing?.categoryId;
@@ -233,11 +233,6 @@ class _BudgetEditorSheetState extends State<BudgetEditorSheet> {
 
   bool _saving = false;
   String? _error;
-
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-  }
 
   @override
   void dispose() {

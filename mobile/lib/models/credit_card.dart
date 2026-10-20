@@ -183,6 +183,9 @@ class CardTransaction {
     this.description,
     this.reference,
     this.originalExpenseId,
+    this.emiPlanId,
+    this.emiComponent,
+    this.statementDate,
     this.createdAt,
   });
 
@@ -200,6 +203,12 @@ class CardTransaction {
 
   /// The purchase a refund reverses, when known.
   final String? originalExpenseId;
+
+  /// The EMI plan this interest, GST or fee belongs to (migration 016) and
+  /// which part it is; the statement it was billed on, when known.
+  final String? emiPlanId;
+  final String? emiComponent;
+  final DateTime? statementDate;
   final DateTime? createdAt;
 
   factory CardTransaction.fromMap(Map<String, dynamic> map) {
@@ -216,6 +225,11 @@ class CardTransaction {
       description: map['description'] as String?,
       reference: map['reference'] as String?,
       originalExpenseId: map['original_expense_id'] as String?,
+      emiPlanId: map['emi_plan_id'] as String?,
+      emiComponent: map['emi_component'] as String?,
+      statementDate: map['statement_date'] == null
+          ? null
+          : AppDateUtils.parseDate(map['statement_date'] as String),
       createdAt: map['created_at'] == null
           ? null
           : DateTime.parse(map['created_at'] as String),

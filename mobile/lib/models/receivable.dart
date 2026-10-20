@@ -1,4 +1,5 @@
 import '../core/utils/date_utils.dart';
+import '../core/utils/money.dart';
 
 /// Money owed to the user (migrations 005 and 014, shared with the web app):
 /// everything paid for someone — a purchase made for them (on a card, from an
@@ -22,6 +23,7 @@ class Receivable {
     required this.person,
     this.ledgerEntryId,
     this.expenseId,
+    this.emiPlanId,
     this.dueDate,
     this.note,
     this.createdAt,
@@ -38,6 +40,10 @@ class Receivable {
   /// What was paid for them.
   final String? expenseId;
 
+  /// An EMI someone else pays back month by month (migration 016): what is
+  /// owed is what has been billed so far.
+  final String? emiPlanId;
+
   final DateTime? dueDate;
   final String? note;
 
@@ -53,6 +59,7 @@ class Receivable {
       person: person.isEmpty ? 'Someone' : person,
       ledgerEntryId: map['ledger_entry_id'] as String?,
       expenseId: map['expense_id'] as String?,
+      emiPlanId: map['emi_plan_id'] as String?,
       dueDate: due == null || due.isEmpty ? null : AppDateUtils.parseDate(due),
       note: map['note'] as String?,
       createdAt: map['created_at'] as String?,
@@ -73,6 +80,8 @@ class ClaimSource {
     this.cardId,
     this.ledgerEntryId,
     this.expenseId,
+    this.emiPlanId,
+    this.installments = const <EmiClaimInstallment>[],
   });
 
   final DateTime date;
@@ -88,6 +97,22 @@ class ClaimSource {
   /// The bank movement behind it, when there is one.
   final String? ledgerEntryId;
   final String? expenseId;
+
+  /// The EMI plan, for a claim on one.
+  final String? emiPlanId;
+
+  /// An EMI claim's instalments as owed back, oldest first: what each
+  /// statement billed (the principal, plus the charges when the plan
+  /// includes them). A reimbursement usually arrives for exactly one of these.
+  final List<EmiClaimInstallment> installments;
+}
+
+/// One statement's worth of an EMI claim.
+class EmiClaimInstallment {
+  const EmiClaimInstallment({required this.date, required this.amount});
+
+  final DateTime date;
+  final double amount;
 }
 
 /// A ledger credit received against a claim.
@@ -134,6 +159,7 @@ class ClaimSummary {
     required this.status,
     required this.repayments,
     required this.overdue,
+    this.allowance = 0,
   });
 
   final Receivable receivable;
@@ -151,14 +177,32 @@ class ClaimSummary {
   /// Oldest first.
   final List<ClaimRepayment> repayments;
   final bool overdue;
+
+  /// How far repayments may go past what is owed and still settle it
+  /// exactly: an EMI's rounding allowance (see [roundingAllowance]), 0 for
+  /// anything else.
+  final double allowance;
 }
 
-int _cents(double value) => (value * 100).round();
+/// An EMI is billed to the paisa (₹9,907.34) but paid back in round rupees
+/// (₹9,908). Each billed instalment may be overpaid by up to this much
+/// without the claim counting as overpaid — the database allows the same
+/// (claim_rounding_allowance, migration 017).
+const double emiRoundingPerInstallment = 1;
 
-ClaimStatus claimStatus(double principal, double received) {
-  final int left = _cents(principal) - _cents(received);
-  if (left > 0) return _cents(received) > 0 ? ClaimStatus.partial : ClaimStatus.open;
-  return left == 0 ? ClaimStatus.settled : ClaimStatus.overpaid;
+/// A claim's rounding allowance: ₹1 per instalment billed for an EMI,
+/// nothing for anything else.
+double roundingAllowance(ClaimSource? source) {
+  if (source?.emiPlanId == null) return 0;
+  return emiRoundingPerInstallment * source!.installments.length;
+}
+
+/// [allowance]: how far past [principal] repayments may go and still count
+/// as settled — rounding on an EMI. Anything beyond it is overpaid.
+ClaimStatus claimStatus(double principal, double received, [double allowance = 0]) {
+  final int left = toCents(principal) - toCents(received);
+  if (left > 0) return toCents(received) > 0 ? ClaimStatus.partial : ClaimStatus.open;
+  return left >= -toCents(allowance) ? ClaimStatus.settled : ClaimStatus.overpaid;
 }
 
 /// One summary per claim. Open claims first, then newest.
@@ -180,19 +224,21 @@ List<ClaimSummary> summariseClaims({
           ..sort((ClaimRepayment a, ClaimRepayment b) => a.date.compareTo(b.date));
     final double principal = source?.amount ?? 0;
     final double receivedTotal = received.fold<int>(
-            0, (int sum, ClaimRepayment p) => sum + _cents(p.amount)) /
+            0, (int sum, ClaimRepayment p) => sum + toCents(p.amount)) /
         100;
-    final ClaimStatus status = claimStatus(principal, receivedTotal);
+    final double allowance = roundingAllowance(source);
+    final ClaimStatus status = claimStatus(principal, receivedTotal, allowance);
     final DateTime? due = r.dueDate;
     return ClaimSummary(
       receivable: r,
       source: source,
       principal: principal,
       received: receivedTotal,
-      outstanding: (_cents(principal) - _cents(receivedTotal)) / 100,
+      outstanding: (toCents(principal) - toCents(receivedTotal)) / 100,
       status: status,
       repayments: received,
       overdue: status.isOpen && due != null && due.isBefore(today),
+      allowance: allowance,
     );
   }).toList();
   summaries.sort((ClaimSummary a, ClaimSummary b) {
@@ -265,7 +311,7 @@ List<PersonBalance> balancesByPerson(List<ClaimSummary> claims) {
     group.claims.add(claim);
     if (claim.status.isOpen) {
       group.outstanding =
-          (_cents(group.outstanding) + _cents(claim.outstanding)) / 100;
+          (toCents(group.outstanding) + toCents(claim.outstanding)) / 100;
       group.open += 1;
     }
   }
@@ -281,17 +327,20 @@ double amountLeft(ClaimSummary claim) => claim.outstanding < 0 ? 0 : claim.outst
 
 /// What would be left on [claim] after [amount] more comes back.
 double outstandingAfter(ClaimSummary claim, double amount) =>
-    (_cents(claim.outstanding) - _cents(amount)) / 100;
+    (toCents(claim.outstanding) - toCents(amount)) / 100;
 
 enum RepaymentProblem { amount, tooMuch, settled }
 
 /// Whether [amount] can be recorded as a repayment of [claim]: a positive
-/// amount, and no more than is still owed — so the same repayment cannot be
-/// recorded twice. The database refuses the same (migration 014).
+/// amount, and no more than is still owed (plus an EMI's rounding allowance)
+/// — so the same repayment cannot be recorded twice. The database refuses
+/// the same (migrations 014, 017).
 RepaymentProblem? repaymentProblem(ClaimSummary claim, double? amount) {
   if (!claim.status.isOpen) return RepaymentProblem.settled;
-  if (amount == null || !amount.isFinite || _cents(amount) <= 0) return RepaymentProblem.amount;
-  return _cents(amount) > _cents(amountLeft(claim)) ? RepaymentProblem.tooMuch : null;
+  if (amount == null || !amount.isFinite || toCents(amount) <= 0) return RepaymentProblem.amount;
+  return toCents(amount) > toCents(amountLeft(claim)) + toCents(claim.allowance)
+      ? RepaymentProblem.tooMuch
+      : null;
 }
 
 String repaymentProblemMessage(RepaymentProblem problem, String left) => switch (problem) {
@@ -305,7 +354,7 @@ String repaymentProblemMessage(RepaymentProblem problem, String left) => switch 
 double totalOutstanding(List<ClaimSummary> claims) =>
     claims
         .where((ClaimSummary c) => c.status.isOpen)
-        .fold<int>(0, (int sum, ClaimSummary c) => sum + _cents(c.outstanding)) /
+        .fold<int>(0, (int sum, ClaimSummary c) => sum + toCents(c.outstanding)) /
     100;
 
 /// The body of `record_bank_movement`'s p_treatment for money paid back

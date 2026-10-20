@@ -12,6 +12,8 @@
 library;
 
 import 'expense.dart';
+import '../core/utils/money.dart';
+import '../core/utils/text.dart';
 
 /// How far back the habits are read: long enough to see a monthly bill
 /// three times.
@@ -108,17 +110,10 @@ class FrequentExpenseContext {
   final Set<String> cardIds;
 }
 
-String? _clean(String? text) {
-  final String trimmed = (text ?? '').trim();
-  return trimmed.isEmpty ? null : trimmed;
-}
-
 final RegExp _spaces = RegExp(r'\s+');
 
 /// "Uber", " uber " and "UBER" are one habit.
 String _normalise(String title) => title.toLowerCase().replaceAll(_spaces, ' ');
-
-int _cents(double amount) => (amount * 100).round();
 
 /// Negative when [a] happened before [b]: by date, then entry time, then id.
 int _chronological(Expense a, Expense b) {
@@ -145,7 +140,7 @@ class _Tally {
 double? _usualAmount(List<Expense> group) {
   final Map<int, _Tally> tally = <int, _Tally>{};
   for (final Expense expense in group) {
-    final int key = _cents(expense.amount);
+    final int key = toCents(expense.amount);
     final _Tally? seen = tally[key];
     if (seen == null) {
       tally[key] = _Tally(key, expense);
@@ -212,7 +207,7 @@ List<FrequentExpense> frequentExpenses(
         expense.expenseDate.isAfter(today)) {
       continue;
     }
-    final String? title = _clean(expense.merchant) ?? _clean(expense.description);
+    final String? title = blankToNull(expense.merchant) ?? blankToNull(expense.description);
     final String key = '$categoryId|${title == null ? '' : _normalise(title)}';
     (groups[key] ??= <Expense>[]).add(expense);
     categoryOf[key] = categoryId;
@@ -227,11 +222,11 @@ List<FrequentExpense> frequentExpenses(
     found.add((
       FrequentExpense(
         key: key,
-        title: _clean(latest.merchant) ?? _clean(latest.description),
+        title: blankToNull(latest.merchant) ?? blankToNull(latest.description),
         categoryId: categoryOf[key]!,
         amount: _usualAmount(group),
-        description: _clean(latest.description),
-        merchant: _clean(latest.merchant),
+        description: blankToNull(latest.description),
+        merchant: blankToNull(latest.merchant),
         paymentMethodId:
             methodId != null && context.paymentMethodIds.contains(methodId)
                 ? methodId

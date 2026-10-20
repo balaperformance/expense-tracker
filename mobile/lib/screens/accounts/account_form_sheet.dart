@@ -12,6 +12,7 @@ import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/state_views.dart';
+import '../../core/utils/formatters.dart';
 
 /// Create or edit a bank account — or, with [cash], the user's cash balance,
 /// which needs only the cash on hand now: its name is always Cash.
@@ -40,7 +41,7 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
   late final TextEditingController _last4 =
       TextEditingController(text: widget.account?.last4 ?? '');
   late final TextEditingController _opening = TextEditingController(
-    text: widget.account == null ? '' : _trim(widget.account!.openingBalance),
+    text: widget.account == null ? '' : Formatters.amountInput(widget.account!.openingBalance),
   );
 
   bool _saving = false;
@@ -50,11 +51,6 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
 
   bool get _isCash => widget.account?.isCash ?? widget.cash;
 
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-  }
-
   @override
   void dispose() {
     _bankName.dispose();
@@ -63,7 +59,6 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
     _opening.dispose();
     super.dispose();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -184,7 +179,6 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
     );
   }
 
-
   /// Unlike an expense amount, an opening balance may legitimately be zero or
   /// negative (an overdrawn account), so this is not [Validators.amount].
   String? _validateOpening(String? value) {
@@ -250,8 +244,12 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
   Future<void> _delete() async {
     final BankAccount account = widget.account!;
     final BankAccountProvider provider = context.read<BankAccountProvider>();
-    final int movements = await provider.movementCount(account.id);
-    final int cardPayments = await provider.cardPaymentCount(account.id);
+    final List<int> counts = await Future.wait(<Future<int>>[
+      provider.movementCount(account.id),
+      provider.cardPaymentCount(account.id),
+    ]);
+    final int movements = counts[0];
+    final int cardPayments = counts[1];
 
     if (!mounted) return;
     // A bill payment is the same row on the card's statement, so it goes

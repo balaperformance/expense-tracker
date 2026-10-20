@@ -47,8 +47,6 @@ class DashboardData {
     required this.recentExpenses,
     required this.categoryBreakdown,
     required this.trend,
-    required this.overallBudget,
-    required this.overallSpent,
   });
 
   final DateTime month;
@@ -57,10 +55,6 @@ class DashboardData {
   final List<Expense> recentExpenses;
   final List<CategorySpend> categoryBreakdown;
   final List<MonthlyPoint> trend;
-
-  /// Null when no overall budget is set for the month.
-  final double? overallBudget;
-  final double overallSpent;
 
   double get balance => totalIncome - totalExpense;
 

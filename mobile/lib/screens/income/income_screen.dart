@@ -3,10 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/date_utils.dart';
+import '../../models/emi_reimbursement.dart';
 import '../../models/income.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../providers/income_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../widgets/common/app_buttons.dart';
@@ -16,7 +20,9 @@ import '../../widgets/common/money_text.dart';
 import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/transaction_tile.dart';
+import '../expenses/expenses_screen.dart';
 import '../shell/home_shell.dart';
 import 'income_form_screen.dart';
 
@@ -42,7 +48,13 @@ class _IncomeScreenState extends State<IncomeScreen> {
     super.initState();
     _scroll.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) SessionScope.attachIncome(context);
+      if (!mounted) return;
+      SessionScope.attachIncome(context);
+      // EMI reimbursements are counted on their own line, from the claims.
+      final String? userId = context.read<AuthProvider>().userId;
+      if (SchemaCapabilities.emi && userId != null) {
+        context.read<ReceivableProvider>().load(userId: userId);
+      }
     });
   }
 
@@ -162,8 +174,10 @@ class _IncomeScreenState extends State<IncomeScreen> {
         AppSpacing.page,
         AppSpacing.bottomListPadding,
       ),
-      itemCount: groups.length + 1,
+      itemCount: groups.length + 2,
       itemBuilder: (BuildContext context, int index) {
+        if (index == 0) return _emiLine(currency);
+        index -= 1;
         if (index == groups.length) {
           return _Footer(
             loading: provider.loadingMore,
@@ -256,11 +270,76 @@ class _IncomeScreenState extends State<IncomeScreen> {
     return ok;
   }
 
-  Future<void> _addIncome() async {
+  Future<void> _addIncome({bool emi = false}) async {
     final bool? saved = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const IncomeFormScreen()),
+      MaterialPageRoute<bool>(
+        builder: (_) => IncomeFormScreen(emiReimbursement: emi),
+      ),
     );
     if (saved == true) _invalidateDerived();
+  }
+
+  /// EMI reimbursements are repayments, not income: shown here on their own
+  /// line, never in the list or its totals.
+  Widget _emiLine(String currency) {
+    if (!SchemaCapabilities.emi) return const SizedBox.shrink();
+    final DateTime today = AppDateUtils.today();
+    final DateTime month = DateTime(today.year, today.month, 1);
+    final ({double received, int count, double owed, int people}) emi =
+        emiReimbursementTotals(
+      context.watch<ReceivableProvider>().claims,
+      month,
+      DateTime(month.year, month.month + 1, 1),
+    );
+    if (emi.count == 0 && emi.owed <= 0) return const SizedBox.shrink();
+    final ThemeData theme = Theme.of(context);
+    String money(double v) => Formatters.currency(v, currencyCode: currency);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: SurfaceCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text('Card EMI reimbursements', style: theme.textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              '${money(emi.received)} received this month'
+              '${emi.owed > 0 ? ' · ${money(emi.owed)} still owed by ${emi.people} ${emi.people == 1 ? 'person' : 'people'}' : ''}',
+              style: theme.textTheme.bodySmall,
+            ),
+            Text(
+              'Not income — kept out of these totals and the reports.',
+              style: theme.textTheme.labelSmall,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: <Widget>[
+                AppButton(
+                  label: "What's owed",
+                  variant: AppButtonVariant.ghost,
+                  size: AppButtonSize.small,
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const ExpensesScreen(initialPaidFor: true),
+                    ),
+                  ),
+                ),
+                AppButton(
+                  label: 'Record',
+                  icon: Icons.add_rounded,
+                  variant: AppButtonVariant.tonal,
+                  size: AppButtonSize.small,
+                  onPressed: () => _addIncome(emi: true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _editIncome(Income income) async {

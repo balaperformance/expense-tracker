@@ -19,14 +19,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:expense_tracker/core/theme/app_theme.dart';
 import 'package:expense_tracker/models/analytics.dart';
 import 'package:expense_tracker/models/bank_account.dart';
-import 'package:expense_tracker/models/budget.dart';
 import 'package:expense_tracker/models/expense.dart';
 import 'package:expense_tracker/models/expense_category.dart';
 import 'package:expense_tracker/models/income.dart';
 import 'package:expense_tracker/providers/bank_account_provider.dart';
 import 'package:expense_tracker/providers/dashboard_provider.dart';
 import 'package:expense_tracker/repositories/bank_account_repository.dart';
-import 'package:expense_tracker/repositories/budget_repository.dart';
 import 'package:expense_tracker/repositories/expense_repository.dart';
 import 'package:expense_tracker/repositories/income_repository.dart';
 import 'package:expense_tracker/repositories/ledger_repository.dart';
@@ -97,17 +95,6 @@ class Received extends IncomeRepository {
       <String, double>{};
 }
 
-class NoBudget extends BudgetRepository {
-  NoBudget(super.client);
-
-  @override
-  Future<Budget?> fetchOverall({
-    required String userId,
-    required DateTime month,
-  }) async =>
-      null;
-}
-
 void main() {
   late SupabaseClient client;
   setUp(() {
@@ -140,7 +127,6 @@ void main() {
     final DashboardProvider dashboard = DashboardProvider(
       expenses: Expenses(client),
       income: Received(client),
-      budgets: NoBudget(client),
     );
     await dashboard.load(userId: 'u1', categories: const <ExpenseCategory>[]);
 

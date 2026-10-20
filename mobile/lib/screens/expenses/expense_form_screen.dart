@@ -56,9 +56,14 @@ class ExpenseFormScreen extends StatefulWidget {
     this.expense,
     this.prefill,
     this.initialCardId,
+    this.initialPaidFor = false,
   });
 
   final Expense? expense;
+
+  /// Opens a new expense with "Paid for someone" already on — Add from the
+  /// paid-for view, as on the web.
+  final bool initialPaidFor;
 
   /// Opens a new expense already paid with this card ("Add purchase" on a
   /// card's statement).
@@ -122,7 +127,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
 
   /// Paid on someone else's behalf (migration 005): owed back, so not the
   /// user's own spending.
-  bool _paidFor = false;
+  late bool _paidFor = widget.expense == null && widget.initialPaidFor;
   final TextEditingController _paidForPerson = TextEditingController();
 
   /// The purchase's claim when it is already marked, for its progress.
@@ -165,10 +170,10 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
 
     _amount = TextEditingController(
       text: existing != null
-          ? _trimTrailingZeros(existing.amount)
+          ? Formatters.amountInput(existing.amount)
           : (prefill?.amount == null
               ? ''
-              : _trimTrailingZeros(prefill!.amount!)),
+              : Formatters.amountInput(prefill!.amount!)),
     );
     _merchant = TextEditingController(
       text: existing?.merchant ?? prefill?.merchant ?? '',
@@ -316,7 +321,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     final FrequentSource? source = suggestion.source;
     setState(() {
       // A varying amount is left blank for the user to type.
-      _amount.text = amount == null ? '' : _trimTrailingZeros(amount);
+      _amount.text = amount == null ? '' : Formatters.amountInput(amount);
       _categoryId = suggestion.categoryId;
       _merchant.text = suggestion.merchant ?? '';
       _description.text = suggestion.description ?? '';
@@ -352,7 +357,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
 
     setState(() {
       if (scanned.amount != null) {
-        _amount.text = _trimTrailingZeros(scanned.amount!);
+        _amount.text = Formatters.amountInput(scanned.amount!);
       }
       if (scanned.merchant != null) _merchant.text = scanned.merchant!;
       if (scanned.description != null) {
@@ -379,11 +384,6 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   Future<void> _importSms() async {
     final bool saved = await startSmsImport(context);
     if (saved && mounted) Navigator.of(context).pop(true);
-  }
-
-  static String _trimTrailingZeros(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
   }
 
   @override

@@ -82,7 +82,7 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
 
   late final bool _debit = widget.entry.isDebit;
   late final TextEditingController _amount =
-      TextEditingController(text: _trim(widget.entry.amount));
+      TextEditingController(text: Formatters.amountInput(widget.entry.amount));
   late final TextEditingController _description =
       TextEditingController(text: widget.entry.description ?? '');
   final TextEditingController _source = TextEditingController();
@@ -120,11 +120,6 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
   bool _purchasesLoading = false;
   String? _purchasesKey;
   Timer? _amountTimer;
-
-  static String _trim(double value) {
-    final String text = value.toStringAsFixed(2);
-    return text.endsWith('.00') ? text.substring(0, text.length - 3) : text;
-  }
 
   @override
   void initState() {
@@ -826,6 +821,11 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
       final double left = leftAfter(chosen, value);
       if (left == 0) {
         status = 'This settles it.';
+        statusTone = ToneColors.income(context);
+      } else if (left < 0 && !overpays(chosen, value)) {
+        status = 'This settles it — '
+            '${Formatters.currency(-left, currencyCode: currency)} over, within the '
+            'rounding allowed on an EMI.';
         statusTone = ToneColors.income(context);
       } else if (left > 0) {
         status = '${Formatters.currency(left, currencyCode: currency)} still owed after this.';

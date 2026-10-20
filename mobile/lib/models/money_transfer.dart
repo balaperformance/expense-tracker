@@ -11,6 +11,8 @@
 ///    `categories`, so it never pollutes the category picker or breakdown.
 library;
 
+import '../core/utils/money.dart';
+
 /// Shown wherever a real category would be. Intentionally not a database
 /// category: see the library comment above.
 const String moneyTransferLabel = 'Money Transfer';
@@ -104,14 +106,13 @@ class TransferValidation {
     // rejected above, so by here only the balance could be non-finite.
     if (availableBalance != null &&
         availableBalance.isFinite &&
-        _cents(amount) > _cents(availableBalance)) {
+        toCents(amount) > toCents(availableBalance)) {
       return TransferProblem.insufficientFunds;
     }
 
     return null;
   }
 
-  static int _cents(double value) => (value * 100).round();
 }
 
 /// The description stored on each leg.
