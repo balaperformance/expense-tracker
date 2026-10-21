@@ -12,12 +12,11 @@ import 'app_glass.dart';
 /// the same choice the same way.
 enum AppPalette {
   /// Gothic Noir — black hero, dark-taupe brand, the jewel chart palette.
-  /// The default: everyone stays on it until they choose Matte & Sand, as on
-  /// the web.
   current('current', 'Current'),
 
   /// Matte & Sand — matte black for the hero and primary controls, warm
-  /// ivory as the canvas, sand only for small marks. No glows.
+  /// ivory as the canvas, sand only for small marks. No glows. The default,
+  /// as on the web.
   matte('matte', 'Matte & Sand');
 
   const AppPalette(this.id, this.label);
@@ -34,7 +33,7 @@ enum AppPalette {
     for (final AppPalette palette in values) {
       if (palette.id == id) return palette;
     }
-    return current;
+    return matte;
   }
 }
 

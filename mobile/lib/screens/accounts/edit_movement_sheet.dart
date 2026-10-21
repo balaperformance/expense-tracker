@@ -15,6 +15,7 @@ import '../../models/expense_category.dart';
 import '../../models/ledger_entry.dart';
 import '../../models/movement_treatment.dart';
 import '../../models/receivable.dart';
+import '../../models/tag.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_provider.dart';
@@ -28,6 +29,7 @@ import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/tag_field.dart';
 
 /// What the edit sheet was closed with.
 enum EditMovementResult { saved, delete }
@@ -69,10 +71,6 @@ class EditMovementSheet extends StatefulWidget {
 }
 
 class _EditMovementSheetState extends State<EditMovementSheet> {
-  /// A tag is at most 40 characters and a row has at most 20 — the limits
-  /// `set_transaction_tags` enforces.
-  static const int _maxTagLength = 40;
-  static const int _maxTags = 20;
   static const double _maxAmount = 999999999;
 
   static const Map<String, IconData> _kindIcons = <String, IconData>{
@@ -517,7 +515,13 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
       if (_showTags) ...<Widget>[
         const SizedBox(height: AppSpacing.lg),
         const FieldLabel('Tags', hint: 'Optional'),
-        _tagField(),
+        TagField(
+          tags: _tags,
+          draft: _tagDraft,
+          known: _knownTags,
+          enabled: !_busy,
+          onChanged: (List<String> next) => setState(() => _tags = next),
+        ),
       ],
       const SizedBox(height: AppSpacing.lg),
       const FieldLabel('Date', isRequired: true),
@@ -975,64 +979,12 @@ class _EditMovementSheetState extends State<EditMovementSheet> {
     );
   }
 
-  Widget _tagField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        if (_tags.isNotEmpty) ...<Widget>[
-          Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: _tags
-                .map((String tag) => InputChip(
-                      label: Text('#$tag'),
-                      visualDensity: VisualDensity.compact,
-                      onDeleted: _busy ? null : () => setState(() => _tags.remove(tag)),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-        ],
-        TextField(
-          controller: _tagDraft,
-          enabled: !_busy,
-          textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            hintText: 'Add a tag',
-            prefixIcon: Icon(Icons.tag_rounded, size: AppSpacing.iconSm),
-          ),
-          onChanged: (String value) {
-            if (value.contains(',')) _commitTag();
-          },
-          onSubmitted: (_) => _commitTag(),
-        ),
-      ],
-    );
-  }
+  /// The tags with the one being typed, cleaned as the database cleans them
+  /// and spelt like the user's existing tags.
+  List<String> _withDraft() => TagField.withDraft(_tags, _tagDraft.text, _knownTags);
 
-  /// The tags with the one being typed, cleaned as the database cleans them:
-  /// no "#", single spaces, no repeats (ignoring case).
-  List<String> _withDraft() {
-    final List<String> next = List<String>.of(_tags);
-    for (final String part in _tagDraft.text.split(',')) {
-      final String name =
-          part.replaceFirst(RegExp(r'^\s*#+'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
-      if (name.isEmpty) continue;
-      final String clipped =
-          name.length > _maxTagLength ? name.substring(0, _maxTagLength) : name;
-      if (next.any((String t) => t.toLowerCase() == clipped.toLowerCase())) continue;
-      if (next.length >= _maxTags) break;
-      next.add(clipped);
-    }
-    return next;
-  }
-
-  void _commitTag() {
-    setState(() {
-      _tags = _withDraft();
-      _tagDraft.clear();
-    });
-  }
+  /// The user's tags, offered as suggestions; none until the edit is read.
+  List<Tag> get _knownTags => _data?.knownTags ?? const <Tag>[];
 
   // ---- Save --------------------------------------------------------------------
 

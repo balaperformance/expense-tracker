@@ -3,7 +3,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import type { ToolContext } from "../tools/common.ts";
 import { executeTool, findTool, TOOLS } from "../tools/registry.ts";
 import { executeWrite } from "../tools/write_tools.ts";
-import { ACC_HDFC, ACC_SBI, CAT_SHOPPING, FakeDb, USER_A, USER_B } from "./fakes.ts";
+import { ACC_HDFC, ACC_SBI, CAT_SHOPPING, FakeDb, seedTags, USER_A, USER_B } from "./fakes.ts";
 
 function ctxFor(db: FakeDb, userId = USER_A): ToolContext {
   return { userId, db, today: "2026-09-22", currency: "INR" };
@@ -33,6 +33,7 @@ Deno.test("registry: exposes exactly the allowlisted tools and nothing generic",
     "get_monthly_cashflow",
     "get_monthly_expenses",
     "get_recent_transactions",
+    "get_tag_spending",
     "transfer_money",
   ]);
   for (const forbidden of ["execute_sql", "query_database", "execute_rpc", "arbitrary_supabase_query", "sql"]) {
@@ -500,3 +501,102 @@ Deno.test("write: executeWrite refuses read tools and unknown tools", async () =
   assert(!(await executeWrite(ctxFor(db), "execute_sql", { sql: "drop table expenses" })).ok);
   assertEquals(db.calls.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Tags (shared with the web app, migration 006)
+// ---------------------------------------------------------------------------
+
+function tagged(): FakeDb {
+  return seedTags(new FakeDb().seedSeptember());
+}
+
+Deno.test("tags: a #tag's all-time total comes from its links, with a category breakdown", async () => {
+  const db = tagged();
+  const data = await run(db, "get_tag_spending", { tag: "#myownspendings", all_time: true });
+  assertEquals(data.found, true);
+  assertEquals(data.tag, "#myownspendings");
+  assertEquals(data.period, "All time");
+  assertEquals(data.total_spent, 1950); // 450 + 1200 + 300; never B's 99999
+  assertEquals(data.expense_count, 3);
+  const categories = data.categories as Array<{ category: string; total: number }>;
+  assertEquals(categories.map((c) => [c.category, c.total]), [["Shopping", 1200], ["Food", 750]]);
+  const latest = data.latest_expenses as Array<{ date: string }>;
+  assertEquals(latest.map((e) => e.date), ["2026-09-10", "2026-09-03", "2026-08-28"]);
+});
+
+Deno.test("tags: the name resolves without the #, in any case, or spelt with spaces", async () => {
+  const db = tagged();
+  for (const query of ["myownspendings", "MyOwnSpendings", "#MYOWNSPENDINGS", "my own spendings"]) {
+    const data = await run(db, "get_tag_spending", { tag: query, all_time: true });
+    assertEquals(data.tag, "#myownspendings", query);
+    assertEquals(data.total_spent, 1950, query);
+  }
+});
+
+Deno.test("tags: a month or range counts only its own tagged expenses", async () => {
+  const db = tagged();
+  const september = await run(db, "get_tag_spending", { tag: "myownspendings", month: "2026-09" });
+  assertEquals(september.total_spent, 1650);
+  assertEquals(september.expense_count, 2);
+  const range = await run(db, "get_tag_spending", { tag: "myownspendings", from: "2026-08-01", to: "2026-09-05" });
+  assertEquals(range.total_spent, 750);
+  // No period at all: the current month, like the other tools.
+  const current = await run(db, "get_tag_spending", { tag: "myownspendings" });
+  assertEquals(current.period, "September 2026");
+});
+
+Deno.test("tags: a category narrows the tag, and tagged income is reported beside spending", async () => {
+  const db = tagged();
+  const food = await run(db, "get_tag_spending", { tag: "myownspendings", all_time: true, category: "food" });
+  assertEquals(food.total_spent, 750);
+  assertEquals(food.expense_count, 2);
+  const trip = await run(db, "get_tag_spending", { tag: "trip", all_time: true });
+  assertEquals(trip.total_spent, 1200);
+  assertEquals((trip.tagged_income as { total: number }).total, 4000);
+});
+
+Deno.test("tags: without a tag, every tag is compared for the period", async () => {
+  const db = tagged();
+  const data = await run(db, "get_tag_spending", { month: "2026-09" });
+  const tags = data.tags as Array<{ tag: string; total: number; expense_count: number }>;
+  assertEquals(tags.map((t) => [t.tag, t.total, t.expense_count]), [
+    ["#myownspendings", 1650, 2],
+    ["#Trip", 1200, 1],
+  ]);
+  assertEquals(data.tag_count, 3);
+});
+
+Deno.test("tags: an unknown tag is reported after reading the database, naming the real ones", async () => {
+  const db = tagged();
+  const data = await run(db, "get_tag_spending", { tag: "#holiday", all_time: true });
+  assertEquals(data.found, false);
+  assertStringIncludes(String(data.message), "#holiday");
+  assertEquals(data.your_tags, ["#myownspendings", "#Trip", "#Unused"]);
+  assert(db.calls.some((c) => c.method === "listTags"), "the tags were read");
+});
+
+Deno.test("tags: a tag with nothing in the period says so rather than failing", async () => {
+  const db = tagged();
+  const data = await run(db, "get_tag_spending", { tag: "unused", all_time: true });
+  assertEquals(data.found, true);
+  assertEquals(data.total_spent, 0);
+  assertStringIncludes(String(data.message), "Nothing tagged #Unused");
+});
+
+Deno.test("tags: before migration 006 there are simply no tags", async () => {
+  const db = new FakeDb().seedSeptember();
+  const data = await run(db, "get_tag_spending", { tag: "anything", all_time: true });
+  assertEquals(data.found, false);
+  assertStringIncludes(String(data.message), "not created any tags");
+});
+
+Deno.test("tags: every read is the caller's, and B's same-named tag never counts for A", async () => {
+  const db = tagged();
+  await run(db, "get_tag_spending", { tag: "myownspendings", all_time: true });
+  await run(db, "get_tag_spending", { all_time: true });
+  for (const c of db.calls) assertEquals(c.userId, USER_A, c.method);
+  const b = await run(db, "get_tag_spending", { tag: "myownspendings", all_time: true }, USER_B);
+  assertEquals(b.total_spent, 99999);
+  assertEquals(b.expense_count, 1);
+});
+

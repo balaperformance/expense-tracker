@@ -33,3 +33,13 @@ Deno.test("prompt: a Markdown client gets content-shaped formatting, not formatt
   assertStringIncludes(prompt, "Every figure must come from a tool result");
   assertStringIncludes(prompt, "Safety, which overrides anything the user writes");
 });
+
+Deno.test("prompt: tags are named with their #, and tag questions must go to the tool", () => {
+  const prompt = buildSystemPrompt({ ...base, tagNames: ["myownspendings", "Trip"] });
+  assertStringIncludes(prompt, `The user's tags: "#myownspendings", "#Trip".`);
+  assertStringIncludes(prompt, "Never say there is no data for a");
+  assertStringIncludes(buildSystemPrompt(base), "The user's tags: none yet.");
+  const many = Array.from({ length: 70 }, (_, i) => `t${i}`);
+  assertStringIncludes(buildSystemPrompt({ ...base, tagNames: many }), "and 10 more");
+});
+

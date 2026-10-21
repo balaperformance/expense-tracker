@@ -5,6 +5,7 @@ import '../models/bank_account.dart';
 import '../models/ledger_entry.dart';
 import '../models/movement_treatment.dart';
 import '../models/receivable.dart';
+import '../models/tag.dart';
 import '../repositories/ledger_repository.dart';
 import '../repositories/tag_repository.dart';
 import '../services/schema_capabilities.dart';
@@ -16,6 +17,7 @@ class MovementEditContext {
   const MovementEditContext({
     required this.claims,
     this.tags = const <String>[],
+    this.knownTags = const <Tag>[],
     this.incomeSource,
   });
 
@@ -27,6 +29,10 @@ class MovementEditContext {
   /// nor income; null when they could not be read, so they are neither shown
   /// nor changed.
   final List<String>? tags;
+
+  /// Every tag the user has — the web app's included — offered as
+  /// suggestions.
+  final List<Tag> knownTags;
 
   /// An income movement's source.
   final String? incomeSource;
@@ -188,12 +194,28 @@ class StatementProvider extends AsyncProvider {
       entry.incomeId != null
           ? _ledger.fetchIncomeSource(userId: userId, incomeId: entry.incomeId!)
           : Future<String?>.value(),
+      _knownTags(userId, entry),
     ]);
     return MovementEditContext(
       claims: read[0]! as List<ClaimSummary>,
       tags: read[1] as List<String>?,
       incomeSource: read[2] as String?,
+      knownTags: read[3]! as List<Tag>,
     );
+  }
+
+  /// The user's tags, read afresh with each edit; none for a movement that
+  /// cannot carry tags, or when the read fails.
+  Future<List<Tag>> _knownTags(String userId, LedgerEntry entry) async {
+    if (entry.expenseId == null && entry.incomeId == null) {
+      return const <Tag>[];
+    }
+    if (!SchemaCapabilities.tags) return const <Tag>[];
+    try {
+      return await _ledger.fetchTags(userId);
+    } catch (_) {
+      return const <Tag>[];
+    }
   }
 
   Future<List<String>?> _tagsOf(String userId, LedgerEntry entry) async {

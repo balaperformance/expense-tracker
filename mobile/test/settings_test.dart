@@ -48,9 +48,10 @@ void main() {
   });
 
   group('palette', () {
-    test('everyone starts on Current, as on the web', () {
-      expect(preferences.palette, AppPalette.current);
-      expect(_settings(preferences).palette, AppPalette.current);
+    test('everyone starts on Matte & Sand in light mode, as on the web', () {
+      expect(preferences.palette, AppPalette.matte);
+      expect(_settings(preferences).palette, AppPalette.matte);
+      expect(preferences.themeMode, ThemeMode.light);
     });
 
     test('a chosen palette is stored by the web id and survives a restart',
@@ -59,39 +60,39 @@ void main() {
       int heard = 0;
       settings.addListener(() => heard++);
 
-      await settings.setPalette(AppPalette.matte);
-      expect(settings.palette, AppPalette.matte);
+      await settings.setPalette(AppPalette.current);
+      expect(settings.palette, AppPalette.current);
       expect(heard, 1, reason: 'the MaterialApp rebuilds its themes');
 
       final SharedPreferences raw = await SharedPreferences.getInstance();
-      expect(raw.getString('pref_palette'), 'matte');
+      expect(raw.getString('pref_palette'), 'current');
 
       final PreferencesService relaunched = await PreferencesService.create();
-      expect(_settings(relaunched).palette, AppPalette.matte);
+      expect(_settings(relaunched).palette, AppPalette.current);
     });
 
     test('choosing the palette already in use changes nothing', () async {
       final SettingsProvider settings = _settings(preferences);
       int heard = 0;
       settings.addListener(() => heard++);
-      await settings.setPalette(AppPalette.current);
+      await settings.setPalette(AppPalette.matte);
       expect(heard, 0);
     });
 
-    test('an unknown stored value reads as Current', () async {
+    test('an unknown stored value reads as Matte & Sand', () async {
       SharedPreferences.setMockInitialValues(
         <String, Object>{'pref_palette': 'neon'},
       );
       final PreferencesService stale = await PreferencesService.create();
-      expect(stale.palette, AppPalette.current);
+      expect(stale.palette, AppPalette.matte);
     });
 
     test('signing out keeps the palette: it belongs to the device', () async {
       final SettingsProvider settings = _settings(preferences);
-      await settings.setPalette(AppPalette.matte);
+      await settings.setPalette(AppPalette.current);
       await settings.reset();
-      expect(settings.palette, AppPalette.matte);
-      expect(preferences.palette, AppPalette.matte);
+      expect(settings.palette, AppPalette.current);
+      expect(preferences.palette, AppPalette.current);
     });
   });
 
@@ -263,7 +264,7 @@ void main() {
         ('Notifications', 'Checking this phone…'),
         ('Money', 'Accounts, cards, budgets, categories · INR'),
         ('Data & Export', 'Statement import, reports and transactions'),
-        ('Appearance', 'Current · System'),
+        ('Appearance', 'Matte & Sand · Light'),
       ]) {
         expect(find.text(title), findsOneWidget, reason: title);
         expect(find.text(summary), findsOneWidget, reason: summary);
@@ -295,17 +296,17 @@ void main() {
       expect(find.text('Palette'), findsOneWidget);
       expect(find.text('Mode'), findsOneWidget);
 
-      await tester.tap(find.text('Matte & Sand'));
+      await tester.tap(find.text('Current'));
       await tester.pumpAndSettle();
 
-      expect(settings.palette, AppPalette.matte);
-      expect(preferences.palette, AppPalette.matte);
-      expect(find.text('Matte & Sand · System'), findsOneWidget);
+      expect(settings.palette, AppPalette.current);
+      expect(preferences.palette, AppPalette.current);
+      expect(find.text('Current · Light'), findsOneWidget);
       final BuildContext context = tester.element(find.text('Palette'));
       expect(Theme.of(context).extension<PaletteTokens>()?.palette,
-          AppPalette.matte);
+          AppPalette.current);
       expect(Theme.of(context).scaffoldBackgroundColor,
-          PaletteTokens.matteLight.background);
+          PaletteTokens.currentLight.background);
     });
 
     testWidgets('a section opened before is open on the next visit',

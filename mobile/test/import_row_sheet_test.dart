@@ -13,6 +13,7 @@ import 'package:expense_tracker/core/theme/app_theme.dart';
 import 'package:expense_tracker/models/bank_account.dart';
 import 'package:expense_tracker/models/credit_card.dart';
 import 'package:expense_tracker/models/expense_category.dart';
+import 'package:expense_tracker/models/tag.dart';
 import 'package:expense_tracker/providers/category_provider.dart';
 import 'package:expense_tracker/providers/credit_card_provider.dart';
 import 'package:expense_tracker/providers/settings_provider.dart';
@@ -52,6 +53,18 @@ class _Engine implements StatementEngine {
 
   @override
   Future<void> release(String token) async {}
+}
+
+/// The user's tags as the database has them — some added on the web.
+class _Tags extends TagRepository {
+  const _Tags(super.client);
+
+  @override
+  Future<List<Tag>> fetchTags(String userId) async => const <Tag>[
+        Tag(id: 't1', name: 'Food'),
+        Tag(id: 't2', name: 'Groceries'),
+        Tag(id: 't3', name: 'Family'),
+      ];
 }
 
 const List<BankAccount> _accounts = <BankAccount>[
@@ -251,5 +264,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Choose the account it was paid from.'), findsOneWidget);
     expect(engine.calls.where(((String, Map<String, Object?>) c) => c.$1 == 'reduce'), isEmpty);
+  });
+
+  testWidgets("the user's existing tags are offered, and reused with their spelling",
+      (WidgetTester tester) async {
+    import = StatementImportProvider(
+      engine: engine,
+      expenses: ExpenseRepository(client),
+      income: IncomeRepository(client),
+      ledger: LedgerRepository(client),
+      tags: _Tags(client),
+    )..begin(
+        userId: 'u1',
+        account: _accounts.first,
+        accounts: _accounts,
+        categories: const <ExpenseCategory>[],
+        cards: const <CreditCard>[],
+      );
+    await pump(tester, _paytmRow(), 360);
+    // "food" is already on the row, so only the others are offered.
+    expect(find.text('Groceries'), findsOneWidget);
+    expect(find.text('Family'), findsOneWidget);
+    expect(find.text('Food'), findsNothing);
+
+    await tester.ensureVisible(find.text('Groceries'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Groceries'));
+    await tester.pumpAndSettle();
+    expect(find.text('#Groceries'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Add tags'), 'family');
+    await tester.pumpAndSettle();
+    expect(find.text('Family'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

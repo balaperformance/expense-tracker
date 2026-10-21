@@ -66,6 +66,15 @@ export type BudgetRow = {
   category_id: string | null;
 };
 
+/** A row of `tags` (migration 006): a label shared by both apps. */
+export type TagRow = { id: string; name: string };
+
+/** Which tagged rows a tag link joins: `expense_tags` or `income_tags`. */
+export type TagKind = "expense" | "income";
+
+/** One link: the expense or income row `row_id` carries tag `tag_id`. */
+export type TagLinkRow = { tag_id: string; row_id: string };
+
 /** Which optional migrations the database has. Mirrors SchemaCapabilities. */
 export type Capabilities = {
   merchant: boolean;
@@ -146,6 +155,31 @@ export interface DbPort {
   ledgerNet(userId: string, accountId: string, before: string | null): Promise<number>;
 
   budgetsForMonth(userId: string, monthFirstDay: string): Promise<BudgetRow[]>;
+
+  /** The user's tags by name; empty before migration 006. */
+  listTags(userId: string): Promise<TagRow[]>;
+
+  /**
+   * Tag links of one kind, for the given tags or — with null — every tag.
+   * Empty before migration 006.
+   */
+  tagLinks(userId: string, kind: TagKind, tagIds: string[] | null): Promise<TagLinkRow[]>;
+
+  /** Those of the given expenses dated in the range; either bound may be null. */
+  expensesByIds(
+    userId: string,
+    ids: string[],
+    fromInclusive: string | null,
+    toExclusive: string | null,
+  ): Promise<ExpenseRow[]>;
+
+  /** Those of the given income rows dated in the range; either bound may be null. */
+  incomeByIds(
+    userId: string,
+    ids: string[],
+    fromInclusive: string | null,
+    toExclusive: string | null,
+  ): Promise<IncomeRow[]>;
 
   insertExpense(userId: string, row: NewExpense): Promise<{ id: string }>;
   insertIncome(userId: string, row: NewIncome): Promise<{ id: string }>;

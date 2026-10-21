@@ -13,6 +13,9 @@ import type {
   NewIncome,
   NewLedgerRow,
   PaymentMethodRow,
+  TagKind,
+  TagLinkRow,
+  TagRow,
 } from "../db/port.ts";
 import type { AIProvider } from "../providers/provider.ts";
 import { ProviderError } from "../providers/provider.ts";
@@ -65,6 +68,8 @@ export class FakeDb implements DbPort {
   income: Owned<IncomeRow>[] = [];
   ledger: Owned<LedgerRow>[] = [];
   budgets: Array<Owned<BudgetRow> & { month: string }> = [];
+  tags: Owned<TagRow>[] = [];
+  tagLinkRows: Array<Owned<TagLinkRow> & { kind: TagKind }> = [];
 
   calls: Array<{ method: string; userId: string }> = [];
   inserted = { expenses: [] as NewExpense[], income: [] as NewIncome[], ledger: [] as NewLedgerRow[] };
@@ -170,6 +175,37 @@ export class FakeDb implements DbPort {
         .map(({ id, amount, category_id }) => ({ id, amount, category_id })),
     );
   }
+  listTags(userId: string): Promise<TagRow[]> {
+    this.record("listTags", userId);
+    return Promise.resolve(
+      this.mine(this.tags, userId).sort((a, b) => a.name.localeCompare(b.name)),
+    );
+  }
+  tagLinks(userId: string, kind: TagKind, tagIds: string[] | null): Promise<TagLinkRow[]> {
+    this.record("tagLinks", userId);
+    return Promise.resolve(
+      this.mine(this.tagLinkRows, userId)
+        .filter((l) => l.kind === kind && (tagIds === null || tagIds.includes(l.tag_id)))
+        .map(({ tag_id, row_id }) => ({ tag_id, row_id })),
+    );
+  }
+  expensesByIds(userId: string, ids: string[], from: string | null, toExclusive: string | null): Promise<ExpenseRow[]> {
+    this.record("expensesByIds", userId);
+    return Promise.resolve(
+      this.mine(this.expenses, userId)
+        .filter((e) => ids.includes(e.id))
+        .filter((e) => (from ? e.expense_date >= from : true) && (toExclusive ? e.expense_date < toExclusive : true))
+        .sort((a, b) => (a.expense_date < b.expense_date ? 1 : -1)),
+    );
+  }
+  incomeByIds(userId: string, ids: string[], from: string | null, toExclusive: string | null): Promise<IncomeRow[]> {
+    this.record("incomeByIds", userId);
+    return Promise.resolve(
+      this.mine(this.income, userId)
+        .filter((i) => ids.includes(i.id))
+        .filter((i) => (from ? i.income_date >= from : true) && (toExclusive ? i.income_date < toExclusive : true)),
+    );
+  }
   insertExpense(userId: string, row: NewExpense): Promise<{ id: string }> {
     this.record("insertExpense", userId);
     this.inserted.expenses.push(row);
@@ -236,6 +272,31 @@ export class FakeDb implements DbPort {
     );
     return this;
   }
+}
+
+/**
+ * Tags on top of [FakeDb.seedSeptember]: #myownspendings on two September
+ * expenses and one from August, #Trip on one of the same and on freelance
+ * income, an unused tag, and USER_B's own #myownspendings linked to B's row
+ * — which must never count for A.
+ */
+export function seedTags(db: FakeDb): FakeDb {
+  const a = USER_A;
+  db.tags.push(
+    { owner: a, id: "t1", name: "myownspendings" },
+    { owner: a, id: "t2", name: "Trip" },
+    { owner: a, id: "t3", name: "Unused" },
+    { owner: USER_B, id: "tb", name: "myownspendings" },
+  );
+  db.tagLinkRows.push(
+    { owner: a, kind: "expense", tag_id: "t1", row_id: "e1" },
+    { owner: a, kind: "expense", tag_id: "t1", row_id: "e2" },
+    { owner: a, kind: "expense", tag_id: "t1", row_id: "e4" },
+    { owner: a, kind: "expense", tag_id: "t2", row_id: "e2" },
+    { owner: a, kind: "income", tag_id: "t2", row_id: "i2" },
+    { owner: USER_B, kind: "expense", tag_id: "tb", row_id: "eb" },
+  );
+  return db;
 }
 
 /** Provider whose answers are scripted. Each call consumes the next entry. */

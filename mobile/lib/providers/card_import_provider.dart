@@ -20,6 +20,7 @@ import '../repositories/expense_repository.dart';
 import '../repositories/ledger_repository.dart';
 import '../services/schema_capabilities.dart';
 import '../services/sms/sms_expense_draft.dart';
+import '../services/statement_import/screenshot_prep.dart';
 import '../services/statement_import/statement_engine.dart';
 import 'async_state.dart';
 
@@ -311,8 +312,11 @@ class CardImportProvider extends AsyncProvider {
           _problem = '${file.name} was already added.';
           continue;
         }
-        final RecognizedText recognised =
-            await recognizer.processImage(InputImage.fromFilePath(file.path));
+        final RecognizedText recognised = await ScreenshotPrep.read(
+          bytes,
+          file.path,
+          (String path) => recognizer.processImage(InputImage.fromFilePath(path)),
+        );
         final Map<String, Object?> read = (await _engine.call('cardItems', <String, Object?>{
           'shot': <String, Object?>{'id': shotId, 'name': file.name, 'lines': _ocrLines(recognised)},
           'cycle': cycle.cycle,

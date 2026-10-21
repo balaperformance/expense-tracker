@@ -7,6 +7,8 @@ export type PromptContext = {
   categoryNames: string[];
   accountLabels: string[];
   paymentMethodNames: string[];
+  /** The user's tags, without the "#". Names only, like the rest. */
+  tagNames?: string[];
   /**
    * The client lays replies out from Markdown (the web app). Without it —
    * the phone app shows text as written — replies stay plain sentences.
@@ -32,6 +34,17 @@ const RICH_TEXT = [
   "  blocks or emoji. Use the *_text fields from tool results for amounts.",
 ];
 
+/** Tags named in the prompt at most; get_tag_spending finds any of them. */
+const MAX_PROMPT_TAGS = 60;
+
+function tagList(names: string[]): string {
+  if (names.length === 0) return "none yet";
+  const shown = names.slice(0, MAX_PROMPT_TAGS).map((n) => `"#${n}"`).join(", ");
+  return names.length > MAX_PROMPT_TAGS
+    ? `${shown} and ${names.length - MAX_PROMPT_TAGS} more`
+    : shown;
+}
+
 /**
  * The system prompt.
  *
@@ -55,6 +68,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     `The user's categories: ${list(ctx.categoryNames, "none yet")}.`,
     `The user's bank accounts: ${list(ctx.accountLabels, "none")}. Money not in a bank account is cash.`,
     `The user's payment methods: ${list(ctx.paymentMethodNames, "none")}.`,
+    `The user's tags: ${tagList(ctx.tagNames ?? [])}.`,
     "",
     "How to answer:",
     "- Every figure must come from a tool result. Never estimate, calculate, or",
@@ -74,6 +88,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "- If a request to record money lacks the amount, what it was for, or which",
     "  account, ask for the missing detail. Do not guess and do not invent",
     "  defaults. When a tool returns status needs_input, ask for that item.",
+    "- A word starting with # is one of the user's tags. For any question about a",
+    "  tag — a total, a breakdown, what was tagged — call get_tag_spending with it,",
+    "  even if the tag is not in the list above. Never say there is no data for a",
+    "  tag without calling it. If the user names no period, use all_time, and say",
+    "  which period the figure covers. If it returns found false, say so and name",
+    "  the tags it lists. Follow-ups about \"that tag\" mean the last one discussed.",
     "- Transfers between the user's own accounts are not income and not spending.",
     "- If a tool returns an error, explain it in one plain sentence and suggest",
     "  what to try. Never mention tool names, ids, or technical details.",

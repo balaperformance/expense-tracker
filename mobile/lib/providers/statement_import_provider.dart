@@ -8,6 +8,7 @@ import '../models/income.dart';
 import '../models/ledger_entry.dart';
 import '../models/payment_method.dart';
 import '../models/receivable.dart';
+import '../models/tag.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/income_repository.dart';
 import '../repositories/ledger_repository.dart';
@@ -742,6 +743,19 @@ class StatementImportProvider extends AsyncProvider {
       <String, Object?>{'type': debit ? 'debit' : 'credit', 'treatments': SchemaCapabilities.treatments},
     );
     return (kinds as List<Object?>? ?? const <Object?>[]).whereType<String>().toList();
+  }
+
+  /// Every tag the user has — the web app's included — offered on a row's
+  /// tag field. Read afresh each time a row is opened, so a tag added
+  /// elsewhere shows up; empty before migration 006 or when the read fails.
+  Future<List<Tag>> knownTags() async {
+    final String? userId = _userId;
+    if (userId == null) return const <Tag>[];
+    try {
+      return await _tags.fetchTags(userId);
+    } catch (_) {
+      return const <Tag>[];
+    }
   }
 
   /// Re-runs the check against recorded transactions on every account the

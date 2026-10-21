@@ -43,6 +43,8 @@ dependencies:
   # receipt image ever leaves the phone and no API key ships in the app.
   image_picker: ^1.1.2
   google_mlkit_text_recognition: ^0.13.0
+  # Scales and sharpens card statement screenshots before OCR (on the phone).
+  image: ^4.5.4
 
   # Export. pdf renders the human-readable reports, path_provider supplies a
   # cache directory to write them into, and share_plus hands the finished file

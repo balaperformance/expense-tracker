@@ -14,6 +14,9 @@ import type {
   NewIncome,
   NewLedgerRow,
   PaymentMethodRow,
+  TagKind,
+  TagLinkRow,
+  TagRow,
 } from "./port.ts";
 import { DbError } from "./port.ts";
 
@@ -29,6 +32,12 @@ import { DbError } from "./port.ts";
 export class SupabaseDb implements DbPort {
   private static capabilityCache: { at: number; value: Capabilities } | null = null;
   private static readonly capabilityTtlMs = 5 * 60_000;
+  /** PostgREST's default cap on rows a request returns. */
+  private static readonly pageSize = 1000;
+  /** Upper bound on a paged read, so a runaway table cannot exhaust the function. */
+  private static readonly maxPagedRows = 20_000;
+  /** Ids per `in (...)` filter, keeping the request URL short. */
+  private static readonly idChunk = 100;
 
   constructor(private readonly client: SupabaseClient) {}
 
@@ -259,6 +268,116 @@ export class SupabaseDb implements DbPort {
     }));
   }
 
+  async listTags(userId: string): Promise<TagRow[]> {
+    const data = await this.pages((from, to) =>
+      this.client
+        .from("tags")
+        .select("id, name")
+        .eq("user_id", userId)
+        .order("name", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
+    if (data === null) return [];
+    return data.map((row) => ({ id: String(row.id), name: String(row.name ?? "").trim() }))
+      .filter((tag) => tag.name.length > 0);
+  }
+
+  async tagLinks(userId: string, kind: TagKind, tagIds: string[] | null): Promise<TagLinkRow[]> {
+    if (tagIds !== null && tagIds.length === 0) return [];
+    const table = kind === "expense" ? "expense_tags" : "income_tags";
+    const column = kind === "expense" ? "expense_id" : "income_id";
+    const data = await this.pages((from, to) => {
+      let query = this.client
+        .from(table)
+        .select(`tag_id, ${column}`)
+        .eq("user_id", userId);
+      if (tagIds !== null) query = query.in("tag_id", tagIds);
+      return query
+        .order(column, { ascending: true })
+        .order("tag_id", { ascending: true })
+        .range(from, to);
+    });
+    if (data === null) return [];
+    return data.map((row) => ({ tag_id: String(row.tag_id), row_id: String(row[column]) }));
+  }
+
+  async expensesByIds(
+    userId: string,
+    ids: string[],
+    fromInclusive: string | null,
+    toExclusive: string | null,
+  ): Promise<ExpenseRow[]> {
+    const caps = await this.capabilities();
+    const found = await this.byIds(ids, (chunk) => {
+      let query = this.client
+        .from("expenses")
+        .select(expenseColumns(caps))
+        .eq("user_id", userId)
+        .in("id", chunk);
+      if (fromInclusive) query = query.gte("expense_date", fromInclusive);
+      if (toExclusive) query = query.lt("expense_date", toExclusive);
+      return query;
+    });
+    return found.map(mapExpense).sort(newestFirst((e) => e.expense_date));
+  }
+
+  async incomeByIds(
+    userId: string,
+    ids: string[],
+    fromInclusive: string | null,
+    toExclusive: string | null,
+  ): Promise<IncomeRow[]> {
+    const caps = await this.capabilities();
+    const found = await this.byIds(ids, (chunk) => {
+      let query = this.client
+        .from("income")
+        .select(incomeColumns(caps))
+        .eq("user_id", userId)
+        .in("id", chunk);
+      if (fromInclusive) query = query.gte("income_date", fromInclusive);
+      if (toExclusive) query = query.lt("income_date", toExclusive);
+      return query;
+    });
+    return found.map(mapIncome).sort(newestFirst((i) => i.income_date));
+  }
+
+  /**
+   * Every page of a read, in order — PostgREST stops at 1000 rows a request.
+   * Null when the table does not exist yet (before its migration).
+   */
+  private async pages(
+    page: (from: number, to: number) => QueryResult,
+  ): Promise<Array<Record<string, unknown>> | null> {
+    const out: Array<Record<string, unknown>> = [];
+    for (let from = 0; from < SupabaseDb.maxPagedRows; from += SupabaseDb.pageSize) {
+      const { data, error } = await page(from, from + SupabaseDb.pageSize - 1);
+      if (error) {
+        if (error.code === "PGRST205" || error.code === "42P01") return null;
+        throw new DbError(error.code ?? null);
+      }
+      const batch = rows(data);
+      out.push(...batch);
+      if (batch.length < SupabaseDb.pageSize) break;
+    }
+    return out;
+  }
+
+  /** One read per chunk of ids, so a long id list stays within the URL limit. */
+  private async byIds(
+    ids: string[],
+    read: (chunk: string[]) => QueryResult,
+  ): Promise<Array<Record<string, unknown>>> {
+    const unique = [...new Set(ids)];
+    const out: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < unique.length; i += SupabaseDb.idChunk) {
+      const { data, error } = await read(unique.slice(i, i + SupabaseDb.idChunk));
+      if (error) throw new DbError(error.code ?? null);
+      out.push(...rows(data));
+    }
+    return out;
+  }
+
   async insertExpense(userId: string, row: NewExpense): Promise<{ id: string }> {
     const caps = await this.capabilities();
     // user_id comes from the verified JWT via the parameter, never from the
@@ -346,6 +465,14 @@ function mapIncome(raw: unknown): IncomeRow {
     description: (row.description as string | null) ?? null,
     bank_account_id: (row.bank_account_id as string | null) ?? null,
   };
+}
+
+/** What one PostgREST read resolves to, before its rows are mapped. */
+type QueryResult = PromiseLike<{ data: unknown; error: { code?: string } | null }>;
+
+/** A comparator putting the latest date first. */
+function newestFirst<T>(date: (row: T) => string): (a: T, b: T) => number {
+  return (a, b) => (date(a) < date(b) ? 1 : date(a) > date(b) ? -1 : 0);
 }
 
 /** PostgREST rows as plain records. The select strings here are built at

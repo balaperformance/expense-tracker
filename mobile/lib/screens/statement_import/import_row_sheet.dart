@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,6 +12,7 @@ import '../../models/bank_account.dart';
 import '../../models/credit_card.dart';
 import '../../models/expense_category.dart';
 import '../../models/receivable.dart';
+import '../../models/tag.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/receivable_provider.dart';
@@ -163,6 +166,10 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   late String _bankAccountId = widget.row.bankAccountId;
   late String? _time = _hhmm(widget.row.transactionTime);
   late List<String> _tags = List<String>.of(widget.row.tags);
+
+  /// The user's tags, offered as suggestions and reused with their own
+  /// spelling.
+  List<Tag> _knownTags = const <Tag>[];
   late _Target? _target = _Target.of(widget.row);
   List<String> _debitKinds = const <String>['expense', 'transfer'];
   List<String> _creditKinds = const <String>['income', 'refund', 'transfer'];
@@ -182,6 +189,11 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final StatementImportProvider provider =
           context.read<StatementImportProvider>();
+      if (SchemaCapabilities.tags) {
+        unawaited(provider.knownTags().then((List<Tag> known) {
+          if (mounted) setState(() => _knownTags = known);
+        }));
+      }
       try {
         final List<String> debit = await provider.kindsFor(true);
         final List<String> credit = await provider.kindsFor(false);
@@ -458,6 +470,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           TagField(
             tags: _tags,
             draft: _tagDraft,
+            known: _knownTags,
             onChanged: (List<String> next) => setState(() => _tags = next),
           ),
         ],
@@ -770,7 +783,8 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     final String notes = _notes.text.trim();
     // A tag typed but not confirmed counts too, cleaned as the database
     // cleans it.
-    final List<String> tags = TagField.withDraft(_tags, _tagDraft.text);
+    final List<String> tags =
+        TagField.withDraft(_tags, _tagDraft.text, _knownTags);
     final _Target? before = _Target.of(row);
     final Map<String, Object?> patch = <String, Object?>{
       if (description != row.description) 'description': description,

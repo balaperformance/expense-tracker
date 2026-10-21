@@ -1,14 +1,18 @@
 import { LIMITS } from "../core/limits.ts";
-import type { ExpenseRow, IncomeRow, LedgerRow } from "../db/port.ts";
+import type { ExpenseRow, IncomeRow, LedgerRow, TagLinkRow, TagRow } from "../db/port.ts";
 import {
   accountBalances,
   accountLabel,
   fail,
   findAccount,
+  findCategory,
+  findTag,
   money,
   ok,
+  type Period,
   PERIOD_PROPERTIES,
   resolvePeriod,
+  tagKey,
   type ToolContext,
   type ToolDefinition,
   truncatedNote,
@@ -27,6 +31,9 @@ import { addMonths, monthLabel, monthOf, monthRange } from "./period.ts";
  */
 
 const MONEY_TRANSFER = "Money Transfer";
+
+/** Tags named back to the model at most — enough to pick from, bounded in size. */
+const MAX_TAGS_LISTED = 30;
 
 function expenseTitle(e: ExpenseRow, categoryName: string | undefined): string {
   return e.merchant?.trim() || e.description?.trim() || categoryName || "Uncategorised";
@@ -153,13 +160,7 @@ export const getCategorySpending: ToolDefinition = {
       period: period.period.label,
       total,
       total_text: money(ctx, total),
-      categories: breakdown.slice(0, limit).map((b) => ({
-        category: b.category,
-        total: b.total,
-        total_text: money(ctx, b.total),
-        transaction_count: b.count,
-        share_percent: total <= 0 ? 0 : Math.round((b.total / total) * 1000) / 10,
-      })),
+      categories: categoryShares(ctx, breakdown.slice(0, limit), total),
       category_count: breakdown.length,
       currency: ctx.currency,
       note: truncatedNote(rows.length),
@@ -514,6 +515,153 @@ export const getMonthlyCashflow: ToolDefinition = {
   },
 };
 
+export const getTagSpending: ToolDefinition = {
+  name: "get_tag_spending",
+  kind: "read",
+  description: "Spending on expenses that carry one of the user's tags (#name) — tags are " +
+    "shared by the web and phone apps. For a month, a date range or all time: total, count, " +
+    "a breakdown by category and the latest tagged expenses, plus any tagged income. Omit " +
+    "`tag` to compare every tag. Use for any question that mentions a tag.",
+  parameters: {
+    type: "object",
+    properties: {
+      tag: {
+        type: "string",
+        description: "Tag name, with or without the leading #. Omit to compare all tags.",
+        maxLength: 60,
+      },
+      ...PERIOD_PROPERTIES,
+      all_time: {
+        type: "boolean",
+        description: "true counts every tagged expense whatever its date, and ignores " +
+          "month/from/to. Use it when the user names no period.",
+      },
+      category: {
+        type: "string",
+        description: "Only this category's expenses within the tag.",
+        maxLength: 60,
+      },
+    },
+  },
+  async run(ctx, args) {
+    const allTime = args.all_time === true;
+    let period: Period | null = null;
+    if (!allTime) {
+      const resolved = resolvePeriod(args, ctx.today);
+      if (!resolved.ok) return fail(resolved.error);
+      period = resolved.period;
+    }
+    const label = period?.label ?? "All time";
+
+    const [tags, categories] = await Promise.all([
+      ctx.db.listTags(ctx.userId),
+      ctx.db.listCategories(ctx.userId),
+    ]);
+    if (tags.length === 0) {
+      return ok({ found: false, period: label, message: "The user has not created any tags yet." });
+    }
+    const names = new Map(categories.map((c) => [c.id, c.name]));
+
+    let categoryId: string | null = null;
+    if (typeof args.category === "string") {
+      const found = findCategory(categories, args.category);
+      if (!found.ok) return fail(found.error);
+      categoryId = found.row.id;
+    }
+
+    let tag: TagRow | null = null;
+    if (typeof args.tag === "string" && tagKey(args.tag) !== "") {
+      const match = findTag(tags, args.tag);
+      if (match.kind === "ambiguous") {
+        return fail(`More than one tag matches: ${
+          match.candidates.map((t) => `#${t.name}`).join(", ")
+        }. Ask the user which one they mean.`);
+      }
+      if (match.kind === "none") {
+        return ok({
+          found: false,
+          period: label,
+          message: `The user has no tag called #${tagKey(args.tag)}.`,
+          your_tags: tags.slice(0, MAX_TAGS_LISTED).map((t) => `#${t.name}`),
+        });
+      }
+      tag = match.tag;
+    }
+
+    const tagIds = tag ? [tag.id] : null;
+    const [expenseLinks, incomeLinks] = await Promise.all([
+      ctx.db.tagLinks(ctx.userId, "expense", tagIds),
+      ctx.db.tagLinks(ctx.userId, "income", tagIds),
+    ]);
+    // Links come in id order, not date order, so a cut is not "the most
+    // recent" — say plainly that only part was counted.
+    const allExpenseIds = uniqueIds(expenseLinks);
+    const expenseIds = allExpenseIds.slice(0, LIMITS.maxRowsPerAggregate);
+    const incomeIds = uniqueIds(incomeLinks).slice(0, LIMITS.maxRowsPerAggregate);
+    const from = period?.from ?? null;
+    const toExclusive = period?.toExclusive ?? null;
+    const [expenseRows, income] = await Promise.all([
+      ctx.db.expensesByIds(ctx.userId, expenseIds, from, toExclusive),
+      // Income has no category, so a category-narrowed question has none.
+      categoryId === null
+        ? ctx.db.incomeByIds(ctx.userId, incomeIds, from, toExclusive)
+        : Promise.resolve([] as IncomeRow[]),
+    ]);
+    const expenses = categoryId === null
+      ? expenseRows
+      : expenseRows.filter((e) => e.category_id === categoryId);
+    const truncated = allExpenseIds.length > expenseIds.length
+      ? "Only part of the tagged expenses could be counted; the true figure may be higher."
+      : undefined;
+
+    if (tag === null) {
+      const byTag = tagTotals(expenses, expenseLinks, tags);
+      return ok({
+        period: label,
+        tags: byTag.slice(0, MAX_TAGS_LISTED).map((t) => ({
+          tag: `#${t.name}`,
+          total: t.total,
+          total_text: money(ctx, t.total),
+          expense_count: t.count,
+        })),
+        tag_count: tags.length,
+        tags_with_spending: byTag.length,
+        currency: ctx.currency,
+        note: [truncated, "An expense with several tags counts under each of them."]
+          .filter(Boolean).join(" "),
+      });
+    }
+
+    const total = sum(expenses.map((e) => e.amount));
+    const incomeTotal = sum(income.map((i) => i.amount));
+    return ok({
+      found: true,
+      tag: `#${tag.name}`,
+      period: label,
+      category: categoryId === null ? undefined : names.get(categoryId),
+      total_spent: total,
+      total_spent_text: money(ctx, total),
+      expense_count: expenses.length,
+      categories: categoryShares(ctx, categoryBreakdown(expenses, names).slice(0, 8), total),
+      latest_expenses: expenses.slice(0, 5).map((e) => ({
+        date: e.expense_date,
+        title: expenseTitle(e, names.get(e.category_id ?? "")),
+        category: names.get(e.category_id ?? "") ?? "Uncategorised",
+        amount: e.amount,
+        amount_text: money(ctx, e.amount),
+      })),
+      tagged_income: income.length === 0
+        ? undefined
+        : { total: incomeTotal, total_text: money(ctx, incomeTotal), entry_count: income.length },
+      message: expenses.length === 0 && income.length === 0
+        ? `Nothing tagged #${tag.name} ${period ? `in ${label}` : "yet"}.`
+        : undefined,
+      currency: ctx.currency,
+      note: truncated,
+    });
+  },
+};
+
 export const READ_TOOLS: readonly ToolDefinition[] = [
   getMonthlyExpenses,
   getExpenseSummary,
@@ -524,6 +672,7 @@ export const READ_TOOLS: readonly ToolDefinition[] = [
   getRecentTransactions,
   getBudgetStatus,
   getMonthlyCashflow,
+  getTagSpending,
 ];
 
 // ---------------------------------------------------------------------------
@@ -548,6 +697,49 @@ export function categoryBreakdown(
       count: v.count,
     }))
     .sort((a, b) => b.total - a.total);
+}
+
+/** A breakdown as the model sees it: each category's total and share of [total]. */
+function categoryShares(
+  ctx: ToolContext,
+  breakdown: Array<{ category: string; total: number; count: number }>,
+  total: number,
+) {
+  return breakdown.map((b) => ({
+    category: b.category,
+    total: b.total,
+    total_text: money(ctx, b.total),
+    transaction_count: b.count,
+    share_percent: total <= 0 ? 0 : Math.round((b.total / total) * 1000) / 10,
+  }));
+}
+
+/** Each distinct row id the links point at, in link order. */
+export function uniqueIds(links: TagLinkRow[]): string[] {
+  return [...new Set(links.map((l) => l.row_id))];
+}
+
+/** Spending per tag, largest first; an expense with two tags counts under both. */
+export function tagTotals(
+  expenses: ExpenseRow[],
+  links: TagLinkRow[],
+  tags: TagRow[],
+): Array<{ name: string; total: number; count: number }> {
+  const amounts = new Map(expenses.map((e) => [e.id, e.amount]));
+  const totals = new Map<string, { total: number; count: number }>();
+  for (const link of links) {
+    const amount = amounts.get(link.row_id);
+    if (amount === undefined) continue;
+    const entry = totals.get(link.tag_id) ?? { total: 0, count: 0 };
+    entry.total += amount;
+    entry.count += 1;
+    totals.set(link.tag_id, entry);
+  }
+  const names = new Map(tags.map((t) => [t.id, t.name]));
+  return [...totals.entries()]
+    .filter(([id]) => names.has(id))
+    .map(([id, v]) => ({ name: names.get(id) as string, total: round2(v.total), count: v.count }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
 
 export type StatementRow = { entry: LedgerRow; balanceAfter: number };

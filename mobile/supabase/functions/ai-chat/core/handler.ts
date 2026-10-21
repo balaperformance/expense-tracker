@@ -122,11 +122,13 @@ async function handleChat(
   const providers = deps.providers();
   if (providers.length === 0) throw ChatError.notConfigured();
 
-  const [currency, categories, accounts, methods] = await Promise.all([
+  const [currency, categories, accounts, methods, tags] = await Promise.all([
     session.db.profileCurrency(session.userId).catch(() => null),
     session.db.listCategories(session.userId),
     session.db.listAccounts(session.userId).catch(() => []),
     session.db.listPaymentMethods(session.userId),
+    // Only names for the prompt; the tag tool reads its own figures.
+    session.db.listTags(session.userId).catch(() => []),
   ]);
 
   const ctx: ToolContext = {
@@ -142,6 +144,7 @@ async function handleChat(
     categoryNames: categories.map((c) => c.name),
     accountLabels: accounts.filter((a) => a.is_active).map(accountLabel),
     paymentMethodNames: methods.map((m) => m.name),
+    tagNames: tags.map((t) => t.name),
     // Only a client that renders Markdown asks for it; the phone app keeps plain replies.
     richText: clientContext.reply_format === "markdown",
   });

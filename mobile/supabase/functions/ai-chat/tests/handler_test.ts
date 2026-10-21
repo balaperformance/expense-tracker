@@ -5,7 +5,7 @@ import { LIMITS, RateLimiter } from "../core/limits.ts";
 import type { CompletionRequest } from "../core/messages.ts";
 import type { AIProvider } from "../providers/provider.ts";
 import { ProviderError } from "../providers/provider.ts";
-import { CAT_SHOPPING, call, FakeDb, FakeProvider, rateLimited, text, USER_A, USER_B } from "./fakes.ts";
+import { CAT_SHOPPING, call, FakeDb, FakeProvider, rateLimited, seedTags, text, USER_A, USER_B } from "./fakes.ts";
 
 const TOKEN_A = "Bearer token-for-user-a-0123456789";
 const TOKEN_B = "Bearer token-for-user-b-0123456789";
@@ -109,7 +109,7 @@ Deno.test("security: the model cannot execute SQL or reach auth.users", async ()
   assertEquals(body.reply, "I can't do that.");
   const touched = db.calls.map((c) => c.method);
   // Only the reference lookups made to build the prompt.
-  assertEquals(touched.filter((m) => !["profileCurrency", "listCategories", "listAccounts", "listPaymentMethods"].includes(m)), []);
+  assertEquals(touched.filter((m) => !["profileCurrency", "listCategories", "listAccounts", "listPaymentMethods", "listTags"].includes(m)), []);
 });
 
 Deno.test("security: invalid tool arguments are rejected and explained to the model", async () => {
@@ -491,3 +491,28 @@ Deno.test("providers: an empty model reply still gives the user words", async ()
   const { body } = await chat(handler, "…");
   assert(body.reply.length > 0);
 });
+
+Deno.test("chat: a tag question is answered from the tag tool, and the prompt names the tags", async () => {
+  const provider = new FakeProvider("gemini", [
+    (req: CompletionRequest) => {
+      assertStringIncludes(req.system, '"#myownspendings"');
+      assertStringIncludes(req.system, '"#Trip"');
+      assertStringIncludes(req.system, "get_tag_spending");
+      assert(req.tools.some((t) => t.name === "get_tag_spending"));
+      return call("get_tag_spending", { tag: "#myownspendings", all_time: true });
+    },
+    (req: CompletionRequest) => {
+      const toolResult = req.messages.at(-1);
+      assert(toolResult && toolResult.role === "tool");
+      assertStringIncludes(toolResult.content, '"total_spent":1950');
+      return text("You have spent 1,950 on #myownspendings in all.");
+    },
+  ]);
+  const { handler, db } = handlerWith({ db: seedTags(new FakeDb().seedSeptember()), providers: [provider] });
+  const { status, body } = await chat(handler, "Total spending for the tag #myownspendings");
+  assertEquals(status, 200);
+  assertEquals(body.reply, "You have spent 1,950 on #myownspendings in all.");
+  assert(db.calls.some((c) => c.method === "tagLinks"));
+  for (const c of db.calls) assertEquals(c.userId, USER_A, c.method);
+});
+

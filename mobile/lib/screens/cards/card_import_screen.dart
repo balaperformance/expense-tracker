@@ -314,12 +314,6 @@ class _CardImportScreenState extends State<CardImportScreen> {
             const SizedBox(height: AppSpacing.md),
             AppNotice(icon: Icons.error_outline_rounded, tone: theme.colorScheme.error, message: provider.problem!),
           ],
-          const SizedBox(height: AppSpacing.md),
-          const AppNotice(
-            icon: Icons.lock_outline_rounded,
-            message: 'Screenshots are read on this phone and deleted as soon as their text is out: never '
-                'uploaded, saved or sent anywhere. Nothing is written until you review the rows and confirm.',
-          ),
         ],
       ),
     );
@@ -364,8 +358,6 @@ class _CardImportScreenState extends State<CardImportScreen> {
           ),
           const SizedBox(height: AppSpacing.sm),
           const LinearProgressIndicator(),
-          const SizedBox(height: AppSpacing.sm),
-          Text('Read on this phone; the file is deleted as soon as it is read.', style: theme.textTheme.bodySmall),
         ],
       ),
     );
@@ -1100,8 +1092,6 @@ class _ResultView extends StatelessWidget {
                       '${result.notAttempted > 0 ? ' ${result.notAttempted} more were not attempted.' : ''}',
                 ),
               ],
-              const SizedBox(height: AppSpacing.sm),
-              Text('The screenshots were read on this phone and have not been kept anywhere.', style: theme.textTheme.labelSmall),
             ],
           ),
         ),

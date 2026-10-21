@@ -1,6 +1,6 @@
 import { LIMITS } from "../core/limits.ts";
 import type { JsonSchema } from "../core/messages.ts";
-import type { AccountRow, CategoryRow, DbPort, PaymentMethodRow } from "../db/port.ts";
+import type { AccountRow, CategoryRow, DbPort, PaymentMethodRow, TagRow } from "../db/port.ts";
 import { formatMoney } from "./money.ts";
 import {
   addDays,
@@ -215,6 +215,42 @@ export function findPaymentMethod(methods: PaymentMethodRow[], query: string) {
     "payment method",
     methods.map((m) => m.name),
   );
+}
+
+/**
+ * A tag name as both apps store and compare it (their TagRules): no leading
+ * "#", single spaces, case ignored.
+ */
+export function tagKey(raw: string): string {
+  return raw.replace(/^\s*#+/, "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * The tag a person means. Exact (ignoring case and the "#") wins; then the
+ * same letters without spaces or punctuation ("my own spendings" for
+ * #myownspendings); then a unique prefix, then a unique containment.
+ * Anything still ambiguous comes back as ambiguous so the model asks.
+ */
+export function findTag(
+  tags: TagRow[],
+  query: string,
+): { kind: "found"; tag: TagRow } | { kind: "ambiguous"; candidates: TagRow[] } | { kind: "none" } {
+  const key = tagKey(query);
+  if (!key) return { kind: "none" };
+  const squash = (value: string) => tagKey(value).replace(/[^\p{L}\p{N}]/gu, "");
+  const q = squash(query);
+  const passes: Array<(tag: TagRow) => boolean> = [
+    (tag) => tagKey(tag.name) === key,
+    (tag) => q !== "" && squash(tag.name) === q,
+    (tag) => q.length >= 2 && squash(tag.name).startsWith(q),
+    (tag) => q.length >= 3 && squash(tag.name).includes(q),
+  ];
+  for (const pass of passes) {
+    const hits = tags.filter(pass);
+    if (hits.length === 1) return { kind: "found", tag: hits[0] };
+    if (hits.length > 1) return { kind: "ambiguous", candidates: hits };
+  }
+  return { kind: "none" };
 }
 
 /** Balances derived exactly as the app derives them: opening + credits − debits. */

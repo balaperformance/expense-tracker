@@ -7,6 +7,7 @@ import '../models/ledger_entry.dart';
 import '../models/money_transfer.dart';
 import '../models/movement_treatment.dart';
 import '../models/receivable.dart';
+import '../models/tag.dart';
 import '../services/schema_capabilities.dart';
 import 'paging.dart';
 import 'receivable_repository.dart';
@@ -615,6 +616,10 @@ class LedgerRepository {
     required List<String> names,
   }) =>
       TagRepository(_client).setTags(kind: kind, id: id, names: names);
+
+  /// Every tag the user has, by name; empty before migration 006.
+  Future<List<Tag>> fetchTags(String userId) =>
+      TagRepository(_client).fetchTags(userId);
 
   /// An income row's source, which its edit keeps unless changed.
   Future<String?> fetchIncomeSource({

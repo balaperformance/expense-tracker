@@ -23,12 +23,13 @@ class PreferencesService {
 
   ThemeMode get themeMode {
     switch (_prefs.getString(_themeKey)) {
-      case 'light':
-        return ThemeMode.light;
+      case 'system':
+        return ThemeMode.system;
       case 'dark':
         return ThemeMode.dark;
       default:
-        return ThemeMode.system;
+        // Light until the user chooses otherwise, as on the web.
+        return ThemeMode.light;
     }
   }
 
@@ -44,8 +45,7 @@ class PreferencesService {
 
   /// The design language, independent of light/dark. Stored by the same id
   /// the web app uses; anything unrecognised — including nothing saved yet —
-  /// reads as Gothic Noir, so everyone stays on it until they choose Matte &
-  /// Sand. A device setting, like the theme.
+  /// reads as Matte & Sand, the default. A device setting, like the theme.
   AppPalette get palette => AppPalette.fromId(_prefs.getString(_paletteKey));
 
   Future<void> setPalette(AppPalette palette) =>
