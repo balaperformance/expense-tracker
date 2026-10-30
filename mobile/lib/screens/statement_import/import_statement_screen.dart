@@ -1059,6 +1059,9 @@ class _ImportRowTile extends StatelessWidget {
         (row.kind == 'expense' && row.reimbursable);
     final String? hint = row.isDuplicate ? null : row.hint?['text'] as String?;
     final String? needs = row.problem == null ? null : (_needs[row.problem] ?? 'Add details');
+    // Someone else's money (migration 019): kept, but neither income nor
+    // spending, so not in either colour.
+    final bool nonPersonal = !balanceOnly && row.nonPersonal;
     return Opacity(
       opacity: row.selected ? 1 : 0.55,
       child: InkWell(
@@ -1120,7 +1123,8 @@ class _ImportRowTile extends StatelessWidget {
                     ),
                     if (accountName != null ||
                         row.tags.isNotEmpty ||
-                        needs != null) ...<Widget>[
+                        needs != null ||
+                        nonPersonal) ...<Widget>[
                       const SizedBox(height: AppSpacing.xs),
                       Wrap(
                         spacing: AppSpacing.xs,
@@ -1132,6 +1136,7 @@ class _ImportRowTile extends StatelessWidget {
                               icon: Icons.edit_outlined,
                               tone: ToneColors.warning(context),
                             ),
+                          if (nonPersonal) const AppBadge(label: nonPersonalBadge),
                           if (accountName != null)
                             AppBadge(
                               label: accountName!,
@@ -1185,7 +1190,9 @@ class _ImportRowTile extends StatelessWidget {
                 signed: true,
                 tone: balanceOnly
                     ? AmountTone.transfer
-                    : (row.isDebit ? AmountTone.negative : AmountTone.positive),
+                    : nonPersonal
+                        ? AmountTone.neutral
+                        : (row.isDebit ? AmountTone.negative : AmountTone.positive),
                 style: theme.textTheme.titleSmall,
               ),
             ],

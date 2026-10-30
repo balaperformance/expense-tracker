@@ -134,7 +134,10 @@ void main() {
 
   tearDown(SchemaCapabilities.debugReset);
 
-  Future<void> pump(WidgetTester tester, ImportRow row, double width) async {
+  /// [opened]: the sheet is pushed over a page, as the review opens it, so
+  /// Done has somewhere to pop to.
+  Future<void> pump(WidgetTester tester, ImportRow row, double width,
+      {bool opened = false}) async {
     tester.view.physicalSize = Size(width * 2, 720 * 2);
     tester.view.devicePixelRatio = 2.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -162,10 +165,23 @@ void main() {
       ],
       child: MaterialApp(
         theme: AppTheme.light,
-        home: Scaffold(body: ImportRowSheet(row: row)),
+        home: opened
+            ? Builder(
+                builder: (BuildContext context) => TextButton(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => Scaffold(body: ImportRowSheet(row: row)),
+                  )),
+                  child: const Text('Open'),
+                ),
+              )
+            : Scaffold(body: ImportRowSheet(row: row)),
       ),
     ));
     await tester.pumpAndSettle();
+    if (opened) {
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+    }
   }
 
   for (final double width in <double>[320, 360, 411]) {
@@ -264,6 +280,67 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Choose the account it was paid from.'), findsOneWidget);
     expect(engine.calls.where(((String, Map<String, Object?>) c) => c.$1 == 'reduce'), isEmpty);
+  });
+
+  // Migration 019: money received for a friend, recorded but never income.
+  ImportRow incomeRow({bool personal = true}) => ImportRow(
+        <String, Object?>{
+          'id': 's1:3',
+          'transactionDate': '2026-09-14',
+          'description': 'From Arun',
+          'amount': 1500,
+          'transactionType': 'credit',
+          'kind': 'income',
+          'bankAccountId': 'a1',
+          'selected': true,
+          if (!personal) 'isPersonal': false,
+        },
+        const <String, Object?>{},
+      );
+
+  Map<String, Object?> lastPatch() =>
+      (engine.calls.lastWhere(((String, Map<String, Object?>) c) => c.$1 == 'reduce').$2['action']!
+          as Map<String, Object?>)['patch']! as Map<String, Object?>;
+
+  testWidgets('"Whose money?" is offered only once migration 019 is in place',
+      (WidgetTester tester) async {
+    await pump(tester, incomeRow(), 360);
+    expect(find.text('Whose money?'), findsNothing);
+
+    SchemaCapabilities.debugOverride(personal: true);
+    await pump(tester, incomeRow(), 360);
+    expect(find.text('Whose money?'), findsOneWidget);
+    expect(find.text('Mine'), findsOneWidget);
+    expect(find.text('For someone else'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('"For someone else" goes to the row as non-personal',
+      (WidgetTester tester) async {
+    SchemaCapabilities.debugOverride(personal: true);
+    await pump(tester, incomeRow(), 320, opened: true);
+    await tester.ensureVisible(find.text('For someone else'));
+    await tester.tap(find.text('For someone else'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('left out of your income, spending'), findsOneWidget);
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(lastPatch(), <String, Object?>{'isPersonal': false});
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('recording it as something else makes it personal again',
+      (WidgetTester tester) async {
+    SchemaCapabilities.debugOverride(personal: true);
+    await pump(tester, incomeRow(personal: false), 360, opened: true);
+    await tester.tap(find.text('Refund'));
+    await tester.pumpAndSettle();
+    expect(find.text('Whose money?'), findsNothing);
+
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(lastPatch(), <String, Object?>{'kind': 'refund', 'isPersonal': true});
   });
 
   testWidgets("the user's existing tags are offered, and reused with their spelling",

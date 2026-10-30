@@ -6,6 +6,7 @@ import '../models/expense.dart';
 import '../models/income.dart';
 import 'category_avatar.dart';
 import 'common/money_text.dart';
+import 'common/surface_card.dart';
 
 /// Shared layout for every money row in the app.
 ///
@@ -30,6 +31,7 @@ class TransactionRow extends StatelessWidget {
     this.onLongPress,
     this.signed = true,
     this.titleMaxLines = 1,
+    this.badge,
   });
 
   final Widget leading;
@@ -52,6 +54,9 @@ class TransactionRow extends StatelessWidget {
   /// Lines the title may use before ellipsising. A statement sets 2, where a
   /// full description matters more than uniform row heights.
   final int titleMaxLines;
+
+  /// Small pill after the title — "Non-personal". Null for an ordinary row.
+  final String? badge;
 
   /// Ceiling on the amount column.
   ///
@@ -86,12 +91,28 @@ class TransactionRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Text(
-                      title,
-                      style: theme.textTheme.titleMedium,
-                      maxLines: titleMaxLines,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    if (badge == null)
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium,
+                        maxLines: titleMaxLines,
+                        overflow: TextOverflow.ellipsis,
+                      )
+                    else
+                      Row(
+                        children: <Widget>[
+                          Flexible(
+                            child: Text(
+                              title,
+                              style: theme.textTheme.titleMedium,
+                              maxLines: titleMaxLines,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          AppBadge(label: badge!),
+                        ],
+                      ),
                     if (parts.isNotEmpty) ...<Widget>[
                       const SizedBox(height: AppSpacing.xxs),
                       Text(
@@ -148,6 +169,9 @@ class TransactionRow extends StatelessWidget {
   }
 }
 
+/// The pill on an income or expense that is someone else's money.
+const String nonPersonalBadge = 'Non-personal';
+
 /// One expense row.
 class ExpenseTile extends StatelessWidget {
   const ExpenseTile({
@@ -190,7 +214,12 @@ class ExpenseTile extends StatelessWidget {
       title: expense.title,
       amount: -expense.amount,
       currency: currency,
-      tone: person != null ? AmountTone.transfer : AmountTone.negative,
+      // Someone else's money (migration 019): listed, but not spending, so
+      // not in the spending colour.
+      tone: person != null
+          ? AmountTone.transfer
+          : (expense.isPersonal ? AmountTone.negative : AmountTone.neutral),
+      badge: expense.isPersonal ? null : nonPersonalBadge,
       trailingBelow: person != null ? paidForStatus : null,
       meta: <String>[
         if (showDate) Formatters.relativeDay(expense.expenseDate),
@@ -231,7 +260,9 @@ class IncomeTile extends StatelessWidget {
       title: income.title,
       amount: income.amount,
       currency: currency,
-      tone: AmountTone.positive,
+      // Received for someone else (migration 019): not income.
+      tone: income.isPersonal ? AmountTone.positive : AmountTone.neutral,
+      badge: income.isPersonal ? null : nonPersonalBadge,
       meta: <String>[
         if (showDate) Formatters.relativeDay(income.incomeDate),
         if (income.subtitle != null) income.subtitle!,

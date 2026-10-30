@@ -1046,6 +1046,54 @@ void main() {
       expect(provider.problem, contains('could not start'));
       expect(expenses.created, isEmpty);
     });
+
+    // Migration 019: a row marked "For someone else" in review is written as
+    // a non-personal expense or income; every other row stays personal.
+    Future<void> importWithOthers(bool personalCapable) async {
+      SchemaCapabilities.debugOverride(personal: personalCapable);
+      final List<Object?> ops = <Object?>[
+        op('expense', itemId: 's1:0'),
+        op('income', direction: 'credit', itemId: 's1:1'),
+        op('expense', itemId: 's2:0'),
+      ];
+      final FakeEngine engine = FakeEngine(<String,
+          Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        // The shared reducer's edit: the patch laid over the row.
+        'reduce': (Map<String, Object?> a) {
+          final Map<String, Object?> action = a['action']! as Map<String, Object?>;
+          return <Object?>[
+            for (final Object? i in a['items']! as List<Object?>)
+              (i! as Map<String, Object?>)['id'] == action['id']
+                  ? <String, Object?>{
+                      ...i as Map<String, Object?>,
+                      ...action['patch']! as Map<String, Object?>,
+                    }
+                  : i,
+          ];
+        },
+        'plan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+        'finalPlan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+      });
+      final StatementImportProvider provider = await ready(engine);
+      await provider.edit('s1:0', <String, Object?>{'isPersonal': false});
+      await provider.edit('s1:1', <String, Object?>{'isPersonal': false});
+      expect(provider.rows.first.nonPersonal, isTrue);
+
+      await provider.execute((await provider.preview(paymentMethods: const []))!);
+    }
+
+    test('a row for someone else is written as non-personal', () async {
+      await importWithOthers(true);
+      expect(expenses.created.map((Expense e) => e.isPersonal), <bool>[false, true]);
+      expect(income.created.single.isPersonal, isFalse);
+    });
+
+    test('before migration 019 every row is written as personal', () async {
+      await importWithOthers(false);
+      expect(expenses.created.map((Expense e) => e.isPersonal), <bool>[true, true]);
+      expect(income.created.single.isPersonal, isTrue);
+    });
   });
 
   test('signing out closes every open file and forgets the session', () async {

@@ -46,15 +46,18 @@ export class SupabaseDb implements DbPort {
     if (cached && Date.now() - cached.at < SupabaseDb.capabilityTtlMs) {
       return cached.value;
     }
-    const [merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers] =
+    const [merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, personalExpenses, personalIncome] =
       await Promise.all([
         this.probe("expenses", "merchant"),
         this.probe("bank_accounts", "id"),
         this.probe("expenses", "bank_account_id"),
         this.probe("income", "bank_account_id"),
         this.probe("account_transactions", "counterparty_account_id"),
+        this.probe("expenses", "is_personal"),
+        this.probe("income", "is_personal"),
       ]);
-    const value = { merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers };
+    const personal = personalExpenses && personalIncome;
+    const value = { merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, personal };
     SupabaseDb.capabilityCache = { at: Date.now(), value };
     return value;
   }
@@ -142,10 +145,10 @@ export class SupabaseDb implements DbPort {
     limit: number,
   ): Promise<ExpenseRow[]> {
     const caps = await this.capabilities();
-    const { data, error } = await this.client
-      .from("expenses")
-      .select(expenseColumns(caps))
-      .eq("user_id", userId)
+    const { data, error } = await ownOnly(
+      this.client.from("expenses").select(expenseColumns(caps)).eq("user_id", userId),
+      caps,
+    )
       .gte("expense_date", fromInclusive)
       .lt("expense_date", toExclusive)
       .order("expense_date", { ascending: false })
@@ -156,10 +159,10 @@ export class SupabaseDb implements DbPort {
 
   async recentExpenses(userId: string, limit: number): Promise<ExpenseRow[]> {
     const caps = await this.capabilities();
-    const { data, error } = await this.client
-      .from("expenses")
-      .select(expenseColumns(caps))
-      .eq("user_id", userId)
+    const { data, error } = await ownOnly(
+      this.client.from("expenses").select(expenseColumns(caps)).eq("user_id", userId),
+      caps,
+    )
       .order("expense_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -174,10 +177,10 @@ export class SupabaseDb implements DbPort {
     limit: number,
   ): Promise<IncomeRow[]> {
     const caps = await this.capabilities();
-    const { data, error } = await this.client
-      .from("income")
-      .select(incomeColumns(caps))
-      .eq("user_id", userId)
+    const { data, error } = await ownOnly(
+      this.client.from("income").select(incomeColumns(caps)).eq("user_id", userId),
+      caps,
+    )
       .gte("income_date", fromInclusive)
       .lt("income_date", toExclusive)
       .order("income_date", { ascending: false })
@@ -188,10 +191,10 @@ export class SupabaseDb implements DbPort {
 
   async recentIncome(userId: string, limit: number): Promise<IncomeRow[]> {
     const caps = await this.capabilities();
-    const { data, error } = await this.client
-      .from("income")
-      .select(incomeColumns(caps))
-      .eq("user_id", userId)
+    const { data, error } = await ownOnly(
+      this.client.from("income").select(incomeColumns(caps)).eq("user_id", userId),
+      caps,
+    )
       .order("income_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(limit);
@@ -310,11 +313,10 @@ export class SupabaseDb implements DbPort {
   ): Promise<ExpenseRow[]> {
     const caps = await this.capabilities();
     const found = await this.byIds(ids, (chunk) => {
-      let query = this.client
-        .from("expenses")
-        .select(expenseColumns(caps))
-        .eq("user_id", userId)
-        .in("id", chunk);
+      let query = ownOnly(
+        this.client.from("expenses").select(expenseColumns(caps)).eq("user_id", userId),
+        caps,
+      ).in("id", chunk);
       if (fromInclusive) query = query.gte("expense_date", fromInclusive);
       if (toExclusive) query = query.lt("expense_date", toExclusive);
       return query;
@@ -330,11 +332,10 @@ export class SupabaseDb implements DbPort {
   ): Promise<IncomeRow[]> {
     const caps = await this.capabilities();
     const found = await this.byIds(ids, (chunk) => {
-      let query = this.client
-        .from("income")
-        .select(incomeColumns(caps))
-        .eq("user_id", userId)
-        .in("id", chunk);
+      let query = ownOnly(
+        this.client.from("income").select(incomeColumns(caps)).eq("user_id", userId),
+        caps,
+      ).in("id", chunk);
       if (fromInclusive) query = query.gte("income_date", fromInclusive);
       if (toExclusive) query = query.lt("income_date", toExclusive);
       return query;
@@ -428,6 +429,11 @@ export class SupabaseDb implements DbPort {
     const { error } = await this.client.from("account_transactions").insert(payload);
     if (error) throw new DbError(error.code ?? null);
   }
+}
+
+/** Leaves out rows kept for someone else (migration 019): they are never the user's money. */
+function ownOnly<Q extends { eq(column: string, value: boolean): Q }>(query: Q, caps: Capabilities): Q {
+  return caps.personal ? query.eq("is_personal", true) : query;
 }
 
 function expenseColumns(caps: Capabilities): string {

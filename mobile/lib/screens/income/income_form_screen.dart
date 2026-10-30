@@ -26,6 +26,7 @@ import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/personal_field.dart';
 import '../../widgets/tag_field.dart';
 import 'emi_reimbursement_fields.dart';
 
@@ -68,6 +69,10 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
   /// Account this income lands in. Null means it is recorded as income but
   /// not credited to any tracked account.
   String? _bankAccountId;
+
+  /// Received for the user, or for someone else (migration 019): mine by
+  /// default, an edit's own value otherwise.
+  late bool _isPersonal = widget.income?.isPersonal ?? true;
 
   late DateTime _date;
   bool _saving = false;
@@ -292,6 +297,15 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
               const SizedBox(height: AppSpacing.lg),
             ],
 
+            if (SchemaCapabilities.personal) ...<Widget>[
+              PersonalField(
+                value: _isPersonal,
+                enabled: !_saving,
+                onChanged: (bool value) => setState(() => _isPersonal = value),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
             const FieldLabel('Details', hint: 'Optional'),
             SurfaceCard(
               padding: const EdgeInsets.all(AppSpacing.md),
@@ -491,6 +505,8 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
       source: _source.text,
       description: _description.text,
       bankAccountId: _bankAccountId,
+      // Written only once migration 019 is in place.
+      isPersonal: _isPersonal,
     );
 
     final bool ok = await provider.save(

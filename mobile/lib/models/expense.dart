@@ -24,6 +24,7 @@ class Expense {
     this.emiPlanId,
     this.emiComponent,
     this.statementDate,
+    this.isPersonal = true,
     this.createdAt,
     this.updatedAt,
     this.category,
@@ -58,6 +59,10 @@ class Expense {
   /// The card statement it was billed on, when an import knew it: it is
   /// filed under that cycle, not the date's.
   final DateTime? statementDate;
+
+  /// False: spent on someone else's behalf, with their money (migration
+  /// 019). Listed, but never counted as the user's spending. True before 019.
+  final bool isPersonal;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -105,6 +110,9 @@ class Expense {
       statementDate: map['statement_date'] == null
           ? null
           : AppDateUtils.parseDate(map['statement_date'] as String),
+      // Only an explicit false is non-personal: rows read before migration
+      // 019 have no such column.
+      isPersonal: map['is_personal'] != false,
       createdAt: map['created_at'] == null
           ? null
           : DateTime.parse(map['created_at'] as String),
@@ -124,11 +132,13 @@ class Expense {
   /// been applied, so the same code works before and after.
   /// [includeEmi]: migration 016 is in place and the instalment columns
   /// should be written (a new row); an edit leaves them as they are.
+  /// [includePersonal]: migration 019 is in place, so [isPersonal] is written.
   Map<String, dynamic> toInsertMap({
     required bool includeMerchant,
     required bool includeBankLink,
     bool includeCardLink = false,
     bool includeEmi = false,
+    bool includePersonal = false,
   }) {
     final Map<String, dynamic> map = <String, dynamic>{
       'user_id': userId,
@@ -142,6 +152,7 @@ class Expense {
     if (includeMerchant) map['merchant'] = blankToNull(merchant);
     _writeFunding(map, includeBankLink, includeCardLink);
     if (includeEmi) _writeEmi(map);
+    if (includePersonal) map['is_personal'] = isPersonal;
     return map;
   }
 
@@ -149,6 +160,7 @@ class Expense {
     required bool includeMerchant,
     required bool includeBankLink,
     bool includeCardLink = false,
+    bool includePersonal = false,
   }) {
     final Map<String, dynamic> map = <String, dynamic>{
       'amount': amount,
@@ -160,6 +172,7 @@ class Expense {
     };
     if (includeMerchant) map['merchant'] = blankToNull(merchant);
     _writeFunding(map, includeBankLink, includeCardLink);
+    if (includePersonal) map['is_personal'] = isPersonal;
     return map;
   }
 
@@ -192,6 +205,7 @@ class Expense {
     String? merchant,
     String? description,
     String? notes,
+    bool? isPersonal,
   }) {
     return Expense(
       id: id,
@@ -208,6 +222,7 @@ class Expense {
       emiPlanId: emiPlanId,
       emiComponent: emiComponent,
       statementDate: statementDate,
+      isPersonal: isPersonal ?? this.isPersonal,
       createdAt: createdAt,
       updatedAt: updatedAt,
       category: category,

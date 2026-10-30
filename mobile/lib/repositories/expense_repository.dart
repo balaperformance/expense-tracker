@@ -37,7 +37,8 @@ class ExpenseRepository {
     final String emi = SchemaCapabilities.emi
         ? ', emi_plan_id, emi_component, statement_date'
         : '';
-    return '$merchant$bank$card$emi';
+    final String personal = SchemaCapabilities.personal ? ', is_personal' : '';
+    return '$merchant$bank$card$emi$personal';
   }
 
   String get _select => 'id, user_id, amount, category_id, payment_method_id, '
@@ -274,7 +275,8 @@ class ExpenseRepository {
   ///
   /// One request covers the whole trend chart instead of one per month.
   /// [exclude]: expenses that are not the user's own spending (paid for
-  /// someone else), left out of every total.
+  /// someone else), left out of every total — as are non-personal ones
+  /// (migration 019).
   Future<Map<String, double>> fetchMonthlyTotals({
     required String userId,
     required DateTime from,
@@ -282,10 +284,12 @@ class ExpenseRepository {
     Set<String> exclude = const <String>{},
   }) async {
     try {
+      final String personal =
+          SchemaCapabilities.personal ? ', is_personal' : '';
       final List<Map<String, dynamic>> rows = await fetchAllPages(
         postgrestPages(() => _client
             .from(_table)
-            .select('id, amount, expense_date')
+            .select('id, amount, expense_date$personal')
             .eq('user_id', userId)
             .gte('expense_date', AppDateUtils.toDateString(from))
             .lt('expense_date', AppDateUtils.toDateString(toExclusive))
@@ -294,11 +298,10 @@ class ExpenseRepository {
       );
 
       return monthlyTotals(
-        exclude.isEmpty
-            ? rows
-            : rows
-                .where((Map<String, dynamic> r) => !exclude.contains(r['id']))
-                .toList(),
+        rows
+            .where((Map<String, dynamic> r) =>
+                r['is_personal'] != false && !exclude.contains(r['id']))
+            .toList(),
         'expense_date',
       );
     } catch (error) {
@@ -318,6 +321,7 @@ class ExpenseRepository {
             includeBankLink: SchemaCapabilities.expenseBankLink,
             includeCardLink: SchemaCapabilities.creditCards,
             includeEmi: SchemaCapabilities.emi,
+            includePersonal: SchemaCapabilities.personal,
           ))
           .select(_select)
           .single();
@@ -349,6 +353,7 @@ class ExpenseRepository {
         includeMerchant: SchemaCapabilities.merchant,
         includeBankLink: SchemaCapabilities.expenseBankLink,
         includeCardLink: SchemaCapabilities.creditCards,
+        includePersonal: SchemaCapabilities.personal,
       )..['updated_at'] = DateTime.now().toUtc().toIso8601String();
 
       final Map<String, dynamic> row = await _client

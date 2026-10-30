@@ -28,6 +28,7 @@ class ExportSource {
     this.account,
     this.truncated = false,
     this.paidForLeftOut = 0,
+    this.othersLeftOut = 0,
   });
 
   final List<Expense> expenses;
@@ -43,6 +44,10 @@ class ExportSource {
 
   /// Purchases paid for someone else in the range, left out of the report.
   final int paidForLeftOut;
+
+  /// Non-personal entries in the range (migration 019) — someone else's
+  /// money — left out of the report.
+  final int othersLeftOut;
 
   bool get isEmpty =>
       expenses.isEmpty &&
@@ -98,13 +103,17 @@ class ExportRepository {
           _expenses.fetchPaidForExpenseIds(userId: userId),
         ]);
         final List<Expense> rows = loaded[0] as List<Expense>;
-        // Purchases paid for someone else are owed back, not spending.
-        final List<Expense> own =
-            personalSpending(rows, loaded[1] as Set<String>);
+        final Set<String> paidFor = loaded[1] as Set<String>;
+        // Purchases paid for someone else are owed back, not spending; nor
+        // is what was bought with someone else's money.
+        final List<Expense> own = personalSpending(rows, paidFor);
+        final int paidForLeftOut =
+            rows.where((Expense e) => paidFor.contains(e.id)).length;
         return ExportSource(
           expenses: own,
           truncated: _atCap(rows.length),
-          paidForLeftOut: rows.length - own.length,
+          paidForLeftOut: paidForLeftOut,
+          othersLeftOut: rows.length - own.length - paidForLeftOut,
         );
 
       case ExportReportType.income:
@@ -113,7 +122,13 @@ class ExportRepository {
           from: request.range.start,
           toExclusive: request.range.endExclusive,
         );
-        return ExportSource(income: rows, truncated: _atCap(rows.length));
+        // Received for someone else: never income.
+        final List<Income> own = personalIncome(rows);
+        return ExportSource(
+          income: own,
+          truncated: _atCap(rows.length),
+          othersLeftOut: rows.length - own.length,
+        );
 
       case ExportReportType.incomeVsExpense:
         final List<Object> results = await Future.wait(<Future<Object>>[
@@ -132,11 +147,12 @@ class ExportRepository {
         final List<Expense> all = results[0] as List<Expense>;
         final List<Expense> spent =
             personalSpending(all, results[2] as Set<String>);
-        final List<Income> received = results[1] as List<Income>;
+        final List<Income> allReceived = results[1] as List<Income>;
+        final List<Income> received = personalIncome(allReceived);
         return ExportSource(
           expenses: spent,
           income: received,
-          truncated: _atCap(all.length) || _atCap(received.length),
+          truncated: _atCap(all.length) || _atCap(allReceived.length),
         );
     }
   }

@@ -13,12 +13,14 @@ import '../../providers/bank_account_provider.dart';
 import '../../providers/card_import_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/personal_field.dart';
 import 'emi_plan_sheet.dart';
 
 /// Edit one screenshot row before import. Nothing is saved from here — only
@@ -51,6 +53,9 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
   late String _direction = _item['direction'] as String? ?? 'debit';
   late String _kind = _item['kind'] as String? ?? 'purchase';
   late String? _categoryId = _item['categoryId'] as String?;
+
+  /// A purchase with the user's own money, or someone else's (migration 019).
+  late bool _isPersonal = widget.provider.isPersonalItem(widget.itemId);
   List<LedgerEntry>? _candidates;
   bool _submitted = false;
 
@@ -111,6 +116,9 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
       'categoryId': _needsCategory ? _categoryId : null,
     };
     final NavigatorState navigator = Navigator.of(context);
+    // Only a purchase can be someone else's money.
+    widget.provider.setPersonal(
+        widget.itemId, _effectiveKind == 'purchase' ? _isPersonal : true);
     if (_direction != _item['direction']) {
       await widget.provider.changeDirection(widget.itemId, _direction, edit);
     } else {
@@ -244,6 +252,13 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
                     ))
                 .toList(),
           ),
+          if (SchemaCapabilities.personal && _effectiveKind == 'purchase') ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            PersonalField(
+              value: _isPersonal,
+              onChanged: (bool value) => setState(() => _isPersonal = value),
+            ),
+          ],
           if (_effectiveKind == 'emiPrincipal') ...<Widget>[
             const SizedBox(height: AppSpacing.xs),
             Text('Used only if the instalment is not part of a plan with its own category.',

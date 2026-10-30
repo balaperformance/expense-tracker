@@ -271,6 +271,7 @@ class ExportDatasetBuilder {
     required List<Income> income,
     required ExportDateRange range,
     required ExportContext context,
+    String? filterNote,
   }) {
     final List<Income> ordered = List<Income>.of(income)
       ..sort((Income a, Income b) => a.incomeDate.compareTo(b.incomeDate));
@@ -279,6 +280,7 @@ class ExportDatasetBuilder {
 
     return ExportDataset(
       title: 'Income',
+      subtitle: filterNote,
       periodLabel: _periodLabel(range),
       summary: <ExportSummaryItem>[
         ExportSummaryItem(

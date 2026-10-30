@@ -82,6 +82,12 @@ export type Capabilities = {
   expenseBankLink: boolean;
   incomeBankLink: boolean;
   transfers: boolean;
+  /**
+   * `expenses.is_personal` and `income.is_personal` (migration 019): rows kept
+   * for someone else are left out of every read, as the apps leave them out
+   * of every figure. Absent or false before it.
+   */
+  personal?: boolean;
 };
 
 export type NewExpense = {

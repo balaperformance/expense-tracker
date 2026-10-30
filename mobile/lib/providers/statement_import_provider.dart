@@ -119,6 +119,15 @@ class ImportRow {
   /// Who it was paid for, or who is paying it back.
   String get person => (json['person'] as String?) ?? '';
 
+  /// False: an expense or income of someone else's money (migration 019).
+  /// Only an explicit false counts, so a row read before it is personal.
+  bool get isPersonal => json['isPersonal'] != false;
+
+  /// Recorded as an expense or income that is someone else's money: kept,
+  /// but never the user's income or spending.
+  bool get nonPersonal =>
+      !isPersonal && (kind == 'expense' || kind == 'income');
+
   /// A repayment: what it pays back — {type: 'claim', receivableId, left} for
   /// something already recorded, {type: 'pending', itemId} for a row of this
   /// import — or null until chosen.
@@ -995,6 +1004,9 @@ class StatementImportProvider extends AsyncProvider {
         .toList();
     final LedgerDirection direction =
         LedgerDirectionWire.parse(op['direction'] as String?);
+    // Someone else's money (migration 019), as chosen on the row; written
+    // only once the migration is in place.
+    final bool isPersonal = _isPersonalItem(op['itemId'] as String?);
     switch (op['type']) {
       case 'expense':
         final Expense expense = await _expenses.create(
@@ -1009,6 +1021,7 @@ class StatementImportProvider extends AsyncProvider {
             merchant: op['merchant'] as String?,
             description: description,
             notes: op['notes'] as String?,
+            isPersonal: isPersonal,
           ),
           details: details,
         );
@@ -1023,6 +1036,7 @@ class StatementImportProvider extends AsyncProvider {
             source: op['source'] as String?,
             description: description,
             bankAccountId: accountId,
+            isPersonal: isPersonal,
           ),
           details: details,
         );
@@ -1111,6 +1125,16 @@ class StatementImportProvider extends AsyncProvider {
       default:
         throw const AppException('Unknown import row.');
     }
+  }
+
+  /// Whether the review row [itemId] is the user's own money; true for a row
+  /// not found, and for any row before migration 019.
+  bool _isPersonalItem(String? itemId) {
+    if (itemId == null || !SchemaCapabilities.personal) return true;
+    for (final Map<String, Object?> item in _items) {
+      if (item['id'] == itemId) return item['isPersonal'] != false;
+    }
+    return true;
   }
 
   /// Tags are their own write, after the row they belong to: a failure leaves

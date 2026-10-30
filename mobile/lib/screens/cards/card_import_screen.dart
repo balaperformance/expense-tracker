@@ -555,6 +555,7 @@ class _CardImportScreenState extends State<CardImportScreen> {
           onToggle: () => provider.toggle(row['id']! as String),
           onDecide: (String d) => provider.decideDuplicate(row['id']! as String, d),
           onEdit: () => _openRow(provider, row['id']! as String),
+          nonPersonal: !provider.isPersonalItem(row['id']! as String),
           onKind: (String kind) async {
             await provider.edit(row['id']! as String, <String, Object?>{'kind': kind});
             if (kind.startsWith('emi')) await provider.regroup();
@@ -675,6 +676,7 @@ class _RowTile extends StatelessWidget {
     required this.onDecide,
     required this.onEdit,
     required this.onKind,
+    this.nonPersonal = false,
   });
 
   static const Map<String, String> _problems = <String, String>{
@@ -693,6 +695,9 @@ class _RowTile extends StatelessWidget {
   final ValueChanged<String> onDecide;
   final VoidCallback onEdit;
   final ValueChanged<String> onKind;
+
+  /// A purchase with someone else's money (migration 019): not spending.
+  final bool nonPersonal;
 
   @override
   Widget build(BuildContext context) {
@@ -769,6 +774,7 @@ class _RowTile extends StatelessWidget {
                           ),
                         if (problem != null && !leftOut)
                           AppBadge(label: _problems[problem] ?? 'Add details', icon: Icons.edit_outlined, tone: ToneColors.warning(context)),
+                        if (nonPersonal) const AppBadge(label: nonPersonalBadge),
                       ],
                     ),
                     if (unchecked) ...<Widget>[
@@ -804,7 +810,9 @@ class _RowTile extends StatelessWidget {
                 signed: true,
                 tone: kind == 'payment'
                     ? AmountTone.transfer
-                    : (credit ? AmountTone.positive : AmountTone.negative),
+                    : nonPersonal
+                        ? AmountTone.neutral
+                        : (credit ? AmountTone.positive : AmountTone.negative),
                 style: theme.textTheme.titleSmall,
               ),
             ],

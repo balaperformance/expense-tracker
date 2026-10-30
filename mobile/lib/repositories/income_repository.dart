@@ -22,8 +22,9 @@ class IncomeRepository {
   static String get _select {
     final String bank =
         SchemaCapabilities.incomeBankLink ? ', bank_account_id' : '';
+    final String personal = SchemaCapabilities.personal ? ', is_personal' : '';
     return 'id, user_id, amount, source, income_date, description, '
-        'created_at$bank';
+        'created_at$bank$personal';
   }
 
   Future<List<Income>> fetchPage({
@@ -125,23 +126,32 @@ class IncomeRepository {
     }
   }
 
+  /// Month totals of the user's own income: money received for someone else
+  /// (migration 019) is left out.
   Future<Map<String, double>> fetchMonthlyTotals({
     required String userId,
     required DateTime from,
     required DateTime toExclusive,
   }) async {
     try {
+      final String personal =
+          SchemaCapabilities.personal ? ', is_personal' : '';
       final List<Map<String, dynamic>> rows = await fetchAllPages(
         postgrestPages(() => _client
             .from(_table)
-            .select('id, amount, income_date')
+            .select('id, amount, income_date$personal')
             .eq('user_id', userId)
             .gte('income_date', AppDateUtils.toDateString(from))
             .lt('income_date', AppDateUtils.toDateString(toExclusive))
             .order('id')),
         max: AppConstants.monthlyAggregateLimit * 12,
       );
-      return monthlyTotals(rows, 'income_date');
+      return monthlyTotals(
+        rows
+            .where((Map<String, dynamic> r) => r['is_personal'] != false)
+            .toList(),
+        'income_date',
+      );
     } catch (error) {
       throw ErrorMapper.map(error);
     }
@@ -156,6 +166,7 @@ class IncomeRepository {
           .from(_table)
           .insert(income.toInsertMap(
             includeBankLink: SchemaCapabilities.incomeBankLink,
+            includePersonal: SchemaCapabilities.personal,
           ))
           .select(_select)
           .single();
@@ -184,6 +195,7 @@ class IncomeRepository {
           .from(_table)
           .update(income.toUpdateMap(
             includeBankLink: SchemaCapabilities.incomeBankLink,
+            includePersonal: SchemaCapabilities.personal,
           ))
           .eq('id', income.id)
           .eq('user_id', income.userId)

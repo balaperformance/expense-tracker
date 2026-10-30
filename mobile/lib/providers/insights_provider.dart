@@ -170,7 +170,11 @@ class InsightsProvider extends AsyncProvider {
       _tags.fetchTags(userId),
     ]);
 
-    final List<Map<String, dynamic>> rows = results[0] as List<Map<String, dynamic>>;
+    // Spent with someone else's money (migration 019): never the user's
+    // spending, so the engine never sees it.
+    final List<Map<String, dynamic>> rows = (results[0] as List<Map<String, dynamic>>)
+        .where((Map<String, dynamic> r) => r['is_personal'] != false)
+        .toList();
     final Map<String, String> categoryNames = <String, String>{
       for (final ExpenseCategory c in catalog.categories) c.id: c.name,
     };

@@ -33,6 +33,7 @@ import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/paid_for_field.dart';
+import '../../widgets/personal_field.dart';
 import '../../widgets/tag_field.dart';
 import 'paid_for_view.dart';
 import 'paste_sms_screen.dart';
@@ -129,6 +130,10 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   /// user's own spending.
   late bool _paidFor = widget.expense == null && widget.initialPaidFor;
   final TextEditingController _paidForPerson = TextEditingController();
+
+  /// Bought with the user's own money, or someone else's (migration 019):
+  /// mine by default, an edit's own value otherwise.
+  late bool _isPersonal = widget.expense?.isPersonal ?? true;
 
   /// The purchase's claim when it is already marked, for its progress.
   ClaimSummary? _claim;
@@ -683,6 +688,18 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
             ],
 
             // ---------------------------------------------------------
+            // Whose money — someone else's is not your spending
+            // ---------------------------------------------------------
+            if (SchemaCapabilities.personal) ...<Widget>[
+              PersonalField(
+                value: _isPersonal,
+                enabled: !_saving,
+                onChanged: (bool value) => setState(() => _isPersonal = value),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
+            // ---------------------------------------------------------
             // Optional detail, grouped and visually quieter
             // ---------------------------------------------------------
             const FieldLabel('Details', hint: 'Optional'),
@@ -856,6 +873,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       merchant: _merchant.text,
       description: _description.text,
       notes: _notes.text,
+      // Written only once migration 019 is in place.
+      isPersonal: _isPersonal,
     );
 
     final bool ok = await provider.save(

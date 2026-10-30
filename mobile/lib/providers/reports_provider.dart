@@ -98,7 +98,9 @@ class ReportsProvider extends AsyncProvider {
       final Set<String> paidFor = results[0] as Set<String>;
       final List<Expense> monthExpenses =
           personalSpending(results[1] as List<Expense>, paidFor);
-      final List<Income> monthIncome = results[2] as List<Income>;
+      // Received for someone else: never income (migration 019).
+      final List<Income> monthIncome =
+          personalIncome(results[2] as List<Income>);
       final Map<String, double> expenseTotals =
           results[3] as Map<String, double>;
       final Map<String, double> incomeTotals =

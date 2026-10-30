@@ -372,7 +372,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
 
   /// Flattens the page into day groups so scanning a long list is easier. A
   /// day's total is the user's own spending: what was paid for someone is
-  /// owed back, not spent.
+  /// owed back, not spent, and a non-personal one was their money.
   List<_DayGroup> _groupByDay(List<Expense> expenses, Map<String, ClaimSummary> paidFor) {
     final List<_DayGroup> groups = <_DayGroup>[];
 
@@ -381,7 +381,9 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         groups.add(_DayGroup(expense.expenseDate));
       }
       groups.last.expenses.add(expense);
-      if (!paidFor.containsKey(expense.id)) groups.last.total += expense.amount;
+      if (expense.isPersonal && !paidFor.containsKey(expense.id)) {
+        groups.last.total += expense.amount;
+      }
     }
     return groups;
   }

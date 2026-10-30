@@ -14,6 +14,7 @@ import 'package:expense_tracker/models/bank_account.dart';
 import 'package:expense_tracker/models/expense.dart';
 import 'package:expense_tracker/models/expense_category.dart';
 import 'package:expense_tracker/models/expense_prefill.dart';
+import 'package:expense_tracker/models/ledger_entry.dart';
 import 'package:expense_tracker/models/payment_method.dart';
 import 'package:expense_tracker/providers/auth_provider.dart';
 import 'package:expense_tracker/providers/bank_account_provider.dart';
@@ -34,6 +35,7 @@ import 'package:expense_tracker/screens/expenses/expense_form_screen.dart';
 import 'package:expense_tracker/services/preferences_service.dart';
 import 'package:expense_tracker/services/schema_capabilities.dart';
 import 'package:expense_tracker/widgets/common/app_fields.dart';
+import 'package:expense_tracker/widgets/personal_field.dart';
 
 const BankAccount salary = BankAccount(
   id: 'a1',
@@ -58,6 +60,7 @@ Expense purchase(
   String? description,
   String? accountId,
   String? methodId,
+  bool isPersonal = true,
 }) =>
     Expense(
       id: id,
@@ -69,6 +72,7 @@ Expense purchase(
       bankAccountId: accountId,
       merchant: merchant,
       description: description,
+      isPersonal: isPersonal,
     );
 
 final List<Expense> history = <Expense>[
@@ -87,6 +91,10 @@ final List<Expense> history = <Expense>[
   for (int i = 0; i < 3; i++)
     purchase('l$i', 5 + i * 7, 400,
         categoryId: 'food', description: 'Team lunch', accountId: 'a1'),
+  // Bought with a friend's money each time (migration 019): not a habit.
+  for (int i = 0; i < 3; i++)
+    purchase('m$i', 3 + i * 7, 600,
+        categoryId: 'food', description: 'Movie tickets', isPersonal: false),
 ];
 
 class FakeHistory extends ExpenseRepository {
@@ -108,6 +116,14 @@ class FakeHistory extends ExpenseRepository {
   @override
   Future<Set<String>> fetchPaidForExpenseIds({required String userId}) async =>
       <String>{'l0', 'l1', 'l2'};
+
+  final List<Expense> created = <Expense>[];
+
+  @override
+  Future<Expense> create(Expense expense, {MovementDetails? details}) async {
+    created.add(expense);
+    return expense;
+  }
 }
 
 class FakeAuth extends AuthProvider {
@@ -238,6 +254,8 @@ void main() {
         reason: 'its amount varies, so the chip shows none');
     expect(find.textContaining('Team lunch'), findsNothing,
         reason: 'paid for someone else, so not a habit');
+    expect(find.textContaining('Movie tickets'), findsNothing,
+        reason: "bought with someone else's money, so not a habit");
     expect(expenses.reads, 1);
   });
 
@@ -309,5 +327,69 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('Quick add'), findsNothing);
     expect(scanned.reads, 0);
+  });
+
+  group('whose money (migration 019)', () {
+    testWidgets('not asked before the migration', (WidgetTester tester) async {
+      await pumpForm(tester, const ExpenseFormScreen());
+      expect(find.text('Whose money?'), findsNothing);
+    });
+
+    testWidgets('a new expense is mine; "For someone else" is saved as non-personal',
+        (WidgetTester tester) async {
+      SchemaCapabilities.debugOverride(personal: true);
+      final FakeHistory expenses = await pumpForm(
+        tester,
+        Builder(
+          builder: (BuildContext context) => TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => const ExpenseFormScreen(),
+            )),
+            child: const Text('Open'),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField).first, '600');
+      await tester.tap(find.widgetWithText(AppChoiceChip, 'Food'));
+      await tester.pumpAndSettle();
+
+      await scrollTo(tester, find.text('Whose money?'));
+      expect(
+        tester.widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>)).selected,
+        <bool>{true},
+      );
+      expect(find.textContaining('left out of your income'), findsNothing);
+
+      await tester.tap(find.text('For someone else'));
+      await tester.pumpAndSettle();
+      expect(find.text(PersonalField.helper), findsOneWidget);
+
+      await tester.tap(find.text('Add expense').last);
+      await tester.pumpAndSettle();
+
+      expect(expenses.created.single.isPersonal, isFalse);
+      expect(expenses.created.single.amount, 600);
+    });
+
+    testWidgets("an edit opens on the expense's own value", (WidgetTester tester) async {
+      SchemaCapabilities.debugOverride(personal: true);
+      await pumpForm(
+        tester,
+        ExpenseFormScreen(
+          expense: purchase('m9', 1, 600,
+              categoryId: 'food', description: 'Movie tickets', isPersonal: false),
+        ),
+      );
+      await scrollTo(tester, find.text('Whose money?'));
+      expect(
+        tester.widget<SegmentedButton<bool>>(find.byType(SegmentedButton<bool>)).selected,
+        <bool>{false},
+      );
+      expect(find.text(PersonalField.helper), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }

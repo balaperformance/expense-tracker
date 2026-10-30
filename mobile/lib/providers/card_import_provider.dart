@@ -122,6 +122,11 @@ class CardImportProvider extends AsyncProvider {
   List<ExpenseCategory> _categories = const <ExpenseCategory>[];
   String _currency = 'INR';
 
+  /// Purchases bought with someone else's money (migration 019), by row id.
+  /// Kept here rather than on the engine's rows, which carry only the fields
+  /// the engine knows.
+  final Set<String> _othersItems = <String>{};
+
   /// The screenshot being read, with its place in the batch.
   ({String name, int index, int total, bool checking})? _reading;
   String? _problem;
@@ -169,6 +174,20 @@ class CardImportProvider extends AsyncProvider {
     return null;
   }
 
+  /// Whether row [id] is a purchase made with the user's own money. Only a
+  /// purchase can be someone else's; anything else is always the user's.
+  bool isPersonalItem(String id) =>
+      !(SchemaCapabilities.personal &&
+          _othersItems.contains(id) &&
+          item(id)?['kind'] == 'purchase');
+
+  /// Marks row [id] as the user's own money, or someone else's.
+  void setPersonal(String id, bool personal) {
+    if (personal ? _othersItems.remove(id) : _othersItems.add(id)) {
+      safeNotify();
+    }
+  }
+
   Map<String, Object?>? group(String id) {
     for (final Map<String, Object?> g in groups) {
       if (g['id'] == id) return g;
@@ -197,6 +216,7 @@ class CardImportProvider extends AsyncProvider {
     _session = null;
     _view = null;
     _ctx = null;
+    _othersItems.clear();
     _problem = null;
     _checkFailed = false;
     _result = null;
@@ -237,6 +257,7 @@ class CardImportProvider extends AsyncProvider {
     _session = null;
     _view = null;
     _ctx = null;
+    _othersItems.clear();
     _problem = null;
     _checkFailed = false;
     _result = null;
@@ -721,6 +742,7 @@ class CardImportProvider extends AsyncProvider {
           emiPlanId: planId,
           emiComponent: emi?['component'] as String?,
           statementDate: statement == null ? null : AppDateUtils.parseDate(statement),
+          isPersonal: isPersonalItem(op['itemId'] as String? ?? ''),
         ));
         return null;
       case 'cardTransaction':

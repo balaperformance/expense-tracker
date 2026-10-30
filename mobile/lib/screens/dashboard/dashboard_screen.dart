@@ -203,6 +203,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           expense: data.totalExpense,
           currency: currency,
           monthLabel: Formatters.shortMonth(data.month),
+          // The actual money in the accounts: every movement counts,
+          // personal or not.
           bankTotal: hasAccounts ? accounts.totalBalance : null,
           bankTotalHidden: settings.balancesHidden,
           onToggleBankTotal: settings.toggleBalancesHidden,

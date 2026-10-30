@@ -80,9 +80,12 @@ class DashboardProvider extends AsyncProvider {
       ]);
 
       final Set<String> paidFor = results[0] as Set<String>;
+      final List<Expense> allMonthExpenses = results[1] as List<Expense>;
       final List<Expense> monthExpenses =
-          personalSpending(results[1] as List<Expense>, paidFor);
-      final List<Income> monthIncome = results[2] as List<Income>;
+          personalSpending(allMonthExpenses, paidFor);
+      // Received for someone else: listed, never income.
+      final List<Income> monthIncome =
+          personalIncome(results[2] as List<Income>);
       final Map<String, double> expenseTotals =
           results[3] as Map<String, double>;
       final Map<String, double> incomeTotals =
@@ -101,7 +104,12 @@ class DashboardProvider extends AsyncProvider {
         month: AppDateUtils.firstDayOf(anchor),
         totalExpense: totalExpense,
         totalIncome: totalIncome,
-        recentExpenses: monthExpenses.take(5).toList(),
+        // Non-personal purchases are still recent activity — marked as such
+        // in the row — though never spending.
+        recentExpenses: allMonthExpenses
+            .where((Expense e) => !paidFor.contains(e.id))
+            .take(5)
+            .toList(),
         categoryBreakdown: buildCategoryBreakdown(monthExpenses, categories),
         trend: months
             .map((DateTime m) => MonthlyPoint(

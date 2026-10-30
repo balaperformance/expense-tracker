@@ -237,7 +237,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
         groups.add(_DayGroup(income.incomeDate));
       }
       groups.last.items.add(income);
-      groups.last.total += income.amount;
+      // Received for someone else: listed, but not the day's income.
+      if (income.isPersonal) groups.last.total += income.amount;
     }
     return groups;
   }

@@ -50,6 +50,7 @@ import 'package:expense_tracker/screens/income/income_form_screen.dart';
 import 'package:expense_tracker/services/preferences_service.dart';
 import 'package:expense_tracker/services/schema_capabilities.dart';
 import 'package:expense_tracker/widgets/common/app_fields.dart';
+import 'package:expense_tracker/widgets/personal_field.dart';
 import 'package:expense_tracker/widgets/transaction_tile.dart';
 
 const BankAccount hdfc = BankAccount(
@@ -594,6 +595,35 @@ void main() {
     final (TagKind kind, String id, List<String> names) = harness.tags.sets.single;
     expect((kind, id), (TagKind.income, 'i5'));
     expect(names, <String>['salary', 'bonus'], reason: 'typed but not confirmed counts');
+  });
+
+  // Migration 019: money received for someone else is recorded, never income.
+  testWidgets('the income form asks whose money it is only after migration 019',
+      (WidgetTester tester) async {
+    final Income fromArun = Income(
+      id: 'i7',
+      userId: 'u1',
+      amount: 1500,
+      incomeDate: daysAgo(2),
+      source: 'Arun',
+    );
+    await harness.pump(tester, IncomeFormScreen(income: fromArun));
+    expect(find.text('Whose money?'), findsNothing);
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(harness.income.saved.single.isPersonal, isTrue);
+
+    SchemaCapabilities.debugOverride(personal: true);
+    await harness.pump(tester, IncomeFormScreen(income: fromArun));
+    await scrollTo(tester, find.text('For someone else'));
+    expect(find.text('Whose money?'), findsOneWidget);
+    await tester.tap(find.text('For someone else'));
+    await tester.pumpAndSettle();
+    expect(find.text(PersonalField.helper), findsOneWidget);
+    await tester.tap(find.text('Save changes'));
+    await tester.pumpAndSettle();
+    expect(harness.income.saved.last.isPersonal, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Accounts has no separate loans or "owed to you" section', (WidgetTester tester) async {

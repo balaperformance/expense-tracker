@@ -44,6 +44,7 @@ class SchemaCapabilities {
   static bool _cashAccount = false;
   static bool _reconciliation = false;
   static bool _emi = false;
+  static bool _personal = false;
 
   static bool get resolved => _resolved;
 
@@ -113,6 +114,11 @@ class SchemaCapabilities {
   /// EMI instalments grouped, and EMIs someone else pays back. Builds on 005.
   static bool get emi => _emi;
 
+  /// `expenses.is_personal` and `income.is_personal` (migration 019): an
+  /// entry can be someone else's money — kept in the lists, left out of every
+  /// personal figure. Until both exist the column is never read or written.
+  static bool get personal => _personal;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -138,6 +144,7 @@ class SchemaCapabilities {
       if (!_notificationClear) 'clearing read notifications (012)',
       if (!_reconciliation) 'statement reconciliation decisions (015)',
       if (!_emi) 'card statement import and EMI plans (016)',
+      if (!_personal) 'personal and non-personal entries (019)',
     ];
     return missing.join(', ');
   }
@@ -197,6 +204,9 @@ class SchemaCapabilities {
               _probe(client, 'credit_card_transactions',
                   'emi_plan_id, emi_component, statement_date'),
               _probe(client, 'receivables', 'emi_plan_id'),
+              // 25–26: personal and non-personal entries (019).
+              _probe(client, 'expenses', 'is_personal'),
+              _probe(client, 'income', 'is_personal'),
             ]));
 
     _merchant = results[0];
@@ -216,6 +226,8 @@ class SchemaCapabilities {
     _reconciliation = _bankAccounts && results[20];
     // One migration adds every part, and plans paid by someone else are claims.
     _emi = _treatments && results.sublist(21, 25).every((bool present) => present);
+    // One migration adds both columns.
+    _personal = results[25] && results[26];
     _resolved = true;
   }
 
@@ -263,6 +275,7 @@ class SchemaCapabilities {
     bool? cashAccount,
     bool? reconciliation,
     bool? emi,
+    bool? personal,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -279,6 +292,7 @@ class SchemaCapabilities {
     _cashAccount = cashAccount ?? _cashAccount;
     _reconciliation = reconciliation ?? _reconciliation;
     _emi = emi ?? _emi;
+    _personal = personal ?? _personal;
     _resolved = true;
   }
 
@@ -299,5 +313,6 @@ class SchemaCapabilities {
     _cashAccount = false;
     _reconciliation = false;
     _emi = false;
+    _personal = false;
   }
 }

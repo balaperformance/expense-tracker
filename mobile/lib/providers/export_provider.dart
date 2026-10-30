@@ -200,7 +200,8 @@ class ExportProvider extends AsyncProvider {
       cards: reference.cards,
     );
 
-    final String? filterNote = _filterNote(reference, source.paidForLeftOut);
+    final String? filterNote =
+        _filterNote(reference, source.paidForLeftOut, source.othersLeftOut);
 
     return switch (_request.type) {
       ExportReportType.bankStatement => _builder.bankStatement(
@@ -219,6 +220,11 @@ class ExportProvider extends AsyncProvider {
           income: source.income,
           range: _request.range,
           context: context,
+          filterNote: source.othersLeftOut > 0
+              ? '${source.othersLeftOut} '
+                  '${source.othersLeftOut == 1 ? 'entry' : 'entries'} '
+                  'received for someone else not included'
+              : null,
         ),
       ExportReportType.spendingReport => _builder.spendingReport(
           expenses: source.expenses,
@@ -244,9 +250,13 @@ class ExportProvider extends AsyncProvider {
   }
 
   /// Says on the report itself that it was filtered — by category, or by
-  /// leaving out purchases paid for someone else — so a narrowed export
-  /// cannot later be mistaken for a complete one.
-  String? _filterNote(ExportReferenceData reference, int paidForLeftOut) {
+  /// leaving out purchases paid for someone else or made with their money —
+  /// so a narrowed export cannot later be mistaken for a complete one.
+  String? _filterNote(
+    ExportReferenceData reference,
+    int paidForLeftOut,
+    int othersLeftOut,
+  ) {
     final List<String> names = <String>[
       for (final ExpenseCategory category in reference.categories)
         if (_request.categoryIds.contains(category.id)) category.name,
@@ -256,6 +266,9 @@ class ExportProvider extends AsyncProvider {
       if (paidForLeftOut > 0)
         '$paidForLeftOut ${paidForLeftOut == 1 ? 'purchase' : 'purchases'} '
             'paid for someone else not included',
+      if (othersLeftOut > 0)
+        '$othersLeftOut ${othersLeftOut == 1 ? 'expense' : 'expenses'} '
+            'for someone else not included',
     ];
     return notes.isEmpty ? null : notes.join(' · ');
   }

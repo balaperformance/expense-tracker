@@ -27,6 +27,7 @@ import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/paid_for_field.dart';
+import '../../widgets/personal_field.dart';
 import '../../widgets/tag_field.dart';
 
 /// The other side of a transfer, as the review item stores it.
@@ -157,6 +158,10 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         : (widget.row.kind == 'reimbursement' ? (widget.row.counterparty ?? '') : ''),
   );
   late bool _reimbursable = widget.row.reimbursable;
+
+  /// An expense or income of the user's own money, or someone else's
+  /// (migration 019).
+  late bool _isPersonal = widget.row.isPersonal;
   late Map<String, Object?>? _settles = widget.row.settles;
   bool _submitted = false;
   late DateTime _date = widget.row.date;
@@ -451,6 +456,14 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
             controller: _source,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(hintText: 'Salary, Interest…'),
+          ),
+        ],
+        if (SchemaCapabilities.personal &&
+            (_kind == 'expense' || _kind == 'income')) ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          PersonalField(
+            value: _isPersonal,
+            onChanged: (bool value) => setState(() => _isPersonal = value),
           ),
         ],
         if (row.hasNotes && (_kind == 'expense' || _kind == 'income')) ...<Widget>[
@@ -786,6 +799,10 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     final List<String> tags =
         TagField.withDraft(_tags, _tagDraft.text, _knownTags);
     final _Target? before = _Target.of(row);
+    // Only an expense or income can be someone else's money; any other kind
+    // is the user's again.
+    final bool personal =
+        (_kind == 'expense' || _kind == 'income') ? _isPersonal : true;
     final Map<String, Object?> patch = <String, Object?>{
       if (description != row.description) 'description': description,
       if ((value * 100).round() != (row.amount * 100).round()) 'amount': value,
@@ -815,6 +832,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
       if (_kind == 'reimbursement' &&
           _SettleChoice.keyOf(_settles) != _SettleChoice.keyOf(row.settles))
         'settles': _settles,
+      if (personal != row.isPersonal) 'isPersonal': personal,
     };
     if (patch.isNotEmpty) {
       await context.read<StatementImportProvider>().edit(row.id, patch);

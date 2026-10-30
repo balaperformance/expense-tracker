@@ -199,7 +199,9 @@ List<FrequentExpense> frequentExpenses(
     final String? categoryId = expense.categoryId;
     if (categoryId == null ||
         !context.categoryIds.contains(categoryId) ||
-        context.excludeIds.contains(expense.id)) {
+        context.excludeIds.contains(expense.id) ||
+        // Bought with someone else's money: not the user's habit.
+        !expense.isPersonal) {
       continue;
     }
     if (!(expense.amount > 0) ||
