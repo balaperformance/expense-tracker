@@ -16,14 +16,18 @@ import '../../providers/settings_provider.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_fields.dart';
+import '../../widgets/common/app_sheet.dart';
+import '../../widgets/common/filter_button.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../services/schema_capabilities.dart';
+import '../../widgets/date_range_fields.dart';
 import '../../widgets/transaction_tile.dart';
 import '../expenses/expenses_screen.dart';
 import '../shell/home_shell.dart';
+import 'income_filter_sheet.dart';
 import 'income_form_screen.dart';
 
 /// Money in.
@@ -83,24 +87,38 @@ class _IncomeScreenState extends State<IncomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Income'),
-        actions: const <Widget>[
-          NotificationBell(glass: false),
-          SizedBox(width: AppSpacing.xs),
+        actions: <Widget>[
+          FilterButton(
+            count: provider.hasRange ? 1 : 0,
+            onPressed: () => _openFilters(provider),
+          ),
+          const NotificationBell(glass: false),
+          const SizedBox(width: AppSpacing.xs),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(58),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.page,
-              0,
-              AppSpacing.page,
-              AppSpacing.md,
-            ),
-            child: SearchField(
-              controller: _search,
-              onChanged: provider.setSearch,
-              hintText: 'Search source or description',
-            ),
+          preferredSize: Size.fromHeight(provider.hasRange ? 100 : 58),
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.page,
+                  0,
+                  AppSpacing.page,
+                  AppSpacing.md,
+                ),
+                child: SearchField(
+                  controller: _search,
+                  onChanged: provider.setSearch,
+                  hintText: 'Search source or description',
+                ),
+              ),
+              if (provider.hasRange)
+                _RangeBar(
+                  provider: provider,
+                  currency: settings.currency,
+                  onEdit: () => _openFilters(provider),
+                ),
+            ],
           ),
         ),
       ),
@@ -152,11 +170,16 @@ class _IncomeScreenState extends State<IncomeScreen> {
         child: EmptyState(
           icon: Icons.search_off_rounded,
           title: 'No matches',
-          message: 'Nothing matches "${provider.search}".',
-          actionLabel: 'Clear search',
+          message: provider.search.isEmpty
+              ? 'No income in ${dateRangeLabel(provider.from, provider.to)}.'
+              : provider.hasRange
+                  ? 'Nothing matches "${provider.search}" in this date range.'
+                  : 'Nothing matches "${provider.search}".',
+          actionLabel: provider.hasRange ? 'Clear filters' : 'Clear search',
           onAction: () {
             _search.clear();
             provider.setSearch('');
+            if (provider.hasRange) provider.clearRange();
           },
         ),
       );
@@ -271,6 +294,15 @@ class _IncomeScreenState extends State<IncomeScreen> {
     return ok;
   }
 
+  Future<void> _openFilters(IncomeProvider provider) async {
+    final ({DateTime? from, DateTime? to})? next =
+        await showAppSheet<({DateTime? from, DateTime? to})>(
+      context: context,
+      builder: (_) => IncomeFilterSheet(from: provider.from, to: provider.to),
+    );
+    if (next != null) await provider.setRange(next.from, next.to);
+  }
+
   Future<void> _addIncome({bool emi = false}) async {
     final bool? saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
@@ -282,15 +314,22 @@ class _IncomeScreenState extends State<IncomeScreen> {
 
   /// EMI reimbursements are repayments, not income: shown here on their own
   /// line, never in the list or its totals.
+  ///
+  /// It covers this month, or the filtered date range when one is set, so it
+  /// always speaks of the same period as the list beneath it.
   Widget _emiLine(String currency) {
     if (!SchemaCapabilities.emi) return const SizedBox.shrink();
+    final IncomeProvider provider = context.watch<IncomeProvider>();
     final DateTime today = AppDateUtils.today();
     final DateTime month = DateTime(today.year, today.month, 1);
+    final bool ranged = provider.hasRange;
     final ({double received, int count, double owed, int people}) emi =
         emiReimbursementTotals(
       context.watch<ReceivableProvider>().claims,
-      month,
-      DateTime(month.year, month.month + 1, 1),
+      ranged ? (provider.from ?? DateTime(1970)) : month,
+      ranged
+          ? (provider.to ?? today).add(const Duration(days: 1))
+          : DateTime(month.year, month.month + 1, 1),
     );
     if (emi.count == 0 && emi.owed <= 0) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
@@ -305,7 +344,7 @@ class _IncomeScreenState extends State<IncomeScreen> {
             Text('Card EMI reimbursements', style: theme.textTheme.titleSmall),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              '${money(emi.received)} received this month'
+              '${money(emi.received)} received ${ranged ? 'in this period' : 'this month'}'
               '${emi.owed > 0 ? ' · ${money(emi.owed)} still owed by ${emi.people} ${emi.people == 1 ? 'person' : 'people'}' : ''}',
               style: theme.textTheme.bodySmall,
             ),
@@ -365,6 +404,75 @@ class _DayGroup {
   final DateTime day;
   final List<Income> items = <Income>[];
   double total = 0;
+}
+
+/// Strip below the search field: the date range in force, what it adds up
+/// to (the whole range, not only the rows scrolled so far), and Clear.
+class _RangeBar extends StatelessWidget {
+  const _RangeBar({
+    required this.provider,
+    required this.currency,
+    required this.onEdit,
+  });
+
+  final IncomeProvider provider;
+  final String currency;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ({double total, int count})? summary = provider.rangeSummary;
+    final String label = dateRangeLabel(provider.from, provider.to) ?? '';
+    final String figures = summary == null
+        ? ''
+        : ' · ${Formatters.currency(summary.total, currencyCode: currency)}'
+            ' · ${summary.count} ${summary.count == 1 ? 'entry' : 'entries'}';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.page,
+        0,
+        AppSpacing.page,
+        AppSpacing.md,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: InkWell(
+              onTap: onEdit,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.date_range_rounded,
+                    size: AppSpacing.iconSm,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      '$label$figures',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: provider.clearRange,
+            child: const Text('Clear'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _DeleteBackground extends StatelessWidget {

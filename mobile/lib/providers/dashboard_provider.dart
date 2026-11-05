@@ -26,15 +26,55 @@ class DashboardProvider extends AsyncProvider {
   DashboardData? _data;
   bool _stale = true;
   String? _userId;
+  DateTime _month = AppDateUtils.firstDayOf(DateTime.now());
+  DateTime? _earliest;
 
   DashboardData? get data => _data;
+
+  /// The month the dashboard shows; the current one until the user picks.
+  DateTime get month => _month;
+
+  /// Whether [month] is the month in progress.
+  bool get isCurrentMonth =>
+      _month == AppDateUtils.firstDayOf(DateTime.now());
+
+  /// Chooses the month every figure is for; the next [load] reads it.
+  /// Nothing after the current month can be chosen.
+  void setMonth(DateTime month) {
+    final DateTime current = AppDateUtils.firstDayOf(DateTime.now());
+    DateTime next = AppDateUtils.firstDayOf(month);
+    if (next.isAfter(current)) next = current;
+    if (next == _month) return;
+    _month = next;
+    _stale = true;
+    safeNotify();
+  }
+
+  /// The first month with any expense or income, for the month picker;
+  /// read once and kept. Null when there is nothing yet.
+  Future<DateTime?> earliestMonth({required String userId}) async {
+    final DateTime? known = _earliest;
+    if (known != null) return known;
+    final List<DateTime?> firsts = await Future.wait(<Future<DateTime?>>[
+      _expenses.fetchEarliestDate(userId: userId),
+      _income.fetchEarliestDate(userId: userId),
+    ]);
+    DateTime? first;
+    for (final DateTime? d in firsts) {
+      if (d != null && (first == null || d.isBefore(first))) first = d;
+    }
+    _earliest = first == null ? null : AppDateUtils.firstDayOf(first);
+    return _earliest;
+  }
 
   @override
   bool get isEmptyData => _data == null;
 
-  /// Marks the cache dirty after a mutation elsewhere in the app.
+  /// Marks the cache dirty after a mutation elsewhere in the app. An older
+  /// entry may have been added, so the picker's first month is read again.
   void invalidate() {
     _stale = true;
+    _earliest = null;
   }
 
   /// Loads only if the cache is dirty, unless [force] is set (pull-to-refresh).
@@ -51,7 +91,7 @@ class DashboardProvider extends AsyncProvider {
 
     if (_data == null) setLoading();
 
-    final DateTime anchor = DateTime.now();
+    final DateTime anchor = _month;
     final List<DateTime> months =
         AppDateUtils.trailingMonths(anchor, _trendMonths);
     final DateTime trendStart = months.first;
@@ -131,6 +171,8 @@ class DashboardProvider extends AsyncProvider {
     _data = null;
     _userId = null;
     _stale = true;
+    _month = AppDateUtils.firstDayOf(DateTime.now());
+    _earliest = null;
     safeNotify();
   }
 }

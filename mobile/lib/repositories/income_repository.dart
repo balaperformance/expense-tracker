@@ -27,28 +27,55 @@ class IncomeRepository {
         'created_at$bank$personal';
   }
 
+  /// [from] and [to] (both inclusive, either optional) narrow the list to
+  /// a date range, as the Expenses filter does.
   Future<List<Income>> fetchPage({
     required String userId,
     required int page,
     String search = '',
+    DateTime? from,
+    DateTime? to,
     int pageSize = AppConstants.pageSize,
   }) async {
     try {
       PostgrestFilterBuilder<List<Map<String, dynamic>>> query =
           _client.from(_table).select(_select).eq('user_id', userId);
+      if (from != null) {
+        query = query.gte('income_date', AppDateUtils.toDateString(from));
+      }
+      if (to != null) {
+        query = query.lte('income_date', AppDateUtils.toDateString(to));
+      }
 
       final String term = search.trim().replaceAll(RegExp(r'[,()*%\\]'), '');
       if (term.isNotEmpty) {
         query = query.or('source.ilike.%$term%,description.ilike.%$term%');
       }
 
-      final int from = page * pageSize;
+      final int first = page * pageSize;
       final List<Map<String, dynamic>> rows = await query
           .order('income_date', ascending: false)
           .order('created_at', ascending: false)
-          .range(from, from + pageSize - 1);
+          .range(first, first + pageSize - 1);
 
       return rows.map(Income.fromMap).toList();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// The date of the user's oldest income entry — where the dashboard's
+  /// month picker starts. Null when there are none.
+  Future<DateTime?> fetchEarliestDate({required String userId}) async {
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from(_table)
+          .select('income_date')
+          .eq('user_id', userId)
+          .order('income_date', ascending: true)
+          .limit(1);
+      if (rows.isEmpty) return null;
+      return DateTime.tryParse(rows.first['income_date'] as String? ?? '');
     } catch (error) {
       throw ErrorMapper.map(error);
     }

@@ -76,6 +76,23 @@ class ExpenseRepository {
 
   /// All expenses in a month, used for dashboard and report aggregation.
   ///
+  /// The date of the user's oldest expense — where the dashboard's month
+  /// picker starts. Null when there are none.
+  Future<DateTime?> fetchEarliestDate({required String userId}) async {
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from(_table)
+          .select('expense_date')
+          .eq('user_id', userId)
+          .order('expense_date', ascending: true)
+          .limit(1);
+      if (rows.isEmpty) return null;
+      return DateTime.tryParse(rows.first['expense_date'] as String? ?? '');
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
   /// Bounded by [AppConstants.monthlyAggregateLimit]; a single month of
   /// personal spending sits far below that, and aggregating client-side
   /// avoids adding database views or RPCs to an existing schema.

@@ -30,6 +30,7 @@ import '../../widgets/common/card_carousel.dart';
 import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/month_picker.dart';
 import '../../widgets/stat_tiles.dart';
 import '../../widgets/transaction_tile.dart';
 import '../accounts/accounts_screen.dart';
@@ -85,7 +86,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         );
 
     if (!mounted) return;
-    await context.read<BudgetProvider>().load(userId: userId, force: force);
+    // The budget card follows the month the dashboard shows.
+    final BudgetProvider budgets = context.read<BudgetProvider>()
+      ..setMonth(context.read<DashboardProvider>().month);
+    await budgets.load(userId: userId, force: force);
 
     if (!mounted) return;
     await context
@@ -190,6 +194,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         AppSpacing.bottomListPadding,
       ),
       children: <Widget>[
+        // Which month every figure below is for.
+        MonthSwitcher(
+          month: dashboard.month,
+          onChanged: _changeMonth,
+          earliest: _earliestMonth,
+        ),
+        // The figures below are still the last month's until the new one
+        // arrives: say so rather than show them under the new name.
+        if (data.month != dashboard.month)
+          const LinearProgressIndicator(minHeight: 2)
+        else
+          const SizedBox(height: 2),
+        const SizedBox(height: AppSpacing.xs),
+
         // The charts lead. They are what the user opens a spending app to
         // look at, and putting them under four other sections meant scrolling
         // to reach the answer every single time.
@@ -203,6 +221,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           expense: data.totalExpense,
           currency: currency,
           monthLabel: Formatters.shortMonth(data.month),
+          currentMonth: dashboard.isCurrentMonth,
           // The actual money in the accounts: every movement counts,
           // personal or not.
           bankTotal: hasAccounts ? accounts.totalBalance : null,
@@ -243,9 +262,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
 
-        if (!data.hasAnyData) ...<Widget>[
+        if (!data.hasAnyData && dashboard.isCurrentMonth) ...<Widget>[
           const SizedBox(height: AppSpacing.section),
           _FirstRunCard(onAdd: _addExpense),
+        ] else if (!data.hasAnyData) ...<Widget>[
+          const SizedBox(height: AppSpacing.section),
+          SurfaceCard(
+            child: EmptyState(
+              compact: true,
+              icon: Icons.event_busy_outlined,
+              title: 'Nothing in ${Formatters.monthYear(data.month)}',
+              message: 'No income or expenses were recorded this month.',
+              actionLabel: 'Back to this month',
+              onAction: () => _changeMonth(DateTime.now()),
+            ),
+          ),
+          _budgetSection(currency),
         ] else ...<Widget>[
           _budgetSection(currency),
           _accountsSection(accounts, currency),
@@ -404,7 +436,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: EmptyState(
               compact: true,
               icon: Icons.receipt_long_outlined,
-              title: 'Nothing this month',
+              title: context.read<DashboardProvider>().isCurrentMonth
+                  ? 'Nothing this month'
+                  : 'Nothing in ${Formatters.monthYear(data.month)}',
               message: 'Expenses you add will show up here.',
               actionLabel: 'Add expense',
               onAction: _addExpense,
@@ -563,6 +597,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       MaterialPageRoute<void>(builder: (_) => const BudgetsScreen()),
     );
     if (mounted) _invalidateAndReload();
+  }
+
+  /// Shows [month] everywhere on the dashboard: totals, charts, budget and
+  /// recent activity. Balances stay as they are now.
+  void _changeMonth(DateTime month) {
+    context.read<DashboardProvider>().setMonth(month);
+    _load();
+  }
+
+  Future<DateTime?> _earliestMonth() async {
+    final String? userId = context.read<AuthProvider>().userId;
+    if (userId == null) return null;
+    return context.read<DashboardProvider>().earliestMonth(userId: userId);
   }
 
   void _invalidateAndReload() {

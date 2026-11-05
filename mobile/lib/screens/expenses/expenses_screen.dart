@@ -21,6 +21,7 @@ import '../../services/schema_capabilities.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/app_fields.dart';
+import '../../widgets/common/filter_button.dart';
 import '../../widgets/common/notification_bell.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
@@ -140,7 +141,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
               onPressed: () => _openSort(provider),
               icon: const Icon(Icons.swap_vert_rounded),
             ),
-            _FilterButton(
+            FilterButton(
               count: provider.filter.activeCount,
               onPressed: () => _openFilters(provider),
             ),
@@ -637,57 +638,6 @@ class _ActiveFilterBar extends StatelessWidget {
           TextButton(onPressed: onClear, child: const Text('Clear')),
         ],
       ),
-    );
-  }
-}
-
-class _FilterButton extends StatelessWidget {
-  const _FilterButton({required this.count, required this.onPressed});
-
-  final int count;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-
-    return Stack(
-      alignment: Alignment.center,
-      children: <Widget>[
-        IconButton(
-          tooltip: 'Filter',
-          onPressed: onPressed,
-          icon: Icon(
-            count > 0 ? Icons.filter_alt_rounded : Icons.tune_rounded,
-            color: count > 0 ? scheme.primary : null,
-          ),
-        ),
-        if (count > 0)
-          Positioned(
-            right: 5,
-            top: 7,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 15),
-              height: 15,
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                border: Border.all(color: scheme.surface, width: 1.5),
-              ),
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  color: scheme.onPrimary,
-                  fontSize: 9.5,
-                  height: 1,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-      ],
     );
   }
 }

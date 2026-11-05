@@ -1,7 +1,7 @@
 // Personal and non-personal entries (migration 019): an income or expense can
 // be someone else's money — a friend's money received, or spent on their
-// behalf. It stays in the lists, marked, but every personal figure leaves it
-// out, and the Home balance does not count money held for others.
+// behalf. It stays in the lists, marked, and every personal figure leaves it
+// out; account balances still count it, since the money really moved.
 //
 // Rows read before the migration have no `is_personal` column and are the
 // user's own, so nothing that exists today changes. Nothing here reaches the

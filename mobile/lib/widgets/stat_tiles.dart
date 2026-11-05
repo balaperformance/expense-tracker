@@ -101,6 +101,7 @@ class BalanceCard extends StatelessWidget {
     this.bankTotal,
     this.bankTotalHidden = false,
     this.onToggleBankTotal,
+    this.currentMonth = true,
   });
 
   final double income;
@@ -118,6 +119,10 @@ class BalanceCard extends StatelessWidget {
 
   /// Null hides the eye entirely, for callers with nothing to protect.
   final VoidCallback? onToggleBankTotal;
+
+  /// False for a past month: the figures are the whole month's, not "so
+  /// far", while the balance is still today's.
+  final bool currentMonth;
 
   @override
   Widget build(BuildContext context) {
@@ -142,7 +147,11 @@ class BalanceCard extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: Text(
-                balance != null ? 'AVAILABLE BALANCE' : 'SPENT THIS MONTH',
+                balance != null
+                    ? 'AVAILABLE BALANCE'
+                    : currentMonth
+                        ? 'SPENT THIS MONTH'
+                        : 'SPENT IN ${monthLabel.toUpperCase()}',
                 style: AppTypography.eyebrow(
                   theme.textTheme,
                   color: hero.heroAccent,
@@ -181,7 +190,7 @@ class BalanceCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  'So far this month',
+                  currentMonth ? 'So far this month' : 'For the month',
                   style: theme.textTheme.bodySmall,
                 ),
               ),
@@ -207,7 +216,7 @@ class BalanceCard extends StatelessWidget {
               child: balance == null
                   ? const SizedBox.shrink()
                   : _Leg(
-                      label: 'Spent this month',
+                      label: currentMonth ? 'Spent this month' : 'Spent',
                       amount: expense,
                       currency: currency,
                       tone: ToneColors.expense(context),

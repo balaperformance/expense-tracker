@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import '../core/constants/app_constants.dart';
+import '../core/utils/date_utils.dart';
+import '../models/analytics.dart';
 import '../models/income.dart';
 import '../models/tag.dart';
 import '../repositories/income_repository.dart';
@@ -30,6 +32,14 @@ class IncomeProvider extends AsyncProvider {
   String _search = '';
   String? _userId;
 
+  // The date range the list is narrowed to (both inclusive); null is open.
+  DateTime? _from;
+  DateTime? _to;
+
+  // What the whole range adds up to, not only the pages loaded so far.
+  ({double total, int count})? _rangeSummary;
+  int _summaryRequest = 0;
+
   int _page = 0;
   bool _hasMore = true;
   bool _loadingMore = false;
@@ -38,6 +48,15 @@ class IncomeProvider extends AsyncProvider {
 
   List<Income> get items => List<Income>.unmodifiable(_items);
   String get search => _search;
+  DateTime? get from => _from;
+  DateTime? get to => _to;
+
+  /// A date range is set — the Filter button's badge.
+  bool get hasRange => _from != null || _to != null;
+
+  /// For the active range (and search): the personal income received and
+  /// how many entries there are. Null without a range, or while it loads.
+  ({double total, int count})? get rangeSummary => _rangeSummary;
   bool get hasMore => _hasMore;
   bool get loadingMore => _loadingMore;
   int get revision => _revision;
@@ -45,8 +64,10 @@ class IncomeProvider extends AsyncProvider {
   @override
   bool get isEmptyData => _items.isEmpty;
 
-  bool get showEmptyState => isReady && _items.isEmpty && _search.isEmpty;
-  bool get showNoResults => isReady && _items.isEmpty && _search.isNotEmpty;
+  bool get showEmptyState =>
+      isReady && _items.isEmpty && _search.isEmpty && !hasRange;
+  bool get showNoResults =>
+      isReady && _items.isEmpty && (_search.isNotEmpty || hasRange);
 
   void attachUser(String userId) {
     if (_userId == userId) return;
@@ -67,10 +88,13 @@ class IncomeProvider extends AsyncProvider {
         userId: userId,
         page: 0,
         search: _search,
+        from: _from,
+        to: _to,
       );
       _items = rows;
       _hasMore = rows.length == AppConstants.pageSize;
       setReady();
+      unawaited(_loadRangeSummary());
     } catch (error) {
       setError(error);
     }
@@ -88,6 +112,8 @@ class IncomeProvider extends AsyncProvider {
         userId: userId,
         page: _page + 1,
         search: _search,
+        from: _from,
+        to: _to,
       );
       _page += 1;
       _items = <Income>[..._items, ...rows];
@@ -112,12 +138,61 @@ class IncomeProvider extends AsyncProvider {
     });
   }
 
+  /// Narrows the list to [from]–[to] (inclusive; either may be null) and
+  /// reloads it. Both null shows everything again.
+  Future<void> setRange(DateTime? from, DateTime? to) async {
+    if (from == _from && to == _to) return;
+    _from = from;
+    _to = to;
+    _rangeSummary = null;
+    await refresh();
+  }
+
+  Future<void> clearRange() => setRange(null, null);
+
+  /// The range's total, read over every row in it, so it never depends on
+  /// how far the list has been scrolled. Money received for someone else is
+  /// listed but, as everywhere, not counted.
+  Future<void> _loadRangeSummary() async {
+    final String? userId = _userId;
+    final int request = ++_summaryRequest;
+    if (userId == null || !hasRange) {
+      _rangeSummary = null;
+      return;
+    }
+    try {
+      final List<Income> rows = await _repository.fetchRange(
+        userId: userId,
+        from: _from ?? DateTime(1970),
+        toExclusive: (_to ?? AppDateUtils.today()).add(const Duration(days: 1)),
+      );
+      final String term = _search.trim().toLowerCase();
+      final List<Income> matching = term.isEmpty
+          ? rows
+          : rows.where((Income i) {
+              return (i.source ?? '').toLowerCase().contains(term) ||
+                  (i.description ?? '').toLowerCase().contains(term);
+            }).toList();
+      if (request != _summaryRequest || isDisposed) return;
+      _rangeSummary = (
+        total: personalIncome(matching)
+            .fold<double>(0, (double sum, Income i) => sum + i.amount),
+        count: matching.length,
+      );
+      safeNotify();
+    } catch (_) {
+      // The list itself is fine; only the total is missing.
+      if (request == _summaryRequest) _rangeSummary = null;
+    }
+  }
+
   Future<bool> create(Income income) async {
     return guard(() async {
       final Income created = await _repository.create(income);
       _items = <Income>[created, ..._items];
       _revision++;
       safeNotify();
+      unawaited(_loadRangeSummary());
     });
   }
 
@@ -128,6 +203,7 @@ class IncomeProvider extends AsyncProvider {
           _items.map((Income i) => i.id == updated.id ? updated : i).toList();
       _revision++;
       safeNotify();
+      unawaited(_loadRangeSummary());
     });
   }
 
@@ -166,6 +242,7 @@ class IncomeProvider extends AsyncProvider {
         : _items.map((Income i) => i.id == row.id ? row : i).toList();
     _revision++;
     safeNotify();
+    unawaited(_loadRangeSummary());
     return true;
   }
 
@@ -201,6 +278,7 @@ class IncomeProvider extends AsyncProvider {
       await _repository.delete(userId: income.userId, id: income.id);
       _revision++;
     });
+    if (ok) unawaited(_loadRangeSummary());
 
     if (!ok) {
       _items = snapshot;
@@ -213,6 +291,9 @@ class IncomeProvider extends AsyncProvider {
     _items = <Income>[];
     _search = '';
     _userId = null;
+    _from = null;
+    _to = null;
+    _rangeSummary = null;
     _page = 0;
     _hasMore = true;
     safeNotify();

@@ -3,8 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
-import '../../core/utils/date_utils.dart';
-import '../../core/utils/formatters.dart';
 import '../../models/expense_category.dart';
 import '../../models/expense_filter.dart';
 import '../../models/payment_method.dart';
@@ -15,6 +13,7 @@ import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/date_range_fields.dart';
 
 /// Filter editor.
 ///
@@ -56,50 +55,13 @@ class _ExpenseFilterSheetState extends State<ExpenseFilterSheet> {
         onPressed: _apply,
       ),
       children: <Widget>[
-        const FieldLabel('Date range'),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: _DateButton(
-                label: 'From',
-                value: _from,
-                onPick: (DateTime? d) => setState(() => _from = d),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: _DateButton(
-                label: 'To',
-                value: _to,
-                onPick: (DateTime? d) => setState(() => _to = d),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        Wrap(
-          spacing: AppSpacing.sm,
-          runSpacing: AppSpacing.sm,
-          children: <Widget>[
-            AppChoiceChip(
-              label: 'This month',
-              selected: _matchesRange(AppDateUtils.currentMonth()),
-              onSelected: () => _applyRange(AppDateUtils.currentMonth()),
-            ),
-            AppChoiceChip(
-              label: 'Last month',
-              selected: _matchesRange(_lastMonth),
-              onSelected: () => _applyRange(_lastMonth),
-            ),
-            AppChoiceChip(
-              label: 'Last 30 days',
-              selected: _matchesLast30,
-              onSelected: () => setState(() {
-                _to = AppDateUtils.today();
-                _from = _to!.subtract(const Duration(days: 30));
-              }),
-            ),
-          ],
+        DateRangeFields(
+          from: _from,
+          to: _to,
+          onChanged: (DateTime? from, DateTime? to) => setState(() {
+            _from = from;
+            _to = to;
+          }),
         ),
 
         const SizedBox(height: AppSpacing.xl),
@@ -168,19 +130,6 @@ class _ExpenseFilterSheetState extends State<ExpenseFilterSheet> {
     );
   }
 
-  MonthRange get _lastMonth => AppDateUtils.monthRange(
-        AppDateUtils.addMonths(DateTime.now(), -1),
-      );
-
-  bool _matchesRange(MonthRange range) =>
-      _from == range.start && _to == range.endInclusive;
-
-  bool get _matchesLast30 {
-    if (_from == null || _to == null) return false;
-    return _to == AppDateUtils.today() &&
-        _from == _to!.subtract(const Duration(days: 30));
-  }
-
   int get _count =>
       _categoryIds.length +
       _paymentIds.length +
@@ -202,13 +151,6 @@ class _ExpenseFilterSheetState extends State<ExpenseFilterSheet> {
     );
   }
 
-  void _applyRange(MonthRange range) {
-    setState(() {
-      _from = range.start;
-      _to = range.endInclusive;
-    });
-  }
-
   void _clearAll() {
     setState(() {
       _categoryIds = <String>{};
@@ -216,51 +158,5 @@ class _ExpenseFilterSheetState extends State<ExpenseFilterSheet> {
       _from = null;
       _to = null;
     });
-  }
-}
-
-/// Field-shaped date button that clears itself when a value is set.
-class _DateButton extends StatelessWidget {
-  const _DateButton({
-    required this.label,
-    required this.value,
-    required this.onPick,
-  });
-
-  final String label;
-  final DateTime? value;
-  final ValueChanged<DateTime?> onPick;
-
-  @override
-  Widget build(BuildContext context) {
-    return SelectField(
-      value: value == null ? null : Formatters.dayMonthYear(value!),
-      placeholder: label,
-      icon: Icons.calendar_today_rounded,
-      onTap: () => _pick(context),
-      trailing: value == null
-          ? null
-          : IconButton(
-              tooltip: 'Clear $label',
-              onPressed: () => onPick(null),
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.close_rounded, size: 17),
-            ),
-    );
-  }
-
-  Future<void> _pick(BuildContext context) async {
-    final DateTime now = DateTime.now();
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: value ?? now,
-      firstDate: DateTime(now.year - 5),
-      lastDate: DateTime(now.year + 1, 12, 31),
-    );
-    if (picked != null) {
-      onPick(DateTime(picked.year, picked.month, picked.day));
-    }
   }
 }
