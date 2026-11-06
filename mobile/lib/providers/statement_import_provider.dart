@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/errors/app_exception.dart';
 import '../core/utils/date_utils.dart';
 import '../models/bank_account.dart';
@@ -123,6 +126,41 @@ class ImportRow {
   /// Only an explicit false counts, so a row read before it is personal.
   bool get isPersonal => json['isPersonal'] != false;
 
+  /// For an expense: the payment method chosen in review; absent, the one the
+  /// statement's channel suggests is used.
+  bool get hasPaymentMethodChoice => json.containsKey('paymentMethodId');
+  String? get paymentMethodId => json['paymentMethodId'] as String?;
+  String? get channel => json['channel'] as String?;
+
+  /// The payment method the statement's channel suggests — the engine's
+  /// `suggestedPaymentMethod`, by the same names.
+  String? suggestedPaymentMethod(List<PaymentMethod> methods) {
+    final List<String>? names = const <String, List<String>>{
+      'upi': <String>['upi'],
+      'card': <String>['debit card'],
+      'neft': <String>['net banking'],
+      'imps': <String>['net banking'],
+      'rtgs': <String>['net banking'],
+    }[channel];
+    if (names == null) return null;
+    for (final PaymentMethod m in methods) {
+      if (names.contains(m.name.trim().toLowerCase())) return m.id;
+    }
+    return null;
+  }
+
+  /// Why the last import could not save this row and which field to fix —
+  /// set when the user goes back to fix failed rows; any edit clears it.
+  ImportIssue? get importError {
+    final Object? raw = json['importError'];
+    if (raw is! Map) return null;
+    final String message = (raw['message'] as String?) ?? 'Could not be saved';
+    return ImportIssue(
+      reason: 'Could not be saved: ${message.replaceAll(RegExp(r'\.$'), '')}',
+      field: raw['field'] as String?,
+    );
+  }
+
   /// Recorded as an expense or income that is someone else's money: kept,
   /// but never the user's income or spending.
   bool get nonPersonal =>
@@ -231,6 +269,106 @@ class ImportCounts {
   int get total => expenses + paidFor + income + movements + transfers + repaid;
 }
 
+/// What a row must have fixed before it can be imported: why, and the field
+/// (the engine's `ImportField`: 'amount', 'category', 'paymentMethod'…).
+class ImportIssue {
+  const ImportIssue({required this.reason, this.field});
+
+  final String reason;
+  final String? field;
+
+  /// The field as the row's editor names it, or null.
+  String? get fieldLabel => const <String, String>{
+        'amount': 'Amount',
+        'date': 'Date',
+        'account': 'Account',
+        'kind': 'Record as',
+        'category': 'Category',
+        'transfer': 'Other side',
+        'person': 'Person',
+        'repayment': 'What it pays back',
+        'paymentMethod': 'Payment method',
+        'source': 'Source',
+        'description': 'Description',
+        'payee': 'Paid to',
+      }[field];
+}
+
+/// A row the import did not save, or skipped: which, and why.
+class ImportRowResult {
+  const ImportRowResult({required this.itemId, required this.reason, this.field});
+
+  final String itemId;
+  final String reason;
+  final String? field;
+}
+
+/// Fields the database turned out to require for an imported expense or
+/// income — learned when a save failed for want of one (a NOT NULL column
+/// the app cannot see). Every later review checks them before importing, so
+/// such a row is pointed out instead of failing again. Kept on the device.
+class ImportRequiredFields {
+  ImportRequiredFields._();
+
+  static const String _key = 'import_required_fields';
+  static const List<String> _known = <String>['paymentMethod', 'source', 'description', 'payee'];
+  static final Set<String> _fields = <String>{};
+  static bool _loaded = false;
+
+  static List<String> get fields => _fields.toList();
+
+  /// The engine's `RequiredField` for a database column, or null.
+  static String? forColumn(String? column) => const <String, String>{
+        'payment_method_id': 'paymentMethod',
+        'source': 'source',
+        'description': 'description',
+        'merchant': 'payee',
+      }[column];
+
+  /// The engine's `ImportField` for a database column, or null.
+  static String? fieldForColumn(String? column) => const <String, String>{
+        'payment_method_id': 'paymentMethod',
+        'source': 'source',
+        'description': 'description',
+        'merchant': 'payee',
+        'category_id': 'category',
+        'amount': 'amount',
+        'expense_date': 'date',
+        'income_date': 'date',
+        'txn_date': 'date',
+        'account_id': 'account',
+        'bank_account_id': 'account',
+        'person': 'person',
+      }[column];
+
+  static Future<void> load() async {
+    if (_loaded) return;
+    _loaded = true;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      _fields.addAll((prefs.getStringList(_key) ?? const <String>[]).where(_known.contains));
+    } catch (_) {
+      // No preferences store (tests, a broken install): nothing learned yet.
+    }
+  }
+
+  static Future<void> learn(String field) async {
+    if (!_known.contains(field) || !_fields.add(field)) return;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_key, _fields.toList());
+    } catch (_) {
+      // Kept for this session only.
+    }
+  }
+
+  @visibleForTesting
+  static void debugReset() {
+    _fields.clear();
+    _loaded = true;
+  }
+}
+
 /// Counts of what one import wrote.
 class ImportOutcome {
   ImportOutcome();
@@ -248,10 +386,21 @@ class ImportOutcome {
 
   /// Rows saved, but without all their tags or statement details.
   int partial = 0;
-  final List<String> failures = <String>[];
+
+  /// The rows that could not be saved, each with why and the field to fix.
+  final List<ImportRowResult> failedRows = <ImportRowResult>[];
+
+  /// The rows left out, each with why (already recorded, or skipped to fix).
+  final List<ImportRowResult> skippedRows = <ImportRowResult>[];
 
   /// Operations not attempted because writes kept failing.
   int notAttempted = 0;
+
+  /// Their rows, so they can be tried again.
+  final List<String> notAttemptedIds = <String>[];
+
+  /// The rows saved, which a retry leaves out of the review.
+  final List<String> importedIds = <String>[];
 
   int get written => expenses + income + movements + transfers + other;
 }
@@ -269,6 +418,19 @@ class ImportPreview {
   List<Map<String, Object?>> get skipped =>
       ((json['skipped'] as List<Object?>?) ?? const <Object?>[])
           .cast<Map<String, Object?>>();
+
+  /// Selected rows the import would leave out for something the user can
+  /// fix — not those already recorded — each with what it needs.
+  List<ImportRowResult> get issues => <ImportRowResult>[
+        // Every problem the engine reports names its field; a duplicate is not one.
+        for (final Map<String, Object?> s in skipped)
+          if (s['field'] != null && s['field'] != 'duplicate')
+            ImportRowResult(
+              itemId: (s['itemId'] as String?) ?? '',
+              reason: (s['reason'] as String?) ?? 'Needs fixing',
+              field: s['field'] as String?,
+            ),
+      ];
 
   /// How many of each kind, from the engine.
   ImportCounts get counts => ImportCounts(
@@ -364,6 +526,9 @@ class StatementImportProvider extends AsyncProvider {
   (int, int)? _importing;
   ImportOutcome? _outcome;
 
+  // Rows the last check found needing a fix, by id; an edit clears its row's.
+  Map<String, ImportIssue> _issues = <String, ImportIssue>{};
+
   BankAccount? get account => _account;
 
   /// The card the statement is for, when it is a card's (reconcile only).
@@ -391,6 +556,13 @@ class StatementImportProvider extends AsyncProvider {
   bool get rechecking => _rechecking;
   (int, int)? get importing => _importing;
   ImportOutcome? get outcome => _outcome;
+
+  /// What [row] must have fixed before it can be imported: why its last save
+  /// failed, else why the import would leave it out; null when nothing.
+  ImportIssue? issueOf(ImportRow row) => row.importError ?? (row.selected ? _issues[row.id] : null);
+
+  /// Selected rows that need fixing.
+  int get issueCount => rows.where((ImportRow r) => issueOf(r) != null).length;
   bool get hasRows => _items.isNotEmpty;
 
   /// A statement in this session covers several accounts: rows go to the
@@ -730,6 +902,8 @@ class StatementImportProvider extends AsyncProvider {
   /// Edits one row. A row moved to another account is checked again against
   /// that account's recorded movements; if that check fails, importing waits.
   Future<void> edit(String id, Map<String, Object?> patch) async {
+    // The edit is the fix; the next import checks the row again.
+    _issues.remove(id);
     await reduce(<String, Object?>{'type': 'edit', 'id': id, 'patch': patch});
     if (patch.containsKey('bankAccountId')) await recheck(quiet: true);
   }
@@ -804,6 +978,7 @@ class StatementImportProvider extends AsyncProvider {
         'pairAccounts': SchemaCapabilities.transfers,
         'storeDetails': SchemaCapabilities.statementDetails,
         'storeTags': SchemaCapabilities.tags,
+        'requiredFields': ImportRequiredFields.fields,
         'accountNames': <String, String>{
           for (final BankAccount a in _accounts) a.id: a.nickname,
         },
@@ -815,12 +990,22 @@ class StatementImportProvider extends AsyncProvider {
     required List<PaymentMethod> paymentMethods,
   }) async {
     try {
+      await ImportRequiredFields.load();
       final ImportPreview plan = ImportPreview((await _engine.call('plan', <String, Object?>{
         'items': _items,
         'categories': _categories.map(EngineJson.category).toList(),
         'paymentMethods': paymentMethods.map(EngineJson.paymentMethod).toList(),
         'options': _planOptions,
       }))! as Map<String, Object?>);
+      _issues = <String, ImportIssue>{
+        for (final ImportRowResult i in plan.issues)
+          i.itemId: ImportIssue(reason: i.reason, field: i.field),
+      };
+      // Rows to fix: the screen asks about them, whether or not anything else imports.
+      if (plan.issues.isNotEmpty) {
+        safeNotify();
+        return plan;
+      }
       if (plan.operations.isEmpty) {
         final String? reason = plan.skipped.isEmpty
             ? null
@@ -872,6 +1057,14 @@ class StatementImportProvider extends AsyncProvider {
         'fresh': fresh,
       }))! as Map<String, Object?>);
       outcome.skipped = finalPlan.skipped.length;
+      outcome.skippedRows.addAll(<ImportRowResult>[
+        for (final Map<String, Object?> s in finalPlan.skipped)
+          ImportRowResult(
+            itemId: (s['itemId'] as String?) ?? '',
+            reason: (s['reason'] as String?) ?? 'Skipped',
+            field: s['field'] as String?,
+          ),
+      ]);
       final Map<String, String> matches =
           await _autoMatches(userId, finalPlan.operations);
 
@@ -882,6 +1075,7 @@ class StatementImportProvider extends AsyncProvider {
       for (int i = 0; i < ops.length; i++) {
         if (consecutive >= maxConsecutiveFailures) {
           outcome.notAttempted = ops.length - i;
+          outcome.notAttemptedIds.addAll(ops.skip(i).map((Map<String, Object?> o) => o['itemId']! as String));
           break;
         }
         final Map<String, Object?> op = ops[i];
@@ -892,12 +1086,22 @@ class StatementImportProvider extends AsyncProvider {
           if (!complete) outcome.partial++;
           consecutive = 0;
           written.add(op);
+          outcome.importedIds.add(op['itemId']! as String);
         } catch (error) {
           // A row that pays back another row of this import fails on its own,
           // not the connection.
           final String? settles = op['settlesItemId'] as String?;
           if (!(settles != null && !saved.containsKey(settles))) consecutive++;
-          outcome.failures.add(ErrorMapper.map(error).message);
+          final AppException mapped = ErrorMapper.map(error);
+          final String? column = ErrorMapper.missingColumn(mapped);
+          // The database requires it here: the next review checks it first.
+          final String? required = ImportRequiredFields.forColumn(column);
+          if (required != null) await ImportRequiredFields.learn(required);
+          outcome.failedRows.add(ImportRowResult(
+            itemId: op['itemId']! as String,
+            reason: mapped.message.replaceAll(RegExp(r'\.$'), ''),
+            field: ImportRequiredFields.fieldForColumn(column),
+          ));
         }
         _importing = (i + 1, ops.length);
         safeNotify();
@@ -1150,6 +1354,40 @@ class StatementImportProvider extends AsyncProvider {
     }
   }
 
+  /// Back to review with what did not save: the rows saved leave the review,
+  /// the failed ones come back selected and marked with why, and the rest
+  /// stay as they were (unselected). The import checks the ledger again
+  /// before it writes, so nothing saved can be saved twice.
+  Future<void> fixFailed() async {
+    final ImportOutcome? outcome = _outcome;
+    if (outcome == null) return;
+    final Map<String, ImportRowResult> failed = <String, ImportRowResult>{
+      for (final ImportRowResult f in outcome.failedRows) f.itemId: f,
+    };
+    final Set<String> notTried = outcome.notAttemptedIds.toSet();
+    final Set<String> saved = outcome.importedIds.toSet();
+    _items = <Map<String, Object?>>[
+      for (final Map<String, Object?> item in _items)
+        if (!saved.contains(item['id']))
+          <String, Object?>{
+            ...item,
+            'selected': failed.containsKey(item['id']) || notTried.contains(item['id']),
+            if (failed[item['id']] case final ImportRowResult f)
+              'importError': <String, Object?>{'message': f.reason, 'field': f.field}
+            else if (notTried.contains(item['id']))
+              'importError': <String, Object?>{'message': 'Not tried: saving kept failing', 'field': null},
+          },
+    ];
+    _issues = <String, ImportIssue>{};
+    _outcome = null;
+    try {
+      await _refreshView();
+    } catch (_) {
+      // The rows are back either way; their flags refresh on the next change.
+    }
+    safeNotify();
+  }
+
   /// Starts a fresh session for the same account.
   /// Leaves the import's result for the review again — to check the
   /// reconciliation once the rows are in. Nothing is read or written.
@@ -1182,6 +1420,7 @@ class StatementImportProvider extends AsyncProvider {
     _problem = null;
     _checkFailed = false;
     _outcome = null;
+    _issues = <String, ImportIssue>{};
     _importing = null;
     _reading = null;
   }

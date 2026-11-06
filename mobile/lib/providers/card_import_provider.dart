@@ -64,13 +64,45 @@ class CardImportOutcome {
     required this.skipped,
     required this.failed,
     required this.notAttempted,
+    this.failedRows = const <({String itemId, String reason})>[],
+    this.skippedRows = const <({String itemId, String reason})>[],
+    this.notAttemptedIds = const <String>[],
+    this.importedIds = const <String>[],
   });
 
   final Map<String, Object?> counts;
   final int skipped;
   final List<String> failed;
   final int notAttempted;
+
+  /// The rows not saved, each with why.
+  final List<({String itemId, String reason})> failedRows;
+
+  /// The rows left out (not those simply unselected), each with why.
+  final List<({String itemId, String reason})> skippedRows;
+
+  /// The rows not attempted, so they can be tried again.
+  final List<String> notAttemptedIds;
+
+  /// The rows saved, which a retry leaves out of the review.
+  final List<String> importedIds;
 }
+
+/// What a card row lacks, in the user's words — the engine's
+/// `cardProblemMessage`.
+const Map<String, String> cardProblemMessages = <String, String>{
+  'amount': 'Enter an amount greater than 0',
+  'kind': 'Choose what this row is',
+  'category': 'Choose a category',
+  'emiPlan': 'Choose which EMI this instalment belongs to',
+};
+
+/// Why a card row was skipped, in the user's words.
+const Map<String, String> _cardSkipReasons = <String, String>{
+  'duplicate': 'Already on the card',
+  'problem': 'Needed fixing, so it was skipped',
+  'nowRecorded': 'Added to the card meanwhile',
+};
 
 /// A card statement imported from screenshots — the web app's own parser,
 /// review rules, duplicate checks, EMI grouping and import plan, running in
@@ -134,6 +166,9 @@ class CardImportProvider extends AsyncProvider {
   ({int done, int total})? _importing;
   CardImportOutcome? _result;
 
+  // Rows the last import could not save, with why; an edit clears its row's.
+  Map<String, String> _saveErrors = <String, String>{};
+
   CreditCard? get card => _card;
   List<CardCycleOption> get cycles => _cycles;
   CardCycleOption? get cycle => _cycle;
@@ -166,6 +201,26 @@ class CardImportProvider extends AsyncProvider {
 
   Map<String, Object?> get summary =>
       (_view?['summary'] as Map<String, Object?>?) ?? const <String, Object?>{};
+
+  /// What row [id] must have fixed before it can be imported: why its last
+  /// save failed, else what it lacks; null when nothing.
+  String? issueOf(String id) {
+    final String? failed = _saveErrors[id];
+    if (failed != null) return 'Could not be saved: ${failed.replaceAll(RegExp(r'\.$'), '')}';
+    final Map<String, Object?>? row = item(id);
+    final Map<String, Object?> flags = itemView(id) ?? const <String, Object?>{};
+    if (row == null || row['selected'] != true || flags['leftOut'] == true) return null;
+    final String? problem = flags['problem'] as String?;
+    return problem == null ? null : (cardProblemMessages[problem] ?? 'Add the missing details');
+  }
+
+  /// Selected rows the import would leave out for a problem, each with why.
+  List<({String itemId, String reason})> get issues => <({String itemId, String reason})>[
+        for (final Map<String, Object?> row in items)
+          if (_saveErrors[row['id']] == null)
+            if (issueOf(row['id']! as String) case final String reason)
+              (itemId: row['id']! as String, reason: reason),
+      ];
 
   Map<String, Object?>? item(String id) {
     for (final Map<String, Object?> row in items) {
@@ -252,11 +307,42 @@ class CardImportProvider extends AsyncProvider {
   }
 
   /// Forgets the session's screenshots and rows; the card and statement stay.
+  /// Back to the review with what did not save: the rows saved leave it, the
+  /// failed ones come back selected and marked with why, the rest
+  /// unselected. The import checks the card again before it writes, so
+  /// nothing is added twice.
+  Future<void> fixFailed() async {
+    final CardImportOutcome? result = _result;
+    final Map<String, Object?>? session = _session;
+    if (result == null || session == null) return;
+    final Map<String, String> failed = <String, String>{
+      for (final ({String itemId, String reason}) f in result.failedRows) f.itemId: f.reason,
+      for (final String id in result.notAttemptedIds) id: 'Not tried: saving kept failing',
+    };
+    final Set<String> saved = result.importedIds.toSet();
+    _session = <String, Object?>{
+      ...session,
+      'items': <Map<String, Object?>>[
+        for (final Map<String, Object?> row in items)
+          if (!saved.contains(row['id'])) <String, Object?>{...row, 'selected': failed.containsKey(row['id'])},
+      ],
+    };
+    _saveErrors = failed;
+    _result = null;
+    try {
+      await _refreshView();
+    } on StatementEngineException catch (error) {
+      _problem = error.message;
+    }
+    safeNotify();
+  }
+
   void reset() {
     _shots = <ImportedShot>[];
     _session = null;
     _view = null;
     _ctx = null;
+    _saveErrors = <String, String>{};
     _othersItems.clear();
     _problem = null;
     _checkFailed = false;
@@ -518,8 +604,11 @@ class CardImportProvider extends AsyncProvider {
   Future<void> overrideDuplicate(String itemId, bool overridden) =>
       dispatch(<String, Object?>{'type': 'overrideDuplicate', 'itemId': itemId, 'overridden': overridden});
 
-  Future<void> edit(String itemId, Map<String, Object?> edit) =>
-      dispatch(<String, Object?>{'type': 'edit', 'itemId': itemId, 'edit': edit});
+  Future<void> edit(String itemId, Map<String, Object?> edit) {
+    // The edit is the fix the failed save asked for; the next import checks it again.
+    _saveErrors.remove(itemId);
+    return dispatch(<String, Object?>{'type': 'edit', 'itemId': itemId, 'edit': edit});
+  }
 
   Future<void> setPaymentLink(String itemId, Map<String, Object?>? link) =>
       dispatch(<String, Object?>{'type': 'setPaymentLink', 'itemId': itemId, 'link': link});
@@ -625,7 +714,12 @@ class CardImportProvider extends AsyncProvider {
       }))! as Map<String, Object?>;
       final List<Map<String, Object?>> operations =
           (plan['operations']! as List<Object?>).cast<Map<String, Object?>>();
-      final int skipped = ((plan['skipped'] as List<Object?>?) ?? const <Object?>[]).length;
+      final List<Map<String, Object?>> skippedList =
+          ((plan['skipped'] as List<Object?>?) ?? const <Object?>[]).cast<Map<String, Object?>>();
+      final int skipped = skippedList.length;
+      final List<({String itemId, String reason})> failedRows = <({String itemId, String reason})>[];
+      final List<String> notAttemptedIds = <String>[];
+      final List<String> importedIds = <String>[];
 
       final Map<String, String> planIds = <String, String>{};
       final Set<String> failedGroups = <String>{};
@@ -636,6 +730,10 @@ class CardImportProvider extends AsyncProvider {
       for (int index = 0; index < operations.length; index++) {
         if (consecutive >= _maxConsecutiveFailures) {
           notAttempted = operations.length - index;
+          notAttemptedIds.addAll(<String>[
+            for (final Map<String, Object?> o in operations.skip(index))
+              if (o['type'] != 'createPlan') o['itemId']! as String,
+          ]);
           break;
         }
         final Map<String, Object?> op = operations[index];
@@ -645,6 +743,7 @@ class CardImportProvider extends AsyncProvider {
         final String? groupRef = planRef?['groupId'] as String?;
         if (groupRef != null && failedGroups.contains(groupRef) && type != 'createPlan') {
           failed.add('Its EMI plan could not be created.');
+          failedRows.add((itemId: op['itemId']! as String, reason: 'Its EMI plan could not be created'));
           _importing = (done: index + 1, total: operations.length);
           safeNotify();
           continue;
@@ -654,10 +753,15 @@ class CardImportProvider extends AsyncProvider {
           if (type == 'createPlan' && id != null) planIds[op['groupId']! as String] = id;
           consecutive = 0;
           written.add(op);
+          if (type != 'createPlan') importedIds.add(op['itemId']! as String);
         } catch (error) {
           consecutive++;
           if (type == 'createPlan') failedGroups.add(op['groupId']! as String);
-          failed.add(ErrorMapper.map(error).message);
+          final String message = ErrorMapper.map(error).message;
+          failed.add(message);
+          if (type != 'createPlan') {
+            failedRows.add((itemId: op['itemId']! as String, reason: message.replaceAll(RegExp(r'\.$'), '')));
+          }
         }
         _importing = (done: index + 1, total: operations.length);
         safeNotify();
@@ -670,7 +774,16 @@ class CardImportProvider extends AsyncProvider {
         skipped: skipped,
         failed: failed,
         notAttempted: notAttempted,
+        failedRows: failedRows,
+        skippedRows: <({String itemId, String reason})>[
+          for (final Map<String, Object?> s in skippedList)
+            if (_cardSkipReasons[s['reason']] case final String reason)
+              (itemId: (s['itemId'] as String?) ?? '', reason: reason),
+        ],
+        notAttemptedIds: notAttemptedIds,
+        importedIds: importedIds,
       );
+      _saveErrors = <String, String>{};
       return true;
     } catch (error) {
       _problem = error is StatementEngineException

@@ -560,6 +560,7 @@ class _CardImportScreenState extends State<CardImportScreen> {
             await provider.edit(row['id']! as String, <String, Object?>{'kind': kind});
             if (kind.startsWith('emi')) await provider.regroup();
           },
+          issue: provider.issueOf(row['id']! as String),
         ));
       }
       out.add(CardList(dividerIndent: AppSpacing.md, children: tiles));
@@ -588,8 +589,60 @@ class _CardImportScreenState extends State<CardImportScreen> {
     if (openRow != null && mounted) await _openRow(provider, openRow);
   }
 
+  /// Selected rows to fix first, each with what it needs: Review shows them
+  /// (highlighted, the first one open); Skip goes on without them, and they
+  /// stay in the review to import later.
+  Future<bool> _confirmIssues(
+    CardImportProvider provider,
+    List<({String itemId, String reason})> issues,
+    int importable,
+  ) async {
+    final String currency = context.read<SettingsProvider>().currency;
+    final List<String> lines = <String>[
+      for (final ({String itemId, String reason}) i in issues.take(6))
+        '• ${_cardRowName(provider, i.itemId, currency)}\n   ${i.reason}',
+      if (issues.length > 6) 'and ${issues.length - 6} more',
+    ];
+    final String title = '${issues.length} ${issues.length == 1 ? 'row needs' : 'rows need'} fixing';
+    void review() {
+      setState(() => _filter = _Filter.attention);
+      _openRow(provider, issues.first.itemId);
+    }
+
+    if (importable == 0) {
+      final bool open = await AppFeedback.confirm(
+        context,
+        title: title,
+        message: lines.join('\n'),
+        confirmLabel: 'Review rows',
+        cancelLabel: 'Close',
+        destructive: false,
+      );
+      if (open && mounted) review();
+      return false;
+    }
+    final bool skip = await AppFeedback.confirm(
+      context,
+      title: title,
+      message: <String>[
+        'These selected rows would not be imported until they are fixed:',
+        ...lines,
+        'Skip them to add the other $importable now; they stay here, '
+            'highlighted, to fix and import later.',
+      ].join('\n'),
+      confirmLabel: 'Skip ${issues.length}, import $importable',
+      cancelLabel: 'Review rows',
+      destructive: false,
+    );
+    if (!skip && mounted) review();
+    return skip;
+  }
+
   Future<void> _confirmImport(CardImportProvider provider) async {
     final Map<String, Object?> counts = await provider.preview();
+    if (!mounted) return;
+    final List<({String itemId, String reason})> issues = provider.issues;
+    if (issues.isNotEmpty && !await _confirmIssues(provider, issues, _rowsIn(counts))) return;
     if (!mounted) return;
     final List<String> lines = importCountLines(counts);
     final bool ok = await AppFeedback.confirm(
@@ -616,6 +669,22 @@ class _CardImportScreenState extends State<CardImportScreen> {
       AppFeedback.error(context, provider.problem!);
     }
   }
+}
+
+/// Rows a plan writes: every purchase, payment, charge, credit and EMI part.
+int _rowsIn(Map<String, Object?> counts) {
+  int n(String key) => (counts[key] as num?)?.toInt() ?? 0;
+  return n('purchases') + n('payments') + n('charges') + n('credits') + n('emiComponents');
+}
+
+/// "24 Oct · Amazon · ₹1,499.00" — how a card row is named in the lists of
+/// rows to fix and of what was not saved.
+String _cardRowName(CardImportProvider provider, String itemId, String currency) {
+  final Map<String, Object?>? row = provider.item(itemId);
+  if (row == null) return 'A row';
+  final DateTime date = AppDateUtils.parseDate(row['date']! as String);
+  final String amount = Formatters.currency((row['amount']! as num).toDouble(), currencyCode: currency);
+  return '${Formatters.dayMonth(date)} · ${row['title']} · $amount';
 }
 
 /// "3 purchases", "2 EMI instalments (6 rows: principal, interest, GST)" — the
@@ -677,6 +746,7 @@ class _RowTile extends StatelessWidget {
     required this.onEdit,
     required this.onKind,
     this.nonPersonal = false,
+    this.issue,
   });
 
   static const Map<String, String> _problems = <String, String>{
@@ -698,6 +768,9 @@ class _RowTile extends StatelessWidget {
 
   /// A purchase with someone else's money (migration 019): not spending.
   final bool nonPersonal;
+
+  /// What must be fixed before the row can be imported: a red edge, and why.
+  final String? issue;
 
   @override
   Widget build(BuildContext context) {
@@ -728,94 +801,121 @@ class _RowTile extends StatelessWidget {
       opacity: selected ? 1 : 0.55,
       child: InkWell(
         onTap: enabled ? onEdit : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.rowPadY),
-          child: Row(
-            children: <Widget>[
-              Checkbox(
-                value: selected,
-                onChanged: enabled && !leftOut ? (_) => onToggle() : null,
-                visualDensity: VisualDensity.compact,
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(row['title']! as String, style: theme.textTheme.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      <String>[
-                        detail,
-                        if (badge != null) badge,
-                        if (flags['attention'] == true && problem == null && !unchecked && !leftOut) 'Check this row',
-                      ].join(' · '),
-                      style: theme.textTheme.labelSmall?.copyWith(color: warn ? ToneColors.warning(context) : null),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Wrap(
-                      spacing: AppSpacing.xs,
-                      runSpacing: AppSpacing.xxs,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: <Widget>[
-                        if (kinds.isNotEmpty)
-                          _KindPill(
-                            value: kind,
-                            label: flags['kindLabel'] as String? ?? kind,
-                            kinds: kinds,
-                            enabled: enabled,
-                            tone: kind == 'payment'
-                                ? ToneColors.transfer(context)
-                                : credit
-                                    ? ToneColors.income(context)
-                                    : theme.colorScheme.primary,
-                            onChanged: onKind,
-                          ),
-                        if (problem != null && !leftOut)
-                          AppBadge(label: _problems[problem] ?? 'Add details', icon: Icons.edit_outlined, tone: ToneColors.warning(context)),
-                        if (nonPersonal) const AppBadge(label: nonPersonalBadge),
-                      ],
-                    ),
-                    if (unchecked) ...<Widget>[
+        child: DecoratedBox(
+          decoration: issue == null
+              ? const BoxDecoration()
+              : BoxDecoration(
+                  color: theme.colorScheme.error.withOpacity(0.05),
+                  border: Border(left: BorderSide(color: theme.colorScheme.error, width: 3)),
+                ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.rowPadY),
+            child: Row(
+              children: <Widget>[
+                Checkbox(
+                  value: selected,
+                  onChanged: enabled && !leftOut ? (_) => onToggle() : null,
+                  visualDensity: VisualDensity.compact,
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(row['title']! as String, style: theme.textTheme.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        <String>[
+                          detail,
+                          if (badge != null) badge,
+                          if (flags['attention'] == true && problem == null && !unchecked && !leftOut) 'Check this row',
+                        ].join(' · '),
+                        style: theme.textTheme.labelSmall?.copyWith(color: warn ? ToneColors.warning(context) : null),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       const SizedBox(height: AppSpacing.xs),
                       Wrap(
                         spacing: AppSpacing.xs,
                         runSpacing: AppSpacing.xxs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: <Widget>[
-                          AppButton(
-                            label: 'Duplicate',
-                            icon: Icons.content_copy_rounded,
-                            size: AppButtonSize.small,
-                            variant: AppButtonVariant.secondary,
-                            onPressed: enabled ? () => onDecide('duplicate') : null,
-                          ),
-                          AppButton(
-                            label: 'Not a duplicate',
-                            icon: Icons.check_rounded,
-                            size: AppButtonSize.small,
-                            variant: AppButtonVariant.ghost,
-                            onPressed: enabled ? () => onDecide('notDuplicate') : null,
-                          ),
+                          if (kinds.isNotEmpty)
+                            _KindPill(
+                              value: kind,
+                              label: flags['kindLabel'] as String? ?? kind,
+                              kinds: kinds,
+                              enabled: enabled,
+                              tone: kind == 'payment'
+                                  ? ToneColors.transfer(context)
+                                  : credit
+                                      ? ToneColors.income(context)
+                                      : theme.colorScheme.primary,
+                              onChanged: onKind,
+                            ),
+                          if (problem != null && !leftOut && issue == null)
+                            AppBadge(label: _problems[problem] ?? 'Add details', icon: Icons.edit_outlined, tone: ToneColors.warning(context)),
+                          if (nonPersonal) const AppBadge(label: nonPersonalBadge),
                         ],
                       ),
+                      if (issue != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Icon(Icons.error_outline_rounded, size: 15, color: theme.colorScheme.error),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Text(
+                                issue!,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (unchecked) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        Wrap(
+                          spacing: AppSpacing.xs,
+                          runSpacing: AppSpacing.xxs,
+                          children: <Widget>[
+                            AppButton(
+                              label: 'Duplicate',
+                              icon: Icons.content_copy_rounded,
+                              size: AppButtonSize.small,
+                              variant: AppButtonVariant.secondary,
+                              onPressed: enabled ? () => onDecide('duplicate') : null,
+                            ),
+                            AppButton(
+                              label: 'Not a duplicate',
+                              icon: Icons.check_rounded,
+                              size: AppButtonSize.small,
+                              variant: AppButtonVariant.ghost,
+                              onPressed: enabled ? () => onDecide('notDuplicate') : null,
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              MoneyText(
-                credit ? amount : -amount,
-                currency: currency,
-                signed: true,
-                tone: kind == 'payment'
-                    ? AmountTone.transfer
-                    : nonPersonal
-                        ? AmountTone.neutral
-                        : (credit ? AmountTone.positive : AmountTone.negative),
-                style: theme.textTheme.titleSmall,
-              ),
-            ],
+                const SizedBox(width: AppSpacing.sm),
+                MoneyText(
+                  credit ? amount : -amount,
+                  currency: currency,
+                  signed: true,
+                  tone: kind == 'payment'
+                      ? AmountTone.transfer
+                      : nonPersonal
+                          ? AmountTone.neutral
+                          : (credit ? AmountTone.positive : AmountTone.negative),
+                  style: theme.textTheme.titleSmall,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1051,7 +1151,11 @@ class _ResultView extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final List<String> lines = importCountLines(result.counts);
-    final bool failed = result.failed.isNotEmpty;
+    final bool failed = result.failed.isNotEmpty || result.notAttemptedIds.isNotEmpty;
+    final List<({String itemId, String reason})> notSaved = <({String itemId, String reason})>[
+      ...result.failedRows,
+      for (final String id in result.notAttemptedIds) (itemId: id, reason: 'Not tried: saving kept failing'),
+    ];
     return ListView(
       padding: const EdgeInsets.fromLTRB(AppSpacing.page, AppSpacing.md, AppSpacing.page, AppSpacing.xxxl),
       children: <Widget>[
@@ -1086,23 +1190,56 @@ class _ResultView extends StatelessWidget {
                     child: Text('• $line', style: theme.textTheme.bodySmall),
                   ),
               ],
-              if (result.skipped > 0) ...<Widget>[
-                const SizedBox(height: AppSpacing.sm),
-                Text('${result.skipped} left out: duplicates, unselected rows, or rows added to the card meanwhile.',
-                    style: theme.textTheme.bodySmall),
-              ],
-              if (failed) ...<Widget>[
+              // An EMI plan that could not be created has no row of its own to list.
+              if (failed && notSaved.isEmpty) ...<Widget>[
                 const SizedBox(height: AppSpacing.sm),
                 AppNotice(
                   icon: Icons.error_outline_rounded,
                   tone: theme.colorScheme.error,
-                  message: '${result.failed.length} could not be saved: ${result.failed.first}'
-                      '${result.notAttempted > 0 ? ' ${result.notAttempted} more were not attempted.' : ''}',
+                  message: '${result.failed.length} could not be saved: ${result.failed.first}',
                 ),
               ],
             ],
           ),
         ),
+        if (notSaved.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          _CardResultRows(
+            title: '${notSaved.length} could not be saved',
+            icon: Icons.error_outline_rounded,
+            tone: theme.colorScheme.error,
+            rows: notSaved,
+            provider: provider,
+            currency: currency,
+            footer: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Fix them and import again. Rows already on the card are '
+                  'left out, so nothing is added twice.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppButton(
+                  label: 'Fix and retry ${notSaved.length}',
+                  icon: Icons.edit_outlined,
+                  onPressed: provider.fixFailed,
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (result.skippedRows.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          _CardResultRows(
+            title: '${result.skippedRows.length} skipped',
+            icon: Icons.content_copy_rounded,
+            tone: theme.colorScheme.onSurfaceVariant,
+            rows: result.skippedRows,
+            provider: provider,
+            currency: currency,
+          ),
+        ],
         const SizedBox(height: AppSpacing.md),
         Wrap(
           spacing: AppSpacing.sm,
@@ -1121,6 +1258,60 @@ class _ResultView extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// One part of a card import's result — the rows not saved, or skipped —
+/// each named with why.
+class _CardResultRows extends StatelessWidget {
+  const _CardResultRows({
+    required this.title,
+    required this.icon,
+    required this.tone,
+    required this.rows,
+    required this.provider,
+    required this.currency,
+    this.footer,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color tone;
+  final List<({String itemId, String reason})> rows;
+  final CardImportProvider provider;
+  final String currency;
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SurfaceCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 18, color: tone),
+              const SizedBox(width: AppSpacing.sm),
+              Text(title, style: theme.textTheme.titleSmall?.copyWith(color: tone)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (final ({String itemId, String reason}) row in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(_cardRowName(provider, row.itemId, currency), style: theme.textTheme.labelLarge),
+                  Text(row.reason, style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+          if (footer != null) footer!,
+        ],
+      ),
     );
   }
 }

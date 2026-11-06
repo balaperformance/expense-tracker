@@ -11,10 +11,12 @@ import '../../core/utils/validators.dart';
 import '../../models/bank_account.dart';
 import '../../models/credit_card.dart';
 import '../../models/expense_category.dart';
+import '../../models/payment_method.dart';
 import '../../models/receivable.dart';
 import '../../models/tag.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/credit_card_provider.dart';
+import '../../providers/payment_method_provider.dart';
 import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_import_provider.dart';
@@ -162,6 +164,14 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   /// An expense or income of the user's own money, or someone else's
   /// (migration 019).
   late bool _isPersonal = widget.row.isPersonal;
+
+  /// An expense's payment method: the user's choice, else what the
+  /// statement's channel (UPI, card, net banking) suggests.
+  late final String? _suggestedMethod = widget.row.hasPaymentMethodChoice
+      ? widget.row.paymentMethodId
+      : widget.row.suggestedPaymentMethod(
+          context.read<PaymentMethodProvider?>()?.methods ?? const <PaymentMethod>[]);
+  late String? _paymentMethodId = _suggestedMethod;
   late Map<String, Object?>? _settles = widget.row.settles;
   bool _submitted = false;
   late DateTime _date = widget.row.date;
@@ -239,6 +249,8 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
     final List<ExpenseCategory> categories =
         context.watch<CategoryProvider>().categories;
     final List<CreditCard> cards = context.watch<CreditCardProvider>().cards;
+    final List<PaymentMethod> methods =
+        context.watch<PaymentMethodProvider?>()?.methods ?? const <PaymentMethod>[];
     final List<ClaimSummary> claims = SchemaCapabilities.treatments
         ? context.watch<ReceivableProvider?>()?.claims ?? const <ClaimSummary>[]
         : const <ClaimSummary>[];
@@ -248,6 +260,15 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
       (ImportRow r) => r.id == widget.row.id,
       orElse: () => widget.row,
     );
+    // What must be fixed before the row can be imported: said at the top, and
+    // its field marked; fields the database requires say so.
+    final ImportIssue? issue = provider.issueOf(row);
+    final Set<String> required = ImportRequiredFields.fields.toSet();
+    String? hintFor(String field) => issue?.field == field
+        ? 'Needed'
+        : required.contains(field)
+            ? 'Required'
+            : 'Optional';
     // A multi-account statement's row can move to another account; any other
     // row stays on the statement's.
     final List<BankAccount> accounts = provider.accounts
@@ -265,6 +286,14 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
       ),
       footer: AppButton.submit(label: 'Done', onPressed: _save),
       children: <Widget>[
+        if (issue != null) ...<Widget>[
+          AppNotice(
+            icon: Icons.error_outline_rounded,
+            tone: theme.colorScheme.error,
+            message: '${issue.reason.replaceAll(RegExp(r'\.$'), '')}.',
+          ),
+          const SizedBox(height: AppSpacing.md),
+        ],
         if (row.duplicateText != null) ...<Widget>[
           AppNotice(
             icon: Icons.content_copy_rounded,
@@ -382,7 +411,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         if (_kind == 'expense' || _kind == 'income') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
           FieldLabel(_kind == 'expense' ? 'Paid to' : 'Received from',
-              hint: 'Optional'),
+              hint: hintFor('payee')),
           TextField(
             controller: _payee,
             textCapitalization: TextCapitalization.words,
@@ -390,10 +419,11 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
-        const FieldLabel('Description', isRequired: true),
+        FieldLabel('Description', isRequired: true, hint: issue?.field == 'description' ? 'Needed' : null),
         TextField(controller: _description),
         const SizedBox(height: AppSpacing.lg),
-        FieldLabel(row.hasTime ? 'Date & time' : 'Date', isRequired: true),
+        FieldLabel(row.hasTime ? 'Date & time' : 'Date',
+            isRequired: true, hint: issue?.field == 'date' ? 'Needed' : null),
         DateField(
           date: _date,
           onChanged: (DateTime value) => setState(() => _date = value),
@@ -416,7 +446,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         ],
         if (_kind == 'expense') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          const FieldLabel('Category', isRequired: true),
+          FieldLabel('Category', isRequired: true, hint: issue?.field == 'category' ? 'Needed' : null),
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
@@ -433,6 +463,22 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
                     ))
                 .toList(),
           ),
+          if (methods.isNotEmpty) ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            FieldLabel('Payment method', hint: hintFor('paymentMethod')),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: methods
+                  .map((PaymentMethod m) => AppChoiceChip(
+                        label: m.name,
+                        selected: m.id == _paymentMethodId,
+                        onSelected: () => setState(() => _paymentMethodId =
+                            _paymentMethodId == m.id ? null : m.id),
+                      ))
+                  .toList(),
+            ),
+          ],
           if (SchemaCapabilities.treatments) ...<Widget>[
             const SizedBox(height: AppSpacing.lg),
             PaidForField(
@@ -451,7 +497,7 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         ],
         if (_kind == 'income') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          const FieldLabel('Source', hint: 'Optional'),
+          FieldLabel('Source', hint: hintFor('source')),
           TextField(
             controller: _source,
             textCapitalization: TextCapitalization.words,
@@ -833,6 +879,8 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           _SettleChoice.keyOf(_settles) != _SettleChoice.keyOf(row.settles))
         'settles': _settles,
       if (personal != row.isPersonal) 'isPersonal': personal,
+      if (_kind == 'expense' && _paymentMethodId != _suggestedMethod)
+        'paymentMethodId': _paymentMethodId,
     };
     if (patch.isNotEmpty) {
       await context.read<StatementImportProvider>().edit(row.id, patch);

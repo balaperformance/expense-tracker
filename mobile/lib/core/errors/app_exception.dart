@@ -13,9 +13,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/validators.dart';
 
 class AppException implements Exception {
-  const AppException(this.message);
+  const AppException(this.message, {this.column});
 
   final String message;
+
+  /// For a not-null violation: the column left empty, so a caller can point
+  /// at the field to fix.
+  final String? column;
 
   @override
   String toString() => 'AppException: $message';
@@ -32,7 +36,7 @@ class ErrorMapper {
     }
 
     if (error is PostgrestException) {
-      return AppException(_postgrest(error));
+      return AppException(_postgrest(error), column: missingColumn(error));
     }
 
     if (error is SocketException || error is TimeoutException) {
@@ -89,6 +93,32 @@ class ErrorMapper {
     return 'Authentication failed. Please try again.';
   }
 
+  /// What the user calls a column a write can leave empty.
+  static const Map<String, String> _columnLabels = <String, String>{
+    'payment_method_id': 'Payment method',
+    'source': 'Source',
+    'description': 'Description',
+    'merchant': 'Payee',
+    'category_id': 'Category',
+    'amount': 'Amount',
+    'expense_date': 'Date',
+    'income_date': 'Date',
+    'txn_date': 'Date',
+    'account_id': 'Account',
+    'bank_account_id': 'Account',
+    'person': 'Person',
+    'credit_card_id': 'Card',
+    'card_id': 'Card',
+  };
+
+  /// The column a not-null violation (23502) names — raw or already mapped —
+  /// or null for any other error.
+  static String? missingColumn(Object error) {
+    if (error is AppException) return error.column;
+    if (error is! PostgrestException || error.code != '23502') return null;
+    return RegExp(r'column "([a-z_]+)"').firstMatch(error.message)?.group(1);
+  }
+
   static String _postgrest(PostgrestException error) {
     switch (error.code) {
       case '23505':
@@ -96,7 +126,9 @@ class ErrorMapper {
       case '23503':
         return 'This item is still linked to other records.';
       case '23502':
-        return 'A required field is missing.';
+        // Name the field: "null value in column "source" of relation "income"…".
+        final String? label = _columnLabels[missingColumn(error)];
+        return label != null ? '$label is missing.' : 'A required field is missing.';
       case '42501':
         return 'You do not have permission to do that.';
       case 'PGRST301':

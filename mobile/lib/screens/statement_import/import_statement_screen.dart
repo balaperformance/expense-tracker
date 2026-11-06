@@ -386,6 +386,11 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
       return _ResultView(
         outcome: outcome,
         account: account,
+        currency: context.read<SettingsProvider>().currency,
+        onFixFailed: () {
+          provider.fixFailed();
+          setState(() => _filter = _Filter.attention);
+        },
         onReconcile: () {
           provider.reviewAgain();
           setState(() => _reconcile = true);
@@ -586,7 +591,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         case _Filter.duplicates:
           return r.isDuplicate;
         case _Filter.attention:
-          return r.attention || r.uncategorized || r.problem != null;
+          return r.attention || r.uncategorized || r.problem != null || provider.issueOf(r) != null;
       }
     }).toList()
       ..sort((ImportRow a, ImportRow b) => b.isoDate.compareTo(a.isoDate));
@@ -644,6 +649,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
                   onDecide: (String decision) => provider.decideDuplicate(r.id, decision),
                   onEdit: () => _editRow(r),
                   onAcceptHint: () => provider.acceptHint(r),
+                  issue: provider.issueOf(r),
                 ))
             .toList(),
       ));
@@ -731,12 +737,69 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
     }
   }
 
+  /// Selected rows to fix first, each with what it needs: Review shows them
+  /// (highlighted, the first one open); Skip goes on without them, and they
+  /// stay in the review to import later.
+  Future<bool> _confirmIssues(
+    StatementImportProvider provider,
+    List<ImportRowResult> issues,
+    int importable,
+    String Function(double) money,
+  ) async {
+    final List<String> lines = <String>[
+      for (final ImportRowResult i in issues.take(6))
+        '• ${_rowName(provider, i.itemId, money)}\n   ${i.reason}',
+      if (issues.length > 6) 'and ${issues.length - 6} more',
+    ];
+    final String title = '${_n(issues.length, 'row needs', 'rows need')} fixing';
+    void review() {
+      setState(() => _filter = _Filter.attention);
+      for (final ImportRow row in provider.rows) {
+        if (row.id == issues.first.itemId) {
+          _editRow(row);
+          break;
+        }
+      }
+    }
+
+    if (importable == 0) {
+      final bool open = await AppFeedback.confirm(
+        context,
+        title: title,
+        message: lines.join('\n'),
+        confirmLabel: 'Review rows',
+        cancelLabel: 'Close',
+        destructive: false,
+      );
+      if (open && mounted) review();
+      return false;
+    }
+    final bool skip = await AppFeedback.confirm(
+      context,
+      title: title,
+      message: <String>[
+        'These selected rows would not be imported until they are fixed:',
+        ...lines,
+        'Skip them to import the other $importable now; they stay here, '
+            'highlighted, to fix and import later.',
+      ].join('\n'),
+      confirmLabel: 'Skip ${issues.length}, import $importable',
+      cancelLabel: 'Review rows',
+      destructive: false,
+    );
+    if (!skip && mounted) review();
+    return skip;
+  }
+
   Future<void> _import(StatementImportProvider provider, String currency) async {
     final ImportPreview? plan = await provider.preview(
       paymentMethods: context.read<PaymentMethodProvider>().methods,
     );
     if (plan == null || !mounted) return;
     String money(double v) => Formatters.currency(v, currencyCode: currency);
+    final List<ImportRowResult> issues = plan.issues;
+    if (issues.isNotEmpty && !await _confirmIssues(provider, issues, plan.operations.length, money)) return;
+    if (!mounted || plan.operations.isEmpty) return;
     final List<Map<String, Object?>> expenses = plan.ofType('expense').toList();
     final List<Map<String, Object?>> income = plan.ofType('income').toList();
     final ImportCounts counts = plan.counts;
@@ -773,7 +836,10 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
           '$unchecked possible ${unchecked == 1 ? 'duplicate has' : 'duplicates have'} '
               'not been checked and will be imported as new. Cancel and use '
               'the Dupes filter to check ${unchecked == 1 ? 'it' : 'them'} first.',
-        if (plan.skipped.isNotEmpty)
+        if (issues.isNotEmpty)
+          '${_n(issues.length, 'row needs', 'rows need')} fixing and will be skipped; '
+              '${issues.length == 1 ? 'it stays' : 'they stay'} here to import later.'
+        else if (plan.skipped.isNotEmpty)
           '${plan.skipped.length} selected rows will be skipped: $skippedReason.',
         'Rows recorded meanwhile are checked again and left out.',
       ].join('\n'),
@@ -800,6 +866,17 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
 }
 
 String _n(int value, String one, String many) => '$value ${value == 1 ? one : many}';
+
+/// "24 Oct · Swiggy · ₹582.00" — how a row is named in the lists of rows to
+/// fix and of what was not saved.
+String _rowName(StatementImportProvider provider, String itemId, String Function(double) money) {
+  for (final ImportRow row in provider.rows) {
+    if (row.id != itemId) continue;
+    final String who = row.counterparty?.isNotEmpty == true ? row.counterparty! : row.description;
+    return '${Formatters.dayMonth(row.date)} · $who · ${money(row.amount)}';
+  }
+  return 'A row';
+}
 
 /// The confirmation's and result's lines — the web import's wording: what
 /// each group is, and that only expenses and income are spending or earnings.
@@ -1018,6 +1095,7 @@ class _ImportRowTile extends StatelessWidget {
     required this.onDecide,
     required this.onEdit,
     required this.onAcceptHint,
+    this.issue,
   });
 
   /// What a row still needs, in a word or two — the web review's wording.
@@ -1049,153 +1127,186 @@ class _ImportRowTile extends StatelessWidget {
   /// Accepts the row's suggestion (a repayment, or paid for someone).
   final VoidCallback onAcceptHint;
 
+  /// What must be fixed before the row can be imported: a red edge, and why.
+  final ImportIssue? issue;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final ImportIssue? issue = this.issue;
     // Neither income nor spending: the neutral transfer tone.
     final bool balanceOnly = row.kind == 'refund' ||
         row.kind == 'transfer' ||
         row.kind == 'reimbursement' ||
         (row.kind == 'expense' && row.reimbursable);
     final String? hint = row.isDuplicate ? null : row.hint?['text'] as String?;
-    final String? needs = row.problem == null ? null : (_needs[row.problem] ?? 'Add details');
+    final String? needs = row.problem == null || issue != null ? null : (_needs[row.problem] ?? 'Add details');
     // Someone else's money (migration 019): kept, but neither income nor
     // spending, so not in either colour.
     final bool nonPersonal = !balanceOnly && row.nonPersonal;
+    final Color error = theme.colorScheme.error;
     return Opacity(
       opacity: row.selected ? 1 : 0.55,
       child: InkWell(
         onTap: enabled ? onEdit : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: AppSpacing.rowPadY,
-          ),
-          child: Row(
-            children: <Widget>[
-              Checkbox(
-                value: row.selected,
-                onChanged: enabled ? (_) => onToggle() : null,
-                visualDensity: VisualDensity.compact,
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      row.counterparty?.isNotEmpty == true
-                          ? row.counterparty!
-                          : row.description,
-                      style: theme.textTheme.titleSmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      <String>[
-                        row.kindLabel,
-                        if (row.kind == 'expense')
-                          category?.name ?? 'Choose a category',
-                        if (row.kind == 'expense' && row.reimbursable && row.person.isNotEmpty)
-                          'for ${row.person}',
-                        if (row.kind == 'reimbursement' && row.person.isNotEmpty)
-                          'from ${row.person}',
-                        if (row.kind == 'income' && (row.category ?? '').isNotEmpty)
-                          row.category!,
-                        if (targetLabel != null) targetLabel!,
-                        if (targetLabel == null && row.creditCardId != null)
-                          'Card bill payment',
-                        if (row.transactionTime != null)
-                          Formatters.clockTime(row.transactionTime!),
-                        if (row.duplicateBadge != null) row.duplicateBadge!,
-                        if (row.attention) 'Check this row',
-                      ].join(' · '),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: row.blocking ||
-                                row.attention ||
-                                row.uncheckedDuplicate ||
-                                row.duplicateDecision == 'duplicate'
-                            ? ToneColors.warning(context)
-                            : null,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (accountName != null ||
-                        row.tags.isNotEmpty ||
-                        needs != null ||
-                        nonPersonal) ...<Widget>[
-                      const SizedBox(height: AppSpacing.xs),
-                      Wrap(
-                        spacing: AppSpacing.xs,
-                        runSpacing: AppSpacing.xxs,
-                        children: <Widget>[
-                          if (needs != null)
-                            AppBadge(
-                              label: needs,
-                              icon: Icons.edit_outlined,
-                              tone: ToneColors.warning(context),
-                            ),
-                          if (nonPersonal) const AppBadge(label: nonPersonalBadge),
-                          if (accountName != null)
-                            AppBadge(
-                              label: accountName!,
-                              icon: Icons.account_balance_outlined,
-                            ),
-                          for (final String tag in row.tags)
-                            AppBadge(label: '#$tag'),
-                        ],
-                      ),
-                    ],
-                    if (hint != null) ...<Widget>[
-                      const SizedBox(height: AppSpacing.xs),
-                      AppButton(
-                        label: hint,
-                        icon: Icons.handshake_outlined,
-                        size: AppButtonSize.small,
-                        variant: AppButtonVariant.tonal,
-                        onPressed: enabled ? onAcceptHint : null,
-                      ),
-                    ],
-                    if (row.uncheckedDuplicate) ...<Widget>[
-                      const SizedBox(height: AppSpacing.xs),
-                      Wrap(
-                        spacing: AppSpacing.xs,
-                        runSpacing: AppSpacing.xxs,
-                        children: <Widget>[
-                          AppButton(
-                            label: 'Duplicate',
-                            icon: Icons.content_copy_rounded,
-                            size: AppButtonSize.small,
-                            variant: AppButtonVariant.secondary,
-                            onPressed: enabled ? () => onDecide('duplicate') : null,
-                          ),
-                          AppButton(
-                            label: 'Not a duplicate',
-                            icon: Icons.check_rounded,
-                            size: AppButtonSize.small,
-                            variant: AppButtonVariant.ghost,
-                            onPressed: enabled ? () => onDecide('notDuplicate') : null,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
+        child: DecoratedBox(
+          decoration: issue == null
+              ? const BoxDecoration()
+              : BoxDecoration(
+                  color: error.withOpacity(0.05),
+                  border: Border(left: BorderSide(color: error, width: 3)),
                 ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              MoneyText(
-                row.isDebit ? -row.amount : row.amount,
-                currency: currency,
-                signed: true,
-                tone: balanceOnly
-                    ? AmountTone.transfer
-                    : nonPersonal
-                        ? AmountTone.neutral
-                        : (row.isDebit ? AmountTone.negative : AmountTone.positive),
-                style: theme.textTheme.titleSmall,
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.rowPadY,
+            ),
+            child: Row(
+              children: <Widget>[
+                Checkbox(
+                  value: row.selected,
+                  onChanged: enabled ? (_) => onToggle() : null,
+                  visualDensity: VisualDensity.compact,
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        row.counterparty?.isNotEmpty == true
+                            ? row.counterparty!
+                            : row.description,
+                        style: theme.textTheme.titleSmall,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: AppSpacing.xxs),
+                      Text(
+                        <String>[
+                          row.kindLabel,
+                          if (row.kind == 'expense')
+                            category?.name ?? 'Choose a category',
+                          if (row.kind == 'expense' && row.reimbursable && row.person.isNotEmpty)
+                            'for ${row.person}',
+                          if (row.kind == 'reimbursement' && row.person.isNotEmpty)
+                            'from ${row.person}',
+                          if (row.kind == 'income' && (row.category ?? '').isNotEmpty)
+                            row.category!,
+                          if (targetLabel != null) targetLabel!,
+                          if (targetLabel == null && row.creditCardId != null)
+                            'Card bill payment',
+                          if (row.transactionTime != null)
+                            Formatters.clockTime(row.transactionTime!),
+                          if (row.duplicateBadge != null) row.duplicateBadge!,
+                          if (row.attention) 'Check this row',
+                        ].join(' · '),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: row.blocking ||
+                                  row.attention ||
+                                  row.uncheckedDuplicate ||
+                                  row.duplicateDecision == 'duplicate'
+                              ? ToneColors.warning(context)
+                              : null,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (accountName != null ||
+                          row.tags.isNotEmpty ||
+                          needs != null ||
+                          nonPersonal) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        Wrap(
+                          spacing: AppSpacing.xs,
+                          runSpacing: AppSpacing.xxs,
+                          children: <Widget>[
+                            if (needs != null)
+                              AppBadge(
+                                label: needs,
+                                icon: Icons.edit_outlined,
+                                tone: ToneColors.warning(context),
+                              ),
+                            if (nonPersonal) const AppBadge(label: nonPersonalBadge),
+                            if (accountName != null)
+                              AppBadge(
+                                label: accountName!,
+                                icon: Icons.account_balance_outlined,
+                              ),
+                            for (final String tag in row.tags)
+                              AppBadge(label: '#$tag'),
+                          ],
+                        ),
+                      ],
+                      if (issue != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Icon(Icons.error_outline_rounded, size: 15, color: error),
+                            const SizedBox(width: AppSpacing.xs),
+                            Expanded(
+                              child: Text(
+                                '${issue.reason}'
+                                '${issue.fieldLabel != null ? ' · Fix: ${issue.fieldLabel}' : ''}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: error,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (hint != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        AppButton(
+                          label: hint,
+                          icon: Icons.handshake_outlined,
+                          size: AppButtonSize.small,
+                          variant: AppButtonVariant.tonal,
+                          onPressed: enabled ? onAcceptHint : null,
+                        ),
+                      ],
+                      if (row.uncheckedDuplicate) ...<Widget>[
+                        const SizedBox(height: AppSpacing.xs),
+                        Wrap(
+                          spacing: AppSpacing.xs,
+                          runSpacing: AppSpacing.xxs,
+                          children: <Widget>[
+                            AppButton(
+                              label: 'Duplicate',
+                              icon: Icons.content_copy_rounded,
+                              size: AppButtonSize.small,
+                              variant: AppButtonVariant.secondary,
+                              onPressed: enabled ? () => onDecide('duplicate') : null,
+                            ),
+                            AppButton(
+                              label: 'Not a duplicate',
+                              icon: Icons.check_rounded,
+                              size: AppButtonSize.small,
+                              variant: AppButtonVariant.ghost,
+                              onPressed: enabled ? () => onDecide('notDuplicate') : null,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                MoneyText(
+                  row.isDebit ? -row.amount : row.amount,
+                  currency: currency,
+                  signed: true,
+                  tone: balanceOnly
+                      ? AmountTone.transfer
+                      : nonPersonal
+                          ? AmountTone.neutral
+                          : (row.isDebit ? AmountTone.negative : AmountTone.positive),
+                  style: theme.textTheme.titleSmall,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1278,10 +1389,20 @@ class _ViewToggle extends StatelessWidget {
 }
 
 class _ResultView extends StatelessWidget {
-  const _ResultView({required this.outcome, required this.account, required this.onReconcile});
+  const _ResultView({
+    required this.outcome,
+    required this.account,
+    required this.currency,
+    required this.onReconcile,
+    required this.onFixFailed,
+  });
 
   final ImportOutcome outcome;
   final BankAccount account;
+  final String currency;
+
+  /// Back to the review with the rows not saved, to fix and import again.
+  final VoidCallback onFixFailed;
 
   /// Back to the statements, to check what the import left unreconciled.
   final VoidCallback onReconcile;
@@ -1298,11 +1419,11 @@ class _ResultView extends StatelessWidget {
           child: Column(
             children: <Widget>[
               Icon(
-                outcome.failures.isEmpty
+                outcome.failedRows.isEmpty && outcome.notAttemptedIds.isEmpty
                     ? Icons.check_circle_outline_rounded
                     : Icons.warning_amber_rounded,
                 size: 44,
-                color: outcome.failures.isEmpty
+                color: outcome.failedRows.isEmpty && outcome.notAttemptedIds.isEmpty
                     ? ToneColors.income(context)
                     : ToneColors.warning(context),
               ),
@@ -1318,28 +1439,48 @@ class _ResultView extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
-              if (outcome.skipped > 0) ...<Widget>[
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  '${outcome.skipped} rows were left out (already recorded or '
-                  'not importable).',
-                  style: theme.textTheme.bodySmall,
-                  textAlign: TextAlign.center,
-                ),
-              ],
+
             ],
           ),
         ),
-        if (outcome.failures.isNotEmpty || outcome.notAttempted > 0) ...<Widget>[
+        if (outcome.failedRows.isNotEmpty || outcome.notAttemptedIds.isNotEmpty) ...<Widget>[
           const SizedBox(height: AppSpacing.md),
-          AppNotice(
+          _ResultRows(
+            title: '${outcome.failedRows.length + outcome.notAttemptedIds.length} could not be saved',
             icon: Icons.error_outline_rounded,
             tone: theme.colorScheme.error,
-            message: '${outcome.failures.length} rows could not be saved'
-                '${outcome.notAttempted > 0 ? ' and ${outcome.notAttempted} were not attempted' : ''}: '
-                '${outcome.failures.isEmpty ? 'the connection kept failing' : outcome.failures.first} '
-                'Import the statement again — rows already saved are '
-                'recognised and left out.',
+            rows: <ImportRowResult>[
+              ...outcome.failedRows,
+              for (final String id in outcome.notAttemptedIds)
+                ImportRowResult(itemId: id, reason: 'Not tried: saving kept failing'),
+            ],
+            currency: currency,
+            footer: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Fix them and import again. Rows already saved are left '
+                  'out, so nothing is saved twice.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AppButton(
+                  label: 'Fix and retry ${outcome.failedRows.length + outcome.notAttemptedIds.length}',
+                  icon: Icons.edit_outlined,
+                  onPressed: onFixFailed,
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (outcome.skippedRows.isNotEmpty) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          _ResultRows(
+            title: '${outcome.skippedRows.length} skipped',
+            icon: Icons.content_copy_rounded,
+            tone: theme.colorScheme.onSurfaceVariant,
+            rows: outcome.skippedRows,
+            currency: currency,
           ),
         ],
         if (outcome.partial > 0) ...<Widget>[
@@ -1371,6 +1512,61 @@ class _ResultView extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],
+    );
+  }
+}
+
+/// One part of the import's result — the rows not saved, or skipped — each
+/// named with why.
+class _ResultRows extends StatelessWidget {
+  const _ResultRows({
+    required this.title,
+    required this.icon,
+    required this.tone,
+    required this.rows,
+    required this.currency,
+    this.footer,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color tone;
+  final List<ImportRowResult> rows;
+  final String currency;
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final StatementImportProvider provider = context.read<StatementImportProvider>();
+    String money(double v) => Formatters.currency(v, currencyCode: currency);
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 18, color: tone),
+              const SizedBox(width: AppSpacing.sm),
+              Text(title, style: theme.textTheme.titleSmall?.copyWith(color: tone)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (final ImportRowResult row in rows)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(_rowName(provider, row.itemId, money), style: theme.textTheme.labelLarge),
+                  Text(row.reason, style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+          if (footer != null) footer!,
+        ],
+      ),
     );
   }
 }

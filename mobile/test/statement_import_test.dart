@@ -8,6 +8,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:expense_tracker/core/errors/app_exception.dart';
 import 'package:expense_tracker/models/bank_account.dart';
 import 'package:expense_tracker/models/credit_card.dart';
 import 'package:expense_tracker/models/expense.dart';
@@ -202,6 +203,9 @@ class RecordingExpenses extends ExpenseRepository {
   final List<MovementDetails?> details = <MovementDetails?>[];
   int failures = 0;
 
+  /// What a failing write throws; a plain write failure by default.
+  Object failWith = StateError('write failed');
+
   /// Expenses already recorded — by hand — for the possible-duplicate check.
   List<Expense> recorded = <Expense>[];
   final List<(DateTime, DateTime)> ranges = <(DateTime, DateTime)>[];
@@ -222,7 +226,7 @@ class RecordingExpenses extends ExpenseRepository {
   Future<Expense> create(Expense expense, {MovementDetails? details}) async {
     if (failures > 0) {
       failures--;
-      throw StateError('write failed');
+      throw failWith;
     }
     created.add(expense);
     this.details.add(details);
@@ -370,6 +374,7 @@ void main() {
   late RecordingTags tags;
 
   setUp(() {
+    ImportRequiredFields.debugReset();
     client = SupabaseClient(
       'http://localhost:54321',
       'test-anon-key',
@@ -739,6 +744,102 @@ void main() {
     });
   });
 
+  group('import validation', () {
+    Future<StatementImportProvider> ready(FakeEngine engine) async {
+      final StatementImportProvider provider = providerFor(engine);
+      await provider.addFile();
+      return provider;
+    }
+
+    test('rows to fix are reported before anything is written, with the field', () async {
+      final FakeEngine engine = FakeEngine(<String, Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        'plan': (_) => <String, Object?>{
+              'operations': <Object?>[op('expense', itemId: 's1:1')],
+              'skipped': <Object?>[
+                <String, Object?>{'itemId': 's1:0', 'reason': 'Choose a category', 'field': 'category'},
+              ],
+            },
+      });
+      final StatementImportProvider provider = await ready(engine);
+
+      final ImportPreview? plan = await provider.preview(paymentMethods: const []);
+      expect(plan!.issues.single.itemId, 's1:0');
+      expect(plan.issues.single.field, 'category');
+      final ImportRow row = provider.rows.firstWhere((ImportRow r) => r.id == 's1:0');
+      expect(provider.issueOf(row)!.reason, 'Choose a category');
+      expect(provider.issueOf(row)!.fieldLabel, 'Category');
+      expect(provider.issueCount, 1);
+      expect(expenses.created, isEmpty);
+
+      // The edit is the fix: the row's mark goes until the next check.
+      await provider.edit('s1:0', <String, Object?>{'categoryId': 'c1'});
+      expect(provider.issueOf(provider.rows.firstWhere((ImportRow r) => r.id == 's1:0')), isNull);
+    });
+
+    test('nothing importable but rows to fix: the plan still comes back to ask about them', () async {
+      final FakeEngine engine = FakeEngine(<String, Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        'plan': (_) => <String, Object?>{
+              'operations': <Object?>[],
+              'skipped': <Object?>[
+                <String, Object?>{'itemId': 's1:0', 'reason': 'The amount is not valid', 'field': 'amount'},
+              ],
+            },
+      });
+      final StatementImportProvider provider = await ready(engine);
+      final ImportPreview? plan = await provider.preview(paymentMethods: const []);
+      expect(plan, isNotNull);
+      expect(plan!.operations, isEmpty);
+      expect(plan.issues.single.reason, 'The amount is not valid');
+    });
+
+    test('a failed save names the field, is learned, and can be fixed and retried without the saved rows', () async {
+      final List<Object?> ops = <Object?>[op('expense', itemId: 's1:0'), op('income', direction: 'credit', itemId: 's1:1')];
+      final FakeEngine engine = FakeEngine(<String, Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        'plan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+        'finalPlan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+      });
+      expenses
+        ..failures = 1
+        ..failWith = const PostgrestException(
+          message: 'null value in column "payment_method_id" of relation "expenses" violates not-null constraint',
+          code: '23502',
+        );
+      final StatementImportProvider provider = await ready(engine);
+      final ImportOutcome outcome = (await provider.execute((await provider.preview(paymentMethods: const []))!))!;
+
+      expect(outcome.income, 1);
+      expect(outcome.importedIds, <String>['s1:1']);
+      expect(outcome.failedRows.single.itemId, 's1:0');
+      expect(outcome.failedRows.single.reason, 'Payment method is missing');
+      expect(outcome.failedRows.single.field, 'paymentMethod');
+      // The next review checks it before importing.
+      expect(ImportRequiredFields.fields, <String>['paymentMethod']);
+
+      await provider.fixFailed();
+      expect(provider.outcome, isNull);
+      expect(provider.rows.map((ImportRow r) => r.id), <String>['s1:0'], reason: 'the saved row leaves the review');
+      final ImportRow failed = provider.rows.single;
+      expect(failed.selected, isTrue);
+      expect(provider.issueOf(failed)!.reason, 'Could not be saved: Payment method is missing');
+      expect(provider.issueOf(failed)!.field, 'paymentMethod');
+    });
+
+    test('a missing column the app does not know still says a field is missing', () {
+      const PostgrestException raw = PostgrestException(message: 'null value violates not-null constraint', code: '23502');
+      expect(ErrorMapper.map(raw).message, 'A required field is missing.');
+      expect(ErrorMapper.missingColumn(raw), isNull);
+      const PostgrestException named = PostgrestException(
+        message: 'null value in column "source" of relation "income" violates not-null constraint',
+        code: '23502',
+      );
+      expect(ErrorMapper.map(named).message, 'Source is missing.');
+      expect(ErrorMapper.missingColumn(ErrorMapper.map(named)), 'source');
+    });
+  });
+
   group('importing', () {
     Future<StatementImportProvider> ready(
       FakeEngine engine,
@@ -790,6 +891,7 @@ void main() {
         'pairAccounts': true,
         'storeDetails': true,
         'storeTags': false,
+        'requiredFields': <String>[],
         'accountNames': <String, String>{'a1': 'Savings', 'a2': 'Salary'},
       });
     });
@@ -828,7 +930,7 @@ void main() {
       expect(outcome.income, 1);
       expect(outcome.movements, 3);
       expect(outcome.skipped, 1);
-      expect(outcome.failures, isEmpty);
+      expect(outcome.failedRows, isEmpty);
 
       expect(expenses.created.single.bankAccountId, 'a1');
       expect(expenses.created.single.creditCardId, isNull);
@@ -905,7 +1007,7 @@ void main() {
           .execute((await provider.preview(paymentMethods: const []))!))!;
       expect(outcome.expenses, 1);
       expect(outcome.partial, 1);
-      expect(outcome.failures, isEmpty);
+      expect(outcome.failedRows, isEmpty);
     });
 
     test('a transfer to another of your accounts links the other leg when one '
@@ -958,7 +1060,7 @@ void main() {
       final ImportOutcome outcome = (await provider
           .execute((await provider.preview(paymentMethods: const []))!))!;
       expect(outcome.transfers, 1);
-      expect(outcome.failures, isEmpty);
+      expect(outcome.failedRows, isEmpty);
 
       // The other account's rows went to the engine in the web model's shape.
       final List<Object?> entries =
@@ -1024,7 +1126,7 @@ void main() {
       final ImportOutcome outcome = (await provider
           .execute((await provider.preview(paymentMethods: const []))!))!;
       expect(outcome.written, 0);
-      expect(outcome.failures, hasLength(3));
+      expect(outcome.failedRows, hasLength(3));
       expect(outcome.notAttempted, 3);
     });
 
