@@ -74,7 +74,7 @@ class FakeExpenses extends ExpenseRepository {
   }
 
   @override
-  Future<Expense> update(Expense expense) async {
+  Future<Expense> update(Expense expense, {bool writeEmiPlan = false}) async {
     updated.add(expense);
     return _saved(expense, expense.id);
   }

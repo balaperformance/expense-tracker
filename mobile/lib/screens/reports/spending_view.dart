@@ -10,6 +10,7 @@ import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/analytics.dart';
 import '../../models/insights.dart';
+import '../../models/tag_rules.dart';
 import '../../providers/insights_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../widgets/charts/monthly_trend_chart.dart';
@@ -112,7 +113,9 @@ class _SpendingBodyState extends State<_SpendingBody> {
     final Map<String, String> tagNames = <String, String>{
       for (final ({String id, String name, int count}) t in view.options.tags) t.id: t.name,
     };
-    final List<String> chosenTags = <String>[for (final String id in filter.tagIds) '#${tagNames[id] ?? 'tag'}'];
+    final List<String> chosenTags = <String>[
+      for (final String name in TagRules.sortNames(<String>[for (final String id in filter.tagIds) tagNames[id] ?? 'tag'])) '#$name',
+    ];
     final int extra = filter.extraCount;
     final bool anyFilter = chosenTags.isNotEmpty || extra > 0;
     // Without any tags there is nothing to group by tag: categories instead.

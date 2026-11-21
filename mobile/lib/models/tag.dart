@@ -11,3 +11,26 @@ class Tag {
         name: (map['name'] as String?) ?? '',
       );
 }
+
+/// How many expenses and income rows carry a tag: a row of the database's
+/// `tag_usage()` (migration 020).
+class TagUsage {
+  const TagUsage({
+    required this.tagId,
+    this.expenses = 0,
+    this.income = 0,
+  });
+
+  final String tagId;
+  final int expenses;
+  final int income;
+
+  /// Transactions that would lose the tag if it were deleted.
+  int get total => expenses + income;
+
+  factory TagUsage.fromMap(Map<String, dynamic> map) => TagUsage(
+        tagId: map['tag_id'] as String,
+        expenses: (map['expense_count'] as num?)?.toInt() ?? 0,
+        income: (map['income_count'] as num?)?.toInt() ?? 0,
+      );
+}

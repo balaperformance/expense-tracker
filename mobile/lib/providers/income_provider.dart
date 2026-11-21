@@ -186,6 +186,13 @@ class IncomeProvider extends AsyncProvider {
     }
   }
 
+  /// Tags were deleted or renamed elsewhere: what reads an income's tags
+  /// reloads.
+  void tagsChanged() {
+    _revision++;
+    safeNotify();
+  }
+
   Future<bool> create(Income income) async {
     return guard(() async {
       final Income created = await _repository.create(income);

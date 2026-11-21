@@ -14,6 +14,7 @@ import '../../providers/category_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
+import '../../providers/payment_method_provider.dart';
 import '../../providers/receivable_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -88,6 +89,7 @@ class _CardImportScreenState extends State<CardImportScreen> {
           accounts: context.read<BankAccountProvider>().accounts,
           categories: context.read<CategoryProvider>().categories,
           currency: context.read<SettingsProvider>().currency,
+          paymentMethods: context.read<PaymentMethodProvider>().methods,
         );
   }
 
@@ -1227,6 +1229,16 @@ class _ResultView extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+        if (result.partial > 0) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          AppNotice(
+            icon: Icons.warning_amber_rounded,
+            tone: ToneColors.warning(context),
+            message: '${result.partial} saved without all their tags or '
+                'without being marked as paid for someone. Open them to '
+                'add those.',
           ),
         ],
         if (result.skippedRows.isNotEmpty) ...<Widget>[

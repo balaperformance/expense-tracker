@@ -5,13 +5,17 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
+import '../../models/bank_account.dart';
 import '../../models/credit_card.dart';
 import '../../models/emi_plan.dart';
 import '../../models/expense_category.dart';
+import '../../providers/bank_account_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/schema_capabilities.dart';
+import '../../widgets/account_choice_chips.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_feedback.dart';
@@ -24,8 +28,10 @@ import '../../widgets/paid_for_field.dart';
 enum _Payer { own, someone }
 
 /// Add or edit an EMI plan: whose it is, what was bought, the monthly
-/// figures. Nothing about what is owed is typed here — that comes from the
-/// instalments billed on the card.
+/// figures. Only what was bought is required. A card's plan takes what is
+/// owed from the instalments billed on the card; a plan on a bank account
+/// (migration 020, [account]) has none, so it can carry the total still
+/// pending, which falls as each month's EMI expense is recorded.
 ///
 /// Saved mode pops true after writing. Draft mode ([draft] true, used by the
 /// statement import for a group's new plan) pops the [EmiPlan] (id empty)
@@ -34,13 +40,18 @@ enum _Payer { own, someone }
 class EmiPlanSheet extends StatefulWidget {
   const EmiPlanSheet({
     super.key,
-    required this.card,
+    this.card,
+    this.account,
     this.plan,
     this.initial,
     this.draft = false,
-  });
+  }) : assert(card != null || account != null);
 
-  final CreditCard card;
+  /// The card the plan is on; null for a plan on a bank account alone.
+  final CreditCard? card;
+
+  /// The account a new plan opened from its page starts on.
+  final BankAccount? account;
 
   /// Editing: the plan. Null: a new one.
   final EmiPlan? plan;
@@ -73,6 +84,9 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
 
   late _Payer _payer = _seed?.person != null ? _Payer.someone : _Payer.own;
   late bool _includeCharges = _seed?.includeCharges ?? true;
+  late final TextEditingController _pending =
+      TextEditingController(text: _pendingText(_seed?.pendingAmount));
+  late String? _accountId = _seed?.bankAccountId ?? widget.account?.id;
   late DateTime? _startDate = _seed?.startDate;
   late String? _categoryId = _seed?.categoryId;
   late bool _closed = widget.plan?.isClosed ?? false;
@@ -83,6 +97,23 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
   static String _money(double? value) =>
       value == null || value <= 0 ? '' : Formatters.amountInput(value);
 
+  /// A pending amount of zero is a real answer: nothing left to pay.
+  static String _pendingText(double? value) =>
+      value == null ? '' : Formatters.amountInput(value);
+
+  /// The card the plan is on, read from the plan itself so that editing it
+  /// from a bank account's page keeps its card; a new plan takes the card it
+  /// was opened from.
+  late final String? _cardId = widget.plan?.cardId ?? widget.card?.id;
+
+  /// The EMI's owner is a card (and, from migration 020, optionally a bank
+  /// account); without a card the account is the owner and is required.
+  bool get _hasCard => _cardId != null;
+
+  /// Migration 020's fields — the bank account and the pending amount — are
+  /// offered once it has run, never for the import's draft plan.
+  bool get _showBank => SchemaCapabilities.emiBank && !widget.draft;
+
   @override
   void dispose() {
     _title.dispose();
@@ -92,23 +123,28 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
     _tenure.dispose();
     _reference.dispose();
     _notes.dispose();
+    _pending.dispose();
     super.dispose();
   }
 
-  double? _amount(TextEditingController c) {
-    final String text = c.text.trim();
-    if (text.isEmpty) return null;
-    return double.tryParse(text);
-  }
+  double? _amount(TextEditingController c) => Validators.parseAmount(c.text);
 
-  String? _amountError(TextEditingController c, String label) {
-    final String text = c.text.trim();
-    if (text.isEmpty) return null;
-    final double? value = double.tryParse(text);
-    if (value == null || value <= 0) return 'Enter a valid $label';
-    if (value > 999999999) return 'Amount is too large';
+  /// Blank is fine (every amount is optional); otherwise a number within what
+  /// the app records, above zero unless [allowZero].
+  String? _amountError(TextEditingController c, String label,
+      {bool allowZero = false}) {
+    if (c.text.trim().isEmpty) return null;
+    final double? value = _amount(c);
+    if (value == null || value < 0 || (value == 0 && !allowZero)) {
+      return 'Enter a valid $label';
+    }
+    if (value > Validators.maxAmount) return 'Amount is too large';
     return null;
   }
+
+  /// A pending amount of zero is a real answer: nothing left to pay.
+  String? get _pendingError =>
+      _amountError(_pending, 'pending amount', allowZero: true);
 
   int? get _tenureValue =>
       _tenure.text.trim().isEmpty ? null : int.tryParse(_tenure.text.trim());
@@ -124,7 +160,7 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
   EmiPlan _draft() => EmiPlan(
         id: widget.plan?.id ?? '',
         userId: widget.plan?.userId ?? '',
-        cardId: widget.card.id,
+        cardId: _cardId,
         title: _title.text.trim(),
         reference: _reference.text.trim().isEmpty ? null : _reference.text.trim(),
         person: _payer == _Payer.someone && _person.text.trim().isNotEmpty
@@ -138,12 +174,21 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
         categoryId: _categoryId,
         notes: _notes.text,
         isClosed: _closed,
+        // Both are written only once migration 020 exists (the repository
+        // strips them before), and start from the plan's own values.
+        bankAccountId: _accountId,
+        pendingAmount: _amount(_pending),
         createdAt: widget.plan?.createdAt,
       );
+
+  /// A plan without a card must say which account it is paid from.
+  bool get _accountMissing => _showBank && !_hasCard && _accountId == null;
 
   bool get _valid =>
       _title.text.trim().isNotEmpty &&
       (_payer == _Payer.own || _person.text.trim().isNotEmpty) &&
+      !_accountMissing &&
+      _pendingError == null &&
       _amountError(_purchase, 'x') == null &&
       _amountError(_monthly, 'x') == null &&
       _tenureError == null;
@@ -183,11 +228,14 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
     final ({int components, int repayments})? activity =
         await provider.planActivity(plan.id);
     if (!mounted) return;
+    final String where = _hasCard
+        ? 'on the card as ordinary purchases and charges'
+        : 'as ordinary expenses';
     final String detail = activity == null
-        ? ' Its instalment rows stay on the card as ordinary purchases and charges.'
+        ? ' Its instalment rows stay $where.'
         : ' Its ${activity.components} instalment '
-            '${activity.components == 1 ? 'row stays' : 'rows stay'} on the card '
-            'as ordinary purchases and charges.'
+            '${activity.components == 1 ? 'row stays' : 'rows stay'} '
+            '$where.'
             '${activity.repayments > 0 ? ' ${activity.repayments} ${activity.repayments == 1 ? 'repayment stays' : 'repayments stay'} as plain money in.' : ''}';
     final bool ok = await AppFeedback.confirm(
       context,
@@ -219,6 +267,16 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
         context.watch<CategoryProvider>().categories;
     final List<String> people =
         context.watch<ReceivableProvider?>()?.people ?? const <String>[];
+    final List<BankAccount> accounts = context
+        .watch<BankAccountProvider>()
+        .accounts
+        .where((BankAccount a) =>
+            !a.isCash && (a.isActive || a.id == _accountId))
+        .toList();
+    final EmiPlan? saved = widget.plan;
+    final double? pendingNow = saved == null
+        ? null
+        : context.watch<CreditCardProvider>().pendingLeftFor(saved);
     final bool editing = widget.plan != null;
     final String? titleError = _submitted && _title.text.trim().isEmpty
         ? 'What was bought is required'
@@ -229,7 +287,7 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
 
     return AppSheet(
       title: editing ? 'Edit EMI plan' : 'EMI plan',
-      subtitle: widget.card.displayLabel,
+      subtitle: widget.card?.displayLabel ?? widget.account?.displayLabel,
       action: editing && !widget.draft
           ? IconButton(
               tooltip: 'Delete EMI plan',
@@ -266,7 +324,8 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: AppSpacing.lg),
-        SizedBox(
+        if (_hasCard)
+          SizedBox(
           width: double.infinity,
           child: SegmentedButton<_Payer>(
             segments: const <ButtonSegment<_Payer>>[
@@ -281,8 +340,8 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
                 : (Set<_Payer> v) => setState(() => _payer = v.first),
           ),
         ),
-        const SizedBox(height: AppSpacing.md),
-        if (_payer == _Payer.someone) ...<Widget>[
+        if (_hasCard) const SizedBox(height: AppSpacing.md),
+        if (_hasCard && _payer == _Payer.someone) ...<Widget>[
           _PersonInput(
             controller: _person,
             people: people,
@@ -315,9 +374,12 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
                 'what they send you is a repayment — never income.',
           ),
         ] else
-          const AppNotice(
-            message: 'The principal counts as your spending month by month; '
-                'the interest and GST are card charges.',
+          AppNotice(
+            message: _hasCard
+                ? 'The principal counts as your spending month by month; '
+                    'the interest and GST are card charges.'
+                : "Each month's EMI you record counts as your spending, and "
+                    'comes off the pending amount.',
           ),
         const SizedBox(height: AppSpacing.lg),
         Row(
@@ -344,6 +406,25 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
             ),
           ],
         ),
+        if (_showBank) ...<Widget>[
+          const SizedBox(height: AppSpacing.lg),
+          if (pendingNow != null) ...<Widget>[
+            AppNotice(
+              message: '${Formatters.currency(pendingNow, currencyCode: settings.currency)} '
+                  'pending right now. Changing this amount restarts the count '
+                  'from the new figure.',
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          _AmountInput(
+            label: 'Total pending amount',
+            hint: "Optional · counts down as you record each month's EMI",
+            controller: _pending,
+            symbol: settings.currencySymbol,
+            enabled: !_saving,
+            error: _submitted ? _pendingError : null,
+          ),
+        ],
         const SizedBox(height: AppSpacing.lg),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -406,8 +487,34 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
               .toList(),
         ),
         const SizedBox(height: AppSpacing.lg),
-        const FieldLabel('EMI reference',
-            hint: 'From the card statement, if printed'),
+        if (_showBank) ...<Widget>[
+          FieldLabel(
+            _hasCard ? 'Paid from' : 'Bank account',
+            isRequired: !_hasCard,
+            hint: _hasCard
+                ? 'Optional'
+                : (_submitted && _accountMissing
+                    ? 'Pick one'
+                    : "The account each month's EMI is paid from"),
+          ),
+          if (accounts.isEmpty)
+            const AppNotice(
+                message: 'Add a bank account to link this EMI to it.')
+          else
+            AccountChoiceChips(
+              accounts: accounts,
+              selectedId: _accountId,
+              allowNone: false,
+              enabled: !_saving,
+              // A card's plan may have none: tapping the chosen account
+              // clears it. A plan without a card always has one.
+              onSelected: (String? id) => setState(() =>
+                  _accountId = _hasCard && id == _accountId ? null : id),
+            ),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+        FieldLabel('EMI reference',
+            hint: _hasCard ? 'From the card statement, if printed' : null),
         TextField(
           controller: _reference,
           enabled: !_saving,
@@ -540,6 +647,7 @@ class _AmountInput extends StatelessWidget {
     required this.symbol,
     required this.enabled,
     required this.error,
+    this.hint,
   });
 
   final String label;
@@ -548,12 +656,15 @@ class _AmountInput extends StatelessWidget {
   final bool enabled;
   final String? error;
 
+  /// Shown beside the label when there is no error.
+  final String? hint;
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        FieldLabel(label, hint: error),
+        FieldLabel(label, hint: error ?? hint),
         TextField(
           controller: controller,
           enabled: enabled,

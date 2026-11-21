@@ -25,7 +25,8 @@ class TagRepository {
 
   final SupabaseClient _client;
 
-  /// The user's tags by name; empty before migration 006.
+  /// The user's tags in display order ([TagRules.sortTags]); empty before
+  /// migration 006.
   Future<List<Tag>> fetchTags(String userId) async {
     await SchemaCapabilities.resolve(_client);
     if (!SchemaCapabilities.tags) return const <Tag>[];
@@ -37,7 +38,7 @@ class TagRepository {
               .eq('user_id', userId)
               .order('name')
               .order('id')));
-      return rows.map(Tag.fromMap).toList();
+      return TagRules.sortTags(rows.map(Tag.fromMap));
     } catch (error) {
       throw ErrorMapper.map(error);
     }
@@ -110,6 +111,46 @@ class TagRepository {
     final List<String> ids =
         read.length > 1 ? read[1] as List<String> : const <String>[];
     return (known: known, names: TagRules.names(known, ids));
+  }
+
+  /// How many expenses and income rows use each tag, by tag id (migration
+  /// 020); a tag nothing uses is simply absent.
+  Future<Map<String, TagUsage>> fetchUsage() async {
+    await _requireDelete();
+    try {
+      final List<dynamic> rows =
+          await _client.rpc<List<dynamic>>('tag_usage');
+      return <String, TagUsage>{
+        for (final Map<String, dynamic> row in rows.cast<Map<String, dynamic>>())
+          row['tag_id'] as String: TagUsage.fromMap(row),
+      };
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Deletes the tag. Every expense and income row that had it moves to the
+  /// tag "Others" in the same transaction; returns how many moved
+  /// (migration 020).
+  Future<int> deleteTag(String id) async {
+    await _requireDelete();
+    try {
+      final Object? moved = await _client
+          .rpc<Object?>('delete_tag', params: <String, dynamic>{'p_tag': id});
+      return (moved as num?)?.toInt() ?? 0;
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  Future<void> _requireDelete() async {
+    await SchemaCapabilities.resolve(_client);
+    if (!SchemaCapabilities.tagDelete) {
+      throw const AppException(
+        'Run ui/supabase/020_emi_bank_accounts_and_tag_delete.sql, then try '
+        'again.',
+      );
+    }
   }
 
   /// Makes [names] the complete set of tags on the expense or income row [id].

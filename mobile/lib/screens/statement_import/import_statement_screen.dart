@@ -9,6 +9,7 @@ import '../../models/expense.dart';
 import '../../models/expense_category.dart';
 import '../../models/income.dart';
 import '../../models/receivable.dart';
+import '../../models/tag_rules.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/budget_provider.dart';
@@ -1232,7 +1233,7 @@ class _ImportRowTile extends StatelessWidget {
                                 label: accountName!,
                                 icon: Icons.account_balance_outlined,
                               ),
-                            for (final String tag in row.tags)
+                            for (final String tag in TagRules.sortNames(row.tags))
                               AppBadge(label: '#$tag'),
                           ],
                         ),

@@ -7,6 +7,8 @@ library;
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'public_app_url.dart';
+
 class EnvConfig {
   const EnvConfig._();
 
@@ -16,6 +18,12 @@ class EnvConfig {
   static String get supabaseUrl => _require(_urlKey);
 
   static String get supabaseAnonKey => _require(_anonKey);
+
+  /// The deployed web app (`PUBLIC_APP_URL`), where auth email links land; null
+  /// when unset or unusable, which leaves Supabase on its Site URL. See
+  /// [PublicAppUrl].
+  static String? get publicAppUrl =>
+      PublicAppUrl.resolve(optional(PublicAppUrl.envKey));
 
   /// Loads the `.env` asset. Must be called before [supabaseUrl] is read.
   static Future<void> load() => dotenv.load(fileName: '.env');

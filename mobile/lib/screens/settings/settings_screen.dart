@@ -17,6 +17,7 @@ import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/dev_auth_bypass.dart';
 import '../../services/export/export_models.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_sheet.dart';
@@ -33,6 +34,7 @@ import 'budgets_screen.dart';
 import 'change_password_sheet.dart';
 import 'notifications_section.dart';
 import 'categories_screen.dart';
+import 'hashtags_screen.dart';
 import 'payment_methods_screen.dart';
 
 /// Settings.
@@ -217,6 +219,15 @@ class SettingsScreen extends StatelessWidget {
                   subtitle: 'Organise your spending',
                   onTap: () => _push(context, const CategoriesScreen()),
                 ),
+                // Deleting a hashtag needs migration 020.
+                if (SchemaCapabilities.tagDelete)
+                  _row(
+                    context,
+                    icon: Icons.tag_rounded,
+                    title: 'Hashtags',
+                    subtitle: 'Delete tags you no longer use',
+                    onTap: () => _push(context, const HashtagsScreen()),
+                  ),
                 _row(
                   context,
                   icon: Icons.credit_card_outlined,

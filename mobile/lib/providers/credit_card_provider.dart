@@ -50,6 +50,7 @@ class CreditCardProvider extends AsyncProvider {
   List<CreditCard> _cards = <CreditCard>[];
   List<CardEntry> _entries = <CardEntry>[];
   List<EmiPlan> _emiPlans = <EmiPlan>[];
+  Map<String, EmiBalance> _balances = const <String, EmiBalance>{};
   String? _userId;
   bool _stale = true;
   int _revision = 0;
@@ -111,6 +112,27 @@ class CreditCardProvider extends AsyncProvider {
   List<EmiPlan> plansFor(String cardId) =>
       _emiPlans.where((EmiPlan p) => p.cardId == cardId).toList();
 
+  /// The plans paid from a bank account (migration 020).
+  List<EmiPlan> plansForAccount(String accountId) =>
+      _emiPlans.where((EmiPlan p) => p.bankAccountId == accountId).toList();
+
+  /// What is still to pay on [plan]: its pending amount less what was
+  /// recorded since it was set. Null when no pending amount was given.
+  double? pendingLeftFor(EmiPlan plan) =>
+      pendingLeft(plan.pendingAmount, _balances[plan.id]?.paid ?? 0);
+
+  /// How many EMI expenses were recorded against [plan] since its pending
+  /// amount was set.
+  int paymentsFor(EmiPlan plan) => _balances[plan.id]?.payments ?? 0;
+
+  /// The plans an expense can be recorded against: those still running that
+  /// nobody else pays back, plus [keepId] — the one the expense is already on,
+  /// whatever it is.
+  List<EmiPlan> plansForExpense({String? keepId}) => _emiPlans
+      .where((EmiPlan p) =>
+          p.id == keepId || (!p.isClosed && p.person == null))
+      .toList();
+
   EmiPlan? planById(String? id) {
     if (id == null) return null;
     for (final EmiPlan plan in _emiPlans) {
@@ -128,6 +150,7 @@ class CreditCardProvider extends AsyncProvider {
       _cards = <CreditCard>[];
       _entries = <CardEntry>[];
       _emiPlans = <EmiPlan>[];
+      _balances = const <String, EmiBalance>{};
     }
     // Re-probe while the feature looks missing: 004 may have been applied
     // since the app started.
@@ -152,16 +175,31 @@ class CreditCardProvider extends AsyncProvider {
         _repository.fetchEntries(userId: userId),
         if (plans != null && SchemaCapabilities.emi)
           plans.fetchPlans(userId: userId),
+        if (plans != null && SchemaCapabilities.emiBank) plans.fetchBalances(),
       ]);
       _cards = results[0] as List<CreditCard>;
       _entries = results[1] as List<CardEntry>;
       _emiPlans =
           results.length > 2 ? results[2] as List<EmiPlan> : <EmiPlan>[];
+      _balances = results.length > 3
+          ? results[3] as Map<String, EmiBalance>
+          : const <String, EmiBalance>{};
       _stale = false;
       setReady();
     } catch (error) {
       setError(error);
     }
+  }
+
+  /// Re-reads what was paid towards each plan — after an expense naming a
+  /// plan was saved or deleted. Quiet: a failure keeps the figures on show.
+  Future<void> refreshBalances() async {
+    final EmiPlanRepository? plans = _plans;
+    if (plans == null || !SchemaCapabilities.emiBank) return;
+    try {
+      _balances = await plans.fetchBalances();
+      safeNotify();
+    } catch (_) {}
   }
 
   Future<void> _reload() async {
@@ -446,6 +484,7 @@ class CreditCardProvider extends AsyncProvider {
     _cards = <CreditCard>[];
     _entries = <CardEntry>[];
     _emiPlans = <EmiPlan>[];
+    _balances = const <String, EmiBalance>{};
     _userId = null;
     _stale = true;
     safeNotify();

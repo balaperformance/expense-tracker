@@ -59,8 +59,8 @@ void main() {
       expect(TagRules.newTagFor(known, const <String>[], ' # '), isNull);
     });
 
-    test('a row\'s tag ids become names in their order', () {
-      expect(TagRules.names(known, <String>['t3', 'gone', 't1']), <String>['office', 'CarSpending']);
+    test('a row\'s tag ids become names in display order', () {
+      expect(TagRules.names(known, <String>['t3', 'gone', 't1']), <String>['CarSpending', 'office']);
     });
 
     test('a save counts what is typed but not confirmed', () {

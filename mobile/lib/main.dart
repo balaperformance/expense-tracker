@@ -19,6 +19,7 @@ import 'providers/dashboard_provider.dart';
 import 'providers/expense_provider.dart';
 import 'providers/export_provider.dart';
 import 'providers/income_provider.dart';
+import 'providers/tag_provider.dart';
 import 'providers/insights_provider.dart';
 import 'providers/notification_inbox_provider.dart';
 import 'providers/notification_provider.dart';
@@ -104,7 +105,11 @@ class ExpenseTrackerApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthProvider>(
-          create: (_) => AuthProvider(AuthRepository(SupabaseService.auth)),
+          create: (_) => AuthProvider(AuthRepository(
+            SupabaseService.auth,
+            appUrl: EnvConfig.publicAppUrl,
+            recoveryAuth: SupabaseService.recoveryAuth(),
+          )),
         ),
         ChangeNotifierProvider<SettingsProvider>(
           create: (_) => SettingsProvider(
@@ -125,6 +130,9 @@ class ExpenseTrackerApp extends StatelessWidget {
             tags: TagRepository(client),
             receivables: ReceivableRepository(client),
           ),
+        ),
+        ChangeNotifierProvider<TagProvider>(
+          create: (_) => TagProvider(TagRepository(client)),
         ),
         ChangeNotifierProvider<IncomeProvider>(
           create: (_) => IncomeProvider(
@@ -209,6 +217,8 @@ class ExpenseTrackerApp extends StatelessWidget {
             ledger: ledgerRepository,
             cards: creditCardRepository,
             plans: EmiPlanRepository(client),
+            tags: TagRepository(client),
+            receivables: ReceivableRepository(client),
           ),
         ),
         // Reports' insights run in the same offline engine as statement

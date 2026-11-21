@@ -205,7 +205,7 @@ class FakeExpenses extends ExpenseRepository {
   }
 
   @override
-  Future<Expense> update(Expense expense) async {
+  Future<Expense> update(Expense expense, {bool writeEmiPlan = false}) async {
     saved.add(expense);
     return expense;
   }
@@ -503,7 +503,7 @@ void main() {
       expect(id, 'e9');
       expect(draft!.person, 'arun');
       expect(draft.note, 'Split later', reason: 'the form does not edit it, so it is kept');
-      expect(harness.tags.sets.single.$3, <String>['office', 'family']);
+      expect(harness.tags.sets.single.$3, <String>['family', 'office']);
     });
 
     testWidgets('the amount cannot drop below what was already paid back',

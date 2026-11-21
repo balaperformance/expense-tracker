@@ -11,7 +11,8 @@ import 'ledger_repository.dart';
 import 'paging.dart';
 
 /// `public.emi_plans` (migration 016, shared with the web app): purchases
-/// converted to EMI on a card.
+/// converted to EMI on a card — and, from migration 020, EMIs paid from a
+/// bank account, each with an optional pending balance.
 ///
 /// A plan someone else pays back is also a claim — a `receivables` row of
 /// kind 'emi' naming the plan — so its repayments are recorded, matched and
@@ -29,6 +30,24 @@ class EmiPlanRepository {
       'purchase_amount, monthly_amount, tenure_months, start_date, '
       'category_id, notes, is_closed, created_at';
 
+  /// Migration 020's columns, selected and written only once it has run.
+  static const String _bankColumns =
+      ', bank_account_id, pending_amount, pending_set_at';
+
+  String get _columns =>
+      SchemaCapabilities.emiBank ? '$_select$_bankColumns' : _select;
+
+  /// The plan's columns for a save, without migration 020's before it exists.
+  Map<String, dynamic> _writable(EmiPlan plan) {
+    final Map<String, dynamic> map = plan.toWriteMap();
+    if (!SchemaCapabilities.emiBank) {
+      map
+        ..remove('bank_account_id')
+        ..remove('pending_amount');
+    }
+    return map;
+  }
+
   /// Every plan — on one card, or on all cards when [cardId] is null. Empty
   /// until migration 016 exists.
   Future<List<EmiPlan>> fetchPlans({required String userId, String? cardId}) async {
@@ -38,12 +57,28 @@ class EmiPlanRepository {
       final List<Map<String, dynamic>> rows =
           await fetchAllPages(postgrestPages(() {
         final PostgrestFilterBuilder<List<Map<String, dynamic>>> query =
-            _client.from(_table).select(_select).eq('user_id', userId);
+            _client.from(_table).select(_columns).eq('user_id', userId);
         return (cardId != null ? query.eq('card_id', cardId) : query)
             .order('created_at', ascending: true)
             .order('id');
       }));
       return rows.map(EmiPlan.fromMap).toList();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// What was paid towards every plan since its pending amount was set,
+  /// by plan id (migration 020); empty before it.
+  Future<Map<String, EmiBalance>> fetchBalances() async {
+    await SchemaCapabilities.resolve(_client);
+    if (!SchemaCapabilities.emiBank) return const <String, EmiBalance>{};
+    try {
+      final List<dynamic> rows = await _client.rpc<List<dynamic>>('emi_plan_balances');
+      return <String, EmiBalance>{
+        for (final Map<String, dynamic> row in rows.cast<Map<String, dynamic>>())
+          row['plan_id'] as String: EmiBalance.fromMap(row),
+      };
     } catch (error) {
       throw ErrorMapper.map(error);
     }
@@ -77,7 +112,7 @@ class EmiPlanRepository {
     try {
       final Map<String, dynamic> row = await _client
           .from(_table)
-          .insert(<String, dynamic>{'user_id': userId, ...plan.toWriteMap()})
+          .insert(<String, dynamic>{'user_id': userId, ..._writable(plan)})
           .select('id')
           .single();
       final String id = row['id'] as String;
@@ -105,7 +140,7 @@ class EmiPlanRepository {
       await _client
           .from(_table)
           .update(<String, dynamic>{
-            ...plan.toWriteMap(),
+            ..._writable(plan),
             'updated_at': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', plan.id)

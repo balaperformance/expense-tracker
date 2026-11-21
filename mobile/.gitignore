@@ -67,3 +67,5 @@ supabase/.temp/
 # OS files
 .DS_Store
 Thumbs.db
+# Shareable release APKs (rebuilt by build_apk.sh); too large for git.
+/apk/*.apk

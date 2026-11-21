@@ -29,5 +29,26 @@ class SupabaseService {
 
   static GoTrueClient get auth => Supabase.instance.client.auth;
 
+  /// A session-less auth client on the implicit flow, used only to request a
+  /// password-reset email.
+  ///
+  /// The main client uses PKCE, which ties the emailed link to a secret kept on
+  /// this phone: the link would then only work if it came back into this app.
+  /// The link opens the web app's reset page instead (there is no deep link),
+  /// so it must carry the recovery session itself, which the implicit flow
+  /// does. It never signs in, stores nothing and refreshes nothing.
+  static GoTrueClient recoveryAuth() {
+    final String key = EnvConfig.supabaseAnonKey;
+    return GoTrueClient(
+      url: '${EnvConfig.supabaseUrl}/auth/v1',
+      headers: <String, String>{
+        'apikey': key,
+        'Authorization': 'Bearer $key',
+      },
+      autoRefreshToken: false,
+      flowType: AuthFlowType.implicit,
+    );
+  }
+
   static String? get currentUserId => auth.currentUser?.id;
 }

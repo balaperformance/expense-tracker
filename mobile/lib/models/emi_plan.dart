@@ -14,7 +14,7 @@ class EmiPlan {
   const EmiPlan({
     required this.id,
     required this.userId,
-    required this.cardId,
+    this.cardId,
     required this.title,
     this.reference,
     this.person,
@@ -26,12 +26,18 @@ class EmiPlan {
     this.categoryId,
     this.notes,
     this.isClosed = false,
+    this.bankAccountId,
+    this.pendingAmount,
+    this.pendingSetAt,
     this.createdAt,
   });
 
   final String id;
   final String userId;
-  final String cardId;
+
+  /// The card the purchase was converted to EMI on. Null for an EMI that
+  /// belongs to a bank account alone (migration 020).
+  final String? cardId;
   final String title;
 
   /// The issuer's EMI / loan reference, when known.
@@ -49,6 +55,18 @@ class EmiPlan {
   final String? categoryId;
   final String? notes;
   final bool isClosed;
+
+  /// The bank account the EMI is paid from (migration 020). Optional on a
+  /// card's plan; every plan without a card has one.
+  final String? bankAccountId;
+
+  /// The total still to pay, as the user last typed it (migration 020). What
+  /// is left now is this minus what was recorded since — see [pendingLeft].
+  final double? pendingAmount;
+
+  /// When the pending amount was set (stamped by the database): EMI expenses
+  /// recorded after it are deducted from it.
+  final DateTime? pendingSetAt;
   final String? createdAt;
 
   /// "Laptop · Arun" for someone else's plan, else the title.
@@ -61,7 +79,7 @@ class EmiPlan {
     return EmiPlan(
       id: map['id'] as String,
       userId: (map['user_id'] as String?) ?? '',
-      cardId: map['card_id'] as String,
+      cardId: map['card_id'] as String?,
       title: title.isEmpty ? 'EMI' : title,
       reference: map['reference'] as String?,
       person: person.isEmpty ? null : person,
@@ -73,6 +91,11 @@ class EmiPlan {
       categoryId: map['category_id'] as String?,
       notes: map['notes'] as String?,
       isClosed: (map['is_closed'] as bool?) ?? false,
+      bankAccountId: map['bank_account_id'] as String?,
+      pendingAmount: _optNum(map['pending_amount']),
+      pendingSetAt: map['pending_set_at'] == null
+          ? null
+          : DateTime.tryParse(map['pending_set_at'] as String),
       createdAt: map['created_at'] as String?,
     );
   }
@@ -99,6 +122,9 @@ class EmiPlan {
       'category_id': categoryId,
       'notes': blank(notes),
       'is_closed': isClosed,
+      // Migration 020's columns: the repository drops them before it exists.
+      'bank_account_id': bankAccountId,
+      'pending_amount': pendingAmount != null && pendingAmount! >= 0 ? pendingAmount : null,
     };
   }
 
@@ -136,8 +162,39 @@ class EmiPlan {
         categoryId: categoryId,
         notes: notes,
         isClosed: isClosed,
+        bankAccountId: bankAccountId,
+        pendingAmount: pendingAmount,
+        pendingSetAt: pendingSetAt,
         createdAt: createdAt,
       );
+}
+
+/// What was paid towards a plan since its pending amount was set: the
+/// database's `emi_plan_balances()` (migration 020), the same figure the web
+/// app reads.
+class EmiBalance {
+  const EmiBalance({this.paid = 0, this.payments = 0});
+
+  final double paid;
+  final int payments;
+
+  factory EmiBalance.fromMap(Map<String, dynamic> map) => EmiBalance(
+        paid: _optNum(map['paid']) ?? 0,
+        payments: _optNum(map['payments'])?.toInt() ?? 0,
+      );
+}
+
+/// What is still to pay on an EMI: the pending amount less what was paid
+/// since it was set, never below zero. Null when no pending amount was given.
+double? pendingLeft(double? pendingAmount, double paid) => pendingAmount == null
+    ? null
+    : _fromCents((toCents(pendingAmount) - toCents(paid)).clamp(0, 1 << 62));
+
+/// "₹36,000 pending", "Fully paid"; null when there is no pending amount.
+String? emiPendingText(double? left, String Function(double) format) {
+  if (left == null) return null;
+  if (toCents(left) == 0) return 'Fully paid';
+  return '${format(left)} pending';
 }
 
 double? _optNum(Object? value) {

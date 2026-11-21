@@ -31,3 +31,16 @@ class PaymentMethod {
         'name': name.trim(),
       };
 }
+
+/// The user's "Credit Card" payment method — the one a purchase paid with a
+/// card is filed under — or null when they have none by that name. Names are
+/// compared ignoring case and extra spaces. The web app's `creditCardMethod`.
+PaymentMethod? creditCardMethod(Iterable<PaymentMethod> methods) {
+  for (final PaymentMethod method in methods) {
+    if (method.name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase() ==
+        'credit card') {
+      return method;
+    }
+  }
+  return null;
+}

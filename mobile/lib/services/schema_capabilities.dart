@@ -27,6 +27,12 @@ class SchemaCapabilities {
   /// `notification_log`, the table existed but was closed to it.
   static const String _permissionDenied = '42501';
 
+  /// PostgREST: function not found in the schema cache.
+  static const String _undefinedFunction = 'PGRST202';
+
+  /// Postgres: function does not exist.
+  static const String _undefinedFunctionLegacy = '42883';
+
   static bool _resolved = false;
 
   static bool _merchant = false;
@@ -45,6 +51,8 @@ class SchemaCapabilities {
   static bool _reconciliation = false;
   static bool _emi = false;
   static bool _personal = false;
+  static bool _emiBank = false;
+  static bool _tagDelete = false;
 
   static bool get resolved => _resolved;
 
@@ -119,6 +127,16 @@ class SchemaCapabilities {
   /// personal figure. Until both exist the column is never read or written.
   static bool get personal => _personal;
 
+  /// `emi_plans.bank_account_id`, `pending_amount`, `pending_set_at` and
+  /// `emi_plan_balances()` (migration 020): an EMI can belong to a bank
+  /// account and carry a pending balance that falls as each month's EMI is
+  /// recorded. Builds on 016.
+  static bool get emiBank => _emiBank;
+
+  /// `tag_usage()` and `delete_tag()` (migration 020): a hashtag can be
+  /// deleted, its transactions moving to "Others". Builds on 006.
+  static bool get tagDelete => _tagDelete;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -145,6 +163,7 @@ class SchemaCapabilities {
       if (!_reconciliation) 'statement reconciliation decisions (015)',
       if (!_emi) 'card statement import and EMI plans (016)',
       if (!_personal) 'personal and non-personal entries (019)',
+      if (!_emiBank || !_tagDelete) 'bank account EMIs and deleting hashtags (020)',
     ];
     return missing.join(', ');
   }
@@ -207,6 +226,12 @@ class SchemaCapabilities {
               // 25–26: personal and non-personal entries (019).
               _probe(client, 'expenses', 'is_personal'),
               _probe(client, 'income', 'is_personal'),
+              // 27–29: EMIs on bank accounts with a pending balance, and deleting
+              // hashtags (020).
+              _probe(client, 'emi_plans',
+                  'bank_account_id, pending_amount, pending_set_at'),
+              _probeFunction(client, 'tag_usage'),
+              _probeFunction(client, 'emi_plan_balances'),
             ]));
 
     _merchant = results[0];
@@ -228,6 +253,9 @@ class SchemaCapabilities {
     _emi = _treatments && results.sublist(21, 25).every((bool present) => present);
     // One migration adds both columns.
     _personal = results[25] && results[26];
+    // One migration adds the columns and both functions.
+    _emiBank = _emi && results[27] && results[29];
+    _tagDelete = _tags && results[28];
     _resolved = true;
   }
 
@@ -257,6 +285,22 @@ class SchemaCapabilities {
     }
   }
 
+  /// Returns whether the function [name] (called without arguments) exists.
+  /// Only a missing function counts as absent; any other failure is rethrown,
+  /// as in [_probe].
+  static Future<bool> _probeFunction(SupabaseClient client, String name) async {
+    try {
+      await client.rpc<Object?>(name);
+      return true;
+    } on PostgrestException catch (error) {
+      if (error.code == _undefinedFunction ||
+          error.code == _undefinedFunctionLegacy) {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
   /// Test seam. Lets unit tests exercise capability-dependent logic without a
   /// live database.
   static void debugOverride({
@@ -276,6 +320,8 @@ class SchemaCapabilities {
     bool? reconciliation,
     bool? emi,
     bool? personal,
+    bool? emiBank,
+    bool? tagDelete,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -293,6 +339,8 @@ class SchemaCapabilities {
     _reconciliation = reconciliation ?? _reconciliation;
     _emi = emi ?? _emi;
     _personal = personal ?? _personal;
+    _emiBank = emiBank ?? _emiBank;
+    _tagDelete = tagDelete ?? _tagDelete;
     _resolved = true;
   }
 
@@ -314,5 +362,7 @@ class SchemaCapabilities {
     _reconciliation = false;
     _emi = false;
     _personal = false;
+    _emiBank = false;
+    _tagDelete = false;
   }
 }

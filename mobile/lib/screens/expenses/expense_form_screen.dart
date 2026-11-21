@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +9,7 @@ import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
 import '../../models/bank_account.dart';
+import '../../models/emi_plan.dart';
 import '../../models/expense.dart';
 import '../../models/expense_category.dart';
 import '../../models/expense_prefill.dart';
@@ -33,6 +36,7 @@ import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
 import '../../widgets/paid_for_field.dart';
+import '../../widgets/payment_method_chips.dart';
 import '../../widgets/personal_field.dart';
 import '../../widgets/tag_field.dart';
 import 'paid_for_view.dart';
@@ -107,6 +111,10 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   /// raises the card's outstanding and never touches a bank balance.
   late bool _byCard;
   String? _creditCardId;
+
+  /// The EMI this is a month's payment of (migration 016/020). Written with
+  /// the expense; the plan's pending balance follows from it.
+  String? _emiPlanId;
 
   late DateTime _date;
   bool _saving = false;
@@ -188,12 +196,20 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     );
     _notes = TextEditingController(text: existing?.notes ?? prefill?.notes ?? '');
     _categoryId = existing?.categoryId ?? prefill?.categoryId;
-    _paymentMethodId = existing?.paymentMethodId ?? prefill?.paymentMethodId;
+    // A new expense opened on a card (its "Add purchase") is paid by credit
+    // card; an edit keeps the method it was saved with.
+    _paymentMethodId = existing?.paymentMethodId ??
+        prefill?.paymentMethodId ??
+        (widget.initialCardId == null
+            ? null
+            : creditCardMethod(context.read<PaymentMethodProvider>().methods)
+                ?.id);
     _bankAccountId = existing?.bankAccountId;
     _accountChosen = existing != null;
     _creditCardId =
         existing != null ? existing.creditCardId : widget.initialCardId;
     _byCard = _creditCardId != null;
+    _emiPlanId = existing?.emiPlanId;
     _date = existing?.expenseDate ?? prefill?.date ?? AppDateUtils.today();
     _fromScan = prefill?.source == ExpensePrefillSource.receiptScan;
     final ExpenseProvider expenses = context.read<ExpenseProvider>();
@@ -211,6 +227,79 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
 
   /// Tags can be read and saved (migration 006).
   late final bool _tagsOffered;
+
+  /// "Home loan · ₹36,000 pending": the plan and what is left on it.
+  String _emiChipLabel(EmiPlan plan, CreditCardProvider cards, String currency) {
+    final String? pending = emiPendingText(
+      cards.pendingLeftFor(plan),
+      (double v) => Formatters.currency(v, currencyCode: currency, compact: true),
+    );
+    return pending == null ? plan.title : '${plan.title} · $pending';
+  }
+
+  /// Picks the EMI (or, tapped again, none). On a new expense it fills only
+  /// what is still empty: the monthly amount, the plan's category and
+  /// account, and its name as the description.
+  void _pickEmiPlan(EmiPlan plan) {
+    if (_emiPlanId == plan.id) {
+      setState(() => _emiPlanId = null);
+      return;
+    }
+    setState(() {
+      _emiPlanId = plan.id;
+      if (widget.isEditing) return;
+      final double? monthly = plan.monthlyAmount;
+      if (_amount.text.trim().isEmpty && monthly != null) {
+        _amount.text = Formatters.amountInput(monthly);
+      }
+      _categoryId ??= plan.categoryId;
+      final String? account = plan.bankAccountId;
+      if (!_accountChosen && !_byCard && account != null) {
+        _bankAccountId = account;
+        _accountChosen = true;
+      }
+      if (_description.text.trim().isEmpty) _description.text = plan.title;
+    });
+  }
+
+  /// "Pending after this: ₹34,000" under the picker, when the chosen plan
+  /// has a pending amount. An edit's own amount is already deducted when it
+  /// was recorded after the pending amount was set.
+  List<Widget> _pendingAfter(
+    List<EmiPlan> plans,
+    CreditCardProvider cards,
+    String currency,
+  ) {
+    EmiPlan? plan;
+    for (final EmiPlan p in plans) {
+      if (p.id == _emiPlanId) plan = p;
+    }
+    final double? left = plan == null ? null : cards.pendingLeftFor(plan);
+    if (plan == null || left == null) return const <Widget>[];
+    final Expense? existing = widget.expense;
+    final DateTime? since = plan.pendingSetAt;
+    final bool counted = existing != null &&
+        existing.emiPlanId == plan.id &&
+        (existing.emiComponent == null || existing.emiComponent == 'principal') &&
+        since != null &&
+        existing.createdAt != null &&
+        !existing.createdAt!.isBefore(since);
+    final double before = left + (counted ? existing.amount : 0);
+    return <Widget>[
+      const SizedBox(height: AppSpacing.sm),
+      ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _amount,
+        builder: (BuildContext context, TextEditingValue value, _) {
+          final double? after =
+              pendingLeft(before, Validators.parseAmount(value.text) ?? 0);
+          return Text(
+            'Pending after this: ${Formatters.currency(after ?? before, currencyCode: currency)}',
+            style: Theme.of(context).textTheme.labelMedium,
+          );
+        },
+      ),
+    ];
+  }
 
   /// Records money paid back for [claim], then shows the claim as it is now.
   Future<void> _repay(ClaimSummary claim) async {
@@ -418,6 +507,9 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         ? cards.selectable(keepId: widget.expense?.creditCardId)
         : const <CardOverview>[];
     final bool payByCard = SchemaCapabilities.creditCards && _byCard;
+    final List<EmiPlan> emiPlans = SchemaCapabilities.emi
+        ? cards.plansForExpense(keepId: widget.expense?.emiPlanId)
+        : const <EmiPlan>[];
     CardOverview? selectedCard;
     for (final CardOverview o in cardOptions) {
       if (o.card.id == _creditCardId) selectedCard = o;
@@ -576,6 +668,13 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                   onChanged: (bool value) => setState(() {
                     _byCard = value;
                     _error = null;
+                    // Paid by credit card means the Credit Card method, which
+                    // the user can still change below.
+                    if (value) {
+                      _paymentMethodId =
+                          creditCardMethod(payments.methods)?.id ??
+                              _paymentMethodId;
+                    }
                   }),
                 ),
                 const SizedBox(height: AppSpacing.sm),
@@ -633,6 +732,29 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                 )
               else
                 const AppNotice(message: 'Recorded as cash: no balance changes.'),
+              const SizedBox(height: AppSpacing.lg),
+            ],
+
+            // ---------------------------------------------------------
+            // EMI — a month's payment comes off the plan's pending amount
+            // ---------------------------------------------------------
+            if (emiPlans.isNotEmpty) ...<Widget>[
+              const FieldLabel('EMI', hint: 'Optional · lowers what is pending'),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: <Widget>[
+                  for (final EmiPlan plan in emiPlans)
+                    AppChoiceChip(
+                      label: _emiChipLabel(plan, cards, settings.currency),
+                      icon: Icons.all_inclusive_rounded,
+                      selected: _emiPlanId == plan.id,
+                      enabled: !_saving,
+                      onSelected: () => _pickEmiPlan(plan),
+                    ),
+                ],
+              ),
+              ..._pendingAfter(emiPlans, cards, settings.currency),
               const SizedBox(height: AppSpacing.lg),
             ],
 
@@ -772,7 +894,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                       ),
                     ),
                     const SizedBox(height: AppSpacing.sm),
-                    _PaymentPicker(
+                    PaymentMethodChips(
                       methods: payments.methods,
                       selectedId: _paymentMethodId,
                       enabled: !_saving,
@@ -875,10 +997,15 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       notes: _notes.text,
       // Written only once migration 019 is in place.
       isPersonal: _isPersonal,
+      emiPlanId: SchemaCapabilities.emi ? _emiPlanId : null,
+      emiComponent: widget.expense?.emiComponent,
     );
 
     final bool ok = await provider.save(
       draft,
+      // An edit writes the plan only when the pick changed.
+      writeEmiPlan:
+          SchemaCapabilities.emi && _emiPlanId != widget.expense?.emiPlanId,
       // Marked, unmarked, or — when it never was and still is not, or its
       // claim could not be read — left alone.
       paidFor: _paidForOffered
@@ -901,6 +1028,8 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     if (ok) {
       // The purchase's amount, date or claim may have changed what is owed.
       context.read<ReceivableProvider?>()?.invalidate();
+      // ... and what is left pending on its EMI.
+      unawaited(context.read<CreditCardProvider>().refreshBalances());
       final String? warning = provider.saveWarning;
       if (warning != null) {
         AppFeedback.error(context, warning);
@@ -943,6 +1072,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     if (ok) {
       // A purchase paid for someone else takes its claim with it.
       context.read<ReceivableProvider?>()?.invalidate();
+      unawaited(context.read<CreditCardProvider>().refreshBalances());
       AppFeedback.success(context, 'Expense deleted');
       Navigator.of(context).pop(true);
     } else {
@@ -1100,39 +1230,6 @@ class _SourcePicker extends StatelessWidget {
       selectedId: selectedAccountId,
       enabled: enabled,
       onSelected: onSelected,
-    );
-  }
-}
-
-class _PaymentPicker extends StatelessWidget {
-  const _PaymentPicker({
-    required this.methods,
-    required this.selectedId,
-    required this.onSelected,
-    required this.enabled,
-  });
-
-  final List<PaymentMethod> methods;
-  final String? selectedId;
-  final ValueChanged<String?> onSelected;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: AppSpacing.sm,
-      runSpacing: AppSpacing.sm,
-      children: methods.map((PaymentMethod method) {
-        final bool selected = method.id == selectedId;
-        return AppChoiceChip(
-          label: method.name,
-          selected: selected,
-          enabled: enabled,
-          // Tapping the selected chip clears it, since payment method is
-          // optional.
-          onSelected: () => onSelected(selected ? null : method.id),
-        );
-      }).toList(),
     );
   }
 }

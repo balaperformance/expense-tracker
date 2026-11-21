@@ -1,13 +1,23 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/config/public_app_url.dart';
 import '../core/errors/app_exception.dart';
 
 /// All authentication I/O. Returns plain results and throws [AppException]
 /// so the UI never handles a Supabase type directly.
 class AuthRepository {
-  const AuthRepository(this._auth);
+  /// [appUrl] is the deployed web app ([PublicAppUrl]); auth emails link
+  /// there. [recoveryAuth] requests reset emails (see
+  /// `SupabaseService.recoveryAuth`); it defaults to [_auth].
+  const AuthRepository(this._auth, {this.appUrl, GoTrueClient? recoveryAuth})
+      : _recoveryAuth = recoveryAuth;
 
   final GoTrueClient _auth;
+  final GoTrueClient? _recoveryAuth;
+  final String? appUrl;
+
+  /// Where a reset email's link lands: the web app's reset page.
+  String? get resetPasswordRedirect => PublicAppUrl.resetPasswordUrl(appUrl);
 
   Session? get currentSession => _auth.currentSession;
 
@@ -29,6 +39,7 @@ class AuthRepository {
         email: email.trim(),
         password: password,
         data: <String, dynamic>{'full_name': fullName.trim()},
+        emailRedirectTo: PublicAppUrl.confirmEmailUrl(appUrl),
       );
       return SignUpOutcome(
         needsEmailConfirmation: response.session == null,
@@ -130,7 +141,27 @@ class AuthRepository {
 
   Future<void> resendConfirmation(String email) async {
     try {
-      await _auth.resend(type: OtpType.signup, email: email.trim());
+      await _auth.resend(
+        type: OtpType.signup,
+        email: email.trim(),
+        emailRedirectTo: PublicAppUrl.confirmEmailUrl(appUrl),
+      );
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Emails a password-reset link that opens the web app's reset page, where
+  /// the new password is chosen.
+  ///
+  /// Supabase answers the same whether or not the address has an account, so
+  /// the caller must not claim either.
+  Future<void> requestPasswordReset(String email) async {
+    try {
+      await (_recoveryAuth ?? _auth).resetPasswordForEmail(
+        email.trim(),
+        redirectTo: resetPasswordRedirect,
+      );
     } catch (error) {
       throw ErrorMapper.map(error);
     }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,9 +11,11 @@ import '../../models/credit_card.dart';
 import '../../models/emi_plan.dart';
 import '../../models/expense_category.dart';
 import '../../models/ledger_entry.dart';
+import '../../models/tag.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/card_import_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/schema_capabilities.dart';
 import '../../widgets/category_avatar.dart';
@@ -20,7 +24,10 @@ import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/paid_for_field.dart';
+import '../../widgets/payment_method_chips.dart';
 import '../../widgets/personal_field.dart';
+import '../../widgets/tag_field.dart';
 import 'emi_plan_sheet.dart';
 
 /// Edit one screenshot row before import. Nothing is saved from here — only
@@ -56,6 +63,24 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
 
   /// A purchase with the user's own money, or someone else's (migration 019).
   late bool _isPersonal = widget.provider.isPersonalItem(widget.itemId);
+
+  // What an expense has beyond the statement's own figures — the fields of
+  // Add Expense. Only what changed is sent to the review on Done.
+  late final List<String> _initialTags =
+      ((_item['tags'] as List<Object?>?) ?? const <Object?>[]).whereType<String>().toList();
+  late final String _initialNotes = (_item['notes'] as String?) ?? '';
+  // Not chosen yet: an imported purchase is paid by credit card.
+  late final String? _initialMethodId = _item.containsKey('paymentMethodId')
+      ? _item['paymentMethodId'] as String?
+      : widget.provider.defaultPaymentMethodId;
+  late final String _initialPerson = (_item['paidForPerson'] as String?) ?? '';
+  late List<String> _tags = List<String>.of(_initialTags);
+  final TextEditingController _tagDraft = TextEditingController();
+  List<Tag> _knownTags = const <Tag>[];
+  late final TextEditingController _notes = TextEditingController(text: _initialNotes);
+  late String? _paymentMethodId = _initialMethodId;
+  late bool _paidFor = _initialPerson.isNotEmpty;
+  late final TextEditingController _paidForPerson = TextEditingController(text: _initialPerson);
   List<LedgerEntry>? _candidates;
   bool _submitted = false;
 
@@ -79,6 +104,12 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
   void initState() {
     super.initState();
     if (_kind == 'payment') _loadCandidates();
+    // Tags typed on the session's other rows are offered at once, saved or not.
+    if (SchemaCapabilities.tags) {
+      unawaited(widget.provider.knownTags().then((List<Tag> known) {
+        if (mounted) setState(() => _knownTags = known);
+      }));
+    }
   }
 
   Future<void> _loadCandidates() async {
@@ -90,12 +121,18 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
   void dispose() {
     _title.dispose();
     _amount.dispose();
+    _tagDraft.dispose();
+    _notes.dispose();
+    _paidForPerson.dispose();
     super.dispose();
   }
 
   List<String> get _kinds => _direction == 'debit' ? _debitKinds : _creditKinds;
   String get _effectiveKind => _kinds.contains(_kind) ? _kind : _kinds.first;
   bool get _needsCategory => _effectiveKind == 'purchase' || _effectiveKind == 'emiPrincipal';
+
+  /// Only a plain purchase can be paid for someone else.
+  bool get _paidForShown => _effectiveKind == 'purchase' && SchemaCapabilities.treatments;
   double? get _value => Validators.parseAmount(_amount.text);
 
   /// A usable amount: a number above 0 and within what the app records.
@@ -107,7 +144,13 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
   Future<void> _submit() async {
     setState(() => _submitted = true);
     final double? value = _value;
-    if (value == null || !_amountValid || (_needsCategory && _categoryId == null)) return;
+    final String person = _paidForShown && _paidFor ? _paidForPerson.text.trim() : '';
+    if (value == null ||
+        !_amountValid ||
+        (_needsCategory && _categoryId == null) ||
+        (_paidForShown && _paidFor && person.isEmpty)) {
+      return;
+    }
     final Map<String, Object?> edit = <String, Object?>{
       'title': _title.text,
       'amount': value,
@@ -115,6 +158,14 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
       'kind': _effectiveKind,
       'categoryId': _needsCategory ? _categoryId : null,
     };
+    if (_needsCategory) {
+      // A tag typed but not confirmed counts too.
+      final List<String> tags = TagField.withDraft(_tags, _tagDraft.text, _knownTags);
+      if (SchemaCapabilities.tags && tags.join('\n') != _initialTags.join('\n')) edit['tags'] = tags;
+      if (_notes.text.trim() != _initialNotes) edit['notes'] = _notes.text.trim();
+      if (_paymentMethodId != _initialMethodId) edit['paymentMethodId'] = _paymentMethodId;
+      if (_paidForShown && person != _initialPerson) edit['paidForPerson'] = person;
+    }
     final NavigatorState navigator = Navigator.of(context);
     // Only a purchase can be someone else's money.
     widget.provider.setPersonal(
@@ -264,6 +315,57 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
             Text('Used only if the instalment is not part of a plan with its own category.',
                 style: theme.textTheme.labelSmall),
           ],
+          if (_paidForShown) ...<Widget>[
+            const SizedBox(height: AppSpacing.lg),
+            PaidForField(
+              value: _paidFor,
+              onChanged: (bool value) => setState(() => _paidFor = value),
+              person: _paidForPerson,
+              people: context.read<ReceivableProvider?>()?.people ?? const <String>[],
+              submitted: _submitted,
+            ),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          const FieldLabel('Details', hint: 'Optional'),
+          SurfaceCard(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Column(
+              children: <Widget>[
+                if (SchemaCapabilities.tags) ...<Widget>[
+                  TagField(
+                    tags: _tags,
+                    draft: _tagDraft,
+                    known: _knownTags,
+                    onChanged: (List<String> next) => setState(() => _tags = next),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                ],
+                TextField(
+                  controller: _notes,
+                  maxLines: 2,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    hintText: 'Notes',
+                    alignLabelWithHint: true,
+                    prefixIcon: Icon(Icons.notes_rounded, size: AppSpacing.iconMd),
+                  ),
+                ),
+                if (provider.paymentMethods.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: AppSpacing.md),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Payment method', style: theme.textTheme.labelMedium),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  PaymentMethodChips(
+                    methods: provider.paymentMethods,
+                    selectedId: _paymentMethodId,
+                    onSelected: (String? id) => setState(() => _paymentMethodId = id),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
         if (_effectiveKind == 'payment' && _direction == 'credit') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),

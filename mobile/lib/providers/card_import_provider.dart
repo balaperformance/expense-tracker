@@ -14,10 +14,16 @@ import '../models/emi_plan.dart';
 import '../models/expense.dart';
 import '../models/expense_category.dart';
 import '../models/ledger_entry.dart';
+import '../models/payment_method.dart';
+import '../models/receivable.dart';
+import '../models/tag.dart';
+import '../models/tag_rules.dart';
 import '../repositories/credit_card_repository.dart';
 import '../repositories/emi_plan_repository.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/ledger_repository.dart';
+import '../repositories/receivable_repository.dart';
+import '../repositories/tag_repository.dart';
 import '../services/schema_capabilities.dart';
 import '../services/sms/sms_expense_draft.dart';
 import '../services/statement_import/screenshot_prep.dart';
@@ -68,6 +74,7 @@ class CardImportOutcome {
     this.skippedRows = const <({String itemId, String reason})>[],
     this.notAttemptedIds = const <String>[],
     this.importedIds = const <String>[],
+    this.partial = 0,
   });
 
   final Map<String, Object?> counts;
@@ -86,6 +93,10 @@ class CardImportOutcome {
 
   /// The rows saved, which a retry leaves out of the review.
   final List<String> importedIds;
+
+  /// Rows saved without all their tags or without being marked as paid for
+  /// someone: those are separate writes after the row itself.
+  final int partial;
 }
 
 /// What a card row lacks, in the user's words — the engine's
@@ -119,6 +130,8 @@ class CardImportProvider extends AsyncProvider {
     required LedgerRepository ledger,
     required CreditCardRepository cards,
     required EmiPlanRepository plans,
+    required TagRepository tags,
+    required ReceivableRepository receivables,
     ImagePicker? picker,
     TextRecognizer? recognizer,
   })  : _engine = engine,
@@ -126,6 +139,8 @@ class CardImportProvider extends AsyncProvider {
         _ledger = ledger,
         _cards = cards,
         _plans = plans,
+        _tags = tags,
+        _receivables = receivables,
         _picker = picker ?? ImagePicker(),
         _recognizer = recognizer;
 
@@ -134,6 +149,8 @@ class CardImportProvider extends AsyncProvider {
   final LedgerRepository _ledger;
   final CreditCardRepository _cards;
   final EmiPlanRepository _plans;
+  final TagRepository _tags;
+  final ReceivableRepository _receivables;
   final ImagePicker _picker;
   TextRecognizer? _recognizer;
 
@@ -152,6 +169,7 @@ class CardImportProvider extends AsyncProvider {
   List<EmiPlan> _plansOnCard = <EmiPlan>[];
   List<BankAccount> _accounts = const <BankAccount>[];
   List<ExpenseCategory> _categories = const <ExpenseCategory>[];
+  List<PaymentMethod> _paymentMethods = const <PaymentMethod>[];
   String _currency = 'INR';
 
   /// Purchases bought with someone else's money (migration 019), by row id.
@@ -177,6 +195,11 @@ class CardImportProvider extends AsyncProvider {
   Map<String, Object?>? get view => _view;
   List<EmiPlan> get plans => List<EmiPlan>.unmodifiable(_plansOnCard);
   List<BankAccount> get accounts => _accounts;
+  List<PaymentMethod> get paymentMethods => _paymentMethods;
+
+  /// The payment method an imported purchase gets until the user picks
+  /// another: the card's own, "Credit Card".
+  String? get defaultPaymentMethodId => creditCardMethod(_paymentMethods)?.id;
   ({String name, int index, int total, bool checking})? get reading => _reading;
   String? get problem => _problem;
   bool get checkFailed => _checkFailed;
@@ -261,11 +284,13 @@ class CardImportProvider extends AsyncProvider {
     required List<BankAccount> accounts,
     required List<ExpenseCategory> categories,
     required String currency,
+    List<PaymentMethod> paymentMethods = const <PaymentMethod>[],
   }) async {
     _userId = userId;
     _card = card;
     _accounts = accounts;
     _categories = categories;
+    _paymentMethods = paymentMethods;
     _currency = currency;
     _shots = <ImportedShot>[];
     _session = null;
@@ -669,15 +694,21 @@ class CardImportProvider extends AsyncProvider {
 
   // ---- Import --------------------------------------------------------------
 
+  /// What the engine's `cardPlan` is given: the session, and what it needs
+  /// to decide each expense's category and payment method.
+  Map<String, Object?> _planArgs(Map<String, Object?> session) => <String, Object?>{
+        'session': session,
+        'categories': _categories.map(EngineJson.category).toList(),
+        'plans': _plansOnCard.map((EmiPlan p) => p.toEngineMap()).toList(),
+        'defaultPaymentMethodId': defaultPaymentMethodId,
+      };
+
   /// The writes the session adds up to, in the engine's words.
   Future<Map<String, Object?>> preview() async {
     final Map<String, Object?>? session = _session;
     if (session == null) return const <String, Object?>{};
-    final Map<String, Object?> planned = (await _engine.call('cardPlan', <String, Object?>{
-      'session': session,
-      'categories': _categories.map(EngineJson.category).toList(),
-      'plans': _plansOnCard.map((EmiPlan p) => p.toEngineMap()).toList(),
-    }))! as Map<String, Object?>;
+    final Map<String, Object?> planned =
+        (await _engine.call('cardPlan', _planArgs(session)))! as Map<String, Object?>;
     return planned['counts']! as Map<String, Object?>;
   }
 
@@ -701,11 +732,8 @@ class CardImportProvider extends AsyncProvider {
     _problem = null;
     safeNotify();
     try {
-      final Map<String, Object?> planned = (await _engine.call('cardPlan', <String, Object?>{
-        'session': session,
-        'categories': _categories.map(EngineJson.category).toList(),
-        'plans': _plansOnCard.map((EmiPlan p) => p.toEngineMap()).toList(),
-      }))! as Map<String, Object?>;
+      final Map<String, Object?> planned =
+          (await _engine.call('cardPlan', _planArgs(session)))! as Map<String, Object?>;
       final List<CardEntry> fresh = await _cards.fetchEntries(userId: userId, cardId: card.id);
       final Map<String, Object?> plan = (await _engine.call('cardFinalPlan', <String, Object?>{
         'plan': planned['plan'],
@@ -727,6 +755,7 @@ class CardImportProvider extends AsyncProvider {
       final List<String> failed = <String>[];
       int consecutive = 0;
       int notAttempted = 0;
+      int partial = 0;
       for (int index = 0; index < operations.length; index++) {
         if (consecutive >= _maxConsecutiveFailures) {
           notAttempted = operations.length - index;
@@ -749,8 +778,9 @@ class CardImportProvider extends AsyncProvider {
           continue;
         }
         try {
-          final String? id = await _write(userId, card, op, planIds);
+          final (String? id, bool complete) = await _write(userId, card, op, planIds);
           if (type == 'createPlan' && id != null) planIds[op['groupId']! as String] = id;
+          if (!complete) partial++;
           consecutive = 0;
           written.add(op);
           if (type != 'createPlan') importedIds.add(op['itemId']! as String);
@@ -782,6 +812,7 @@ class CardImportProvider extends AsyncProvider {
         ],
         notAttemptedIds: notAttemptedIds,
         importedIds: importedIds,
+        partial: partial,
       );
       _saveErrors = <String, String>{};
       return true;
@@ -809,8 +840,10 @@ class CardImportProvider extends AsyncProvider {
   }
 
   /// One operation, with the app's own repositories — exactly what adding
-  /// the row by hand produces.
-  Future<String?> _write(
+  /// the row by hand produces. Returns the id of a plan it created, and
+  /// whether everything the row asked for was written (an expense's tags and
+  /// who it was paid for are writes of their own after it).
+  Future<(String?, bool)> _write(
     String userId,
     CreditCard card,
     Map<String, Object?> op,
@@ -822,7 +855,7 @@ class CardImportProvider extends AsyncProvider {
     switch (op['type']) {
       case 'createPlan':
         final Map<String, Object?> draft = op['draft']! as Map<String, Object?>;
-        return _plans.create(
+        final String planId = await _plans.create(
           userId: userId,
           plan: EmiPlan(
             id: '',
@@ -841,13 +874,15 @@ class CardImportProvider extends AsyncProvider {
             categoryId: draft['categoryId'] as String?,
           ),
         );
+        return (planId, true);
       case 'expense':
-        await _expenses.create(Expense(
+        final Expense saved = await _expenses.create(Expense(
           id: '',
           userId: userId,
           amount: (op['amount']! as num).toDouble(),
           expenseDate: AppDateUtils.parseDate(op['date']! as String),
           categoryId: op['categoryId'] as String?,
+          paymentMethodId: op['paymentMethodId'] as String?,
           creditCardId: card.id,
           merchant: op['merchant'] as String?,
           description: op['description'] as String?,
@@ -857,7 +892,7 @@ class CardImportProvider extends AsyncProvider {
           statementDate: statement == null ? null : AppDateUtils.parseDate(statement),
           isPersonal: isPersonalItem(op['itemId'] as String? ?? ''),
         ));
-        return null;
+        return (null, await _withExtras(userId, saved.id, op));
       case 'cardTransaction':
         await _cards.recordTransaction(
           userId: userId,
@@ -871,17 +906,69 @@ class CardImportProvider extends AsyncProvider {
           emiComponent: emi?['component'] as String?,
           statementDate: statement == null ? null : AppDateUtils.parseDate(statement),
         );
-        return null;
+        return (null, true);
       case 'linkPayment':
         await _ledger.linkToCard(
           userId: userId,
           entryId: op['entryId']! as String,
           cardId: card.id,
         );
-        return null;
+        return (null, true);
       default:
         throw AppException('Unknown import step: ${op['type']}');
     }
+  }
+
+  /// An imported expense's tags and who it was paid for: each its own write
+  /// after the expense, so a failure leaves the expense saved (it is
+  /// reported, not retried, and nothing is written twice).
+  Future<bool> _withExtras(String userId, String expenseId, Map<String, Object?> op) async {
+    bool complete = true;
+    final List<String> tags =
+        ((op['tags'] as List<Object?>?) ?? const <Object?>[]).whereType<String>().toList();
+    if (tags.isNotEmpty) {
+      try {
+        if (!SchemaCapabilities.tags) throw const AppException('Tags are not available.');
+        await _tags.setTags(kind: TagKind.expense, id: expenseId, names: tags);
+      } catch (_) {
+        complete = false;
+      }
+    }
+    final String? person = op['paidForPerson'] as String?;
+    if (person != null && person.trim().isNotEmpty) {
+      try {
+        if (!SchemaCapabilities.treatments) throw const AppException('Not available.');
+        await _receivables.setExpensePaidFor(
+          userId: userId,
+          expenseId: expenseId,
+          paidFor: PaidForDraft(person: person),
+        );
+      } catch (_) {
+        complete = false;
+      }
+    }
+    return complete;
+  }
+
+  /// Every tag the user has, plus the tags already typed on this session's
+  /// rows: they are only saved when the import runs, but the next row must
+  /// offer them at once. Read afresh each time a row is opened; only the
+  /// session's own tags when the saved ones cannot be read, nothing before
+  /// migration 006.
+  Future<List<Tag>> knownTags() async {
+    if (!SchemaCapabilities.tags) return const <Tag>[];
+    final String? userId = _userId;
+    List<Tag> saved = const <Tag>[];
+    if (userId != null) {
+      try {
+        saved = await _tags.fetchTags(userId);
+      } catch (_) {}
+    }
+    return TagRules.merge(
+      saved,
+      items.expand((Map<String, Object?> item) =>
+          ((item['tags'] as List<Object?>?) ?? const <Object?>[]).whereType<String>()),
+    );
   }
 
   @override

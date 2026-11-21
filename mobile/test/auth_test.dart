@@ -291,7 +291,7 @@ void main() {
   // ---------------------------------------------------------------------
 
   group('LoginScreen', () {
-    testWidgets('offers Register New User and no email-reset route',
+    testWidgets('offers Register New User and a password reset',
         (WidgetTester tester) async {
       final AuthProvider auth = _providerWith(_FakeAuthRepository());
       await tester.pumpWidget(_wrap(const LoginScreen(), auth));
@@ -299,8 +299,8 @@ void main() {
 
       expect(find.text('Register New User'), findsOneWidget);
       expect(find.text('Sign in'), findsOneWidget);
-      expect(find.text('Forgot password?'), findsNothing);
-      expect(find.textContaining('reset link'), findsNothing);
+      expect(find.text('Forgot password?'), findsOneWidget);
+      expect(find.textContaining('administers'), findsNothing);
       auth.dispose();
     });
 

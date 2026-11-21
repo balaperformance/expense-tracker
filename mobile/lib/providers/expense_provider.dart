@@ -268,11 +268,14 @@ class ExpenseProvider extends AsyncProvider {
   /// its tags are each one write of their own after it; if either fails the
   /// expense stays saved (as the user's own spending, with the tags it had)
   /// and [saveWarning] says what was not, rather than reporting a failure
-  /// that would invite a second save of the same expense.
+  /// that would invite a second save of the same expense. [writeEmiPlan]: an
+  /// edit also writes which EMI plan the expense belongs to (a new expense
+  /// always does).
   Future<bool> save(
     Expense expense, {
     PaidForChange paidFor = const PaidForChange.keep(),
     List<String>? tags,
+    bool writeEmiPlan = false,
   }) async {
     _saveWarning = null;
     final bool isNew = expense.id.isEmpty;
@@ -280,7 +283,7 @@ class ExpenseProvider extends AsyncProvider {
     final bool ok = await guard(() async {
       saved = isNew
           ? await _repository.create(expense)
-          : await _repository.update(expense);
+          : await _repository.update(expense, writeEmiPlan: writeEmiPlan);
     });
     final Expense? row = saved;
     if (!ok || row == null) return false;
@@ -325,6 +328,13 @@ class ExpenseProvider extends AsyncProvider {
     _revision++;
     safeNotify();
     return true;
+  }
+
+  /// Tags were deleted or renamed elsewhere: what reads an expense's tags
+  /// (the reports, the lists) reloads.
+  void tagsChanged() {
+    _revision++;
+    safeNotify();
   }
 
   /// Every tag the user has and the names of those on [expenseId] (none for

@@ -72,6 +72,9 @@ List<EmiReimbursementOption> emiReimbursementOptions({
   final List<EmiReimbursementOption> out = <EmiReimbursementOption>[];
   for (final EmiPlan plan in plans) {
     if (plan.isClosed && plan.id != keepPlanId) continue;
+    // A plan on a bank account alone has no card to be billed on, and no one
+    // else pays it back.
+    if (plan.cardId == null) continue;
     // The first match, as the web's `find` takes it.
     CreditCard? card;
     for (final CreditCard c in cards) {

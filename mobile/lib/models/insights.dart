@@ -1,4 +1,5 @@
 import '../core/utils/date_utils.dart';
+import 'tag_rules.dart';
 
 /// The Reports insights, as the shared engine returns them (see
 /// ui/src/engine/insightsEngine.ts). Every figure, sentence and estimate is
@@ -565,7 +566,11 @@ class SpendingFilterOptions {
   factory SpendingFilterOptions.fromJson(Object? json) {
     final Map<String, Object?> m = _map(json);
     return SpendingFilterOptions(
-      tags: _maps(m['tags']).map((Map<String, Object?> t) => (id: _str(t['id']), name: _str(t['name']), count: _int(t['count']))).toList(),
+      // Listed like every tag list: the usual ones first, then by name.
+      tags: TagRules.sortedBy(
+        _maps(m['tags']).map((Map<String, Object?> t) => (id: _str(t['id']), name: _str(t['name']), count: _int(t['count']))),
+        (({String id, String name, int count}) t) => t.name,
+      ),
       categories: _maps(m['categories']).map((Map<String, Object?> c) => (id: _str(c['id']), name: _str(c['name']))).toList(),
       merchants: _maps(m['merchants']).map((Map<String, Object?> c) => (key: _str(c['key']), label: _str(c['label']), total: _num(c['total']))).toList(),
       sources: _maps(m['sources']).map((Map<String, Object?> c) => (key: _str(c['key']), label: _str(c['label']))).toList(),

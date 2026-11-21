@@ -363,7 +363,9 @@ class ExpenseRepository {
     }
   }
 
-  Future<Expense> update(Expense expense) async {
+  /// [writeEmiPlan]: also write which EMI plan the expense belongs to (the
+  /// expense form); otherwise the link is left as it is.
+  Future<Expense> update(Expense expense, {bool writeEmiPlan = false}) async {
     try {
       await _resolveCapabilities();
       final Map<String, dynamic> patch = expense.toUpdateMap(
@@ -371,6 +373,7 @@ class ExpenseRepository {
         includeBankLink: SchemaCapabilities.expenseBankLink,
         includeCardLink: SchemaCapabilities.creditCards,
         includePersonal: SchemaCapabilities.personal,
+        includeEmiPlan: writeEmiPlan && SchemaCapabilities.emi,
       )..['updated_at'] = DateTime.now().toUtc().toIso8601String();
 
       final Map<String, dynamic> row = await _client

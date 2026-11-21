@@ -12,6 +12,7 @@ import '../models/ledger_entry.dart';
 import '../models/payment_method.dart';
 import '../models/receivable.dart';
 import '../models/tag.dart';
+import '../models/tag_rules.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/income_repository.dart';
 import '../repositories/ledger_repository.dart';
@@ -929,16 +930,26 @@ class StatementImportProvider extends AsyncProvider {
   }
 
   /// Every tag the user has — the web app's included — offered on a row's
-  /// tag field. Read afresh each time a row is opened, so a tag added
-  /// elsewhere shows up; empty before migration 006 or when the read fails.
+  /// tag field, plus the tags already typed on this session's rows: they are
+  /// only saved when the import runs, but the next row must offer them at
+  /// once. Read afresh each time a row is opened, so a tag added elsewhere
+  /// shows up; empty before migration 006, and only the session's own tags
+  /// when the saved ones cannot be read.
   Future<List<Tag>> knownTags() async {
     final String? userId = _userId;
-    if (userId == null) return const <Tag>[];
-    try {
-      return await _tags.fetchTags(userId);
-    } catch (_) {
-      return const <Tag>[];
+    List<Tag> saved = const <Tag>[];
+    if (userId != null) {
+      try {
+        saved = await _tags.fetchTags(userId);
+      } catch (_) {}
     }
+    if (!SchemaCapabilities.tags) return saved;
+    return TagRules.merge(
+      saved,
+      _items.expand((Map<String, Object?> item) =>
+          ((item['tags'] as List<Object?>?) ?? const <Object?>[])
+              .whereType<String>()),
+    );
   }
 
   /// Re-runs the check against recorded transactions on every account the

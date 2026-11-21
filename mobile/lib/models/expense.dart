@@ -133,6 +133,8 @@ class Expense {
   /// [includeEmi]: migration 016 is in place and the instalment columns
   /// should be written (a new row); an edit leaves them as they are.
   /// [includePersonal]: migration 019 is in place, so [isPersonal] is written.
+  /// [includeEmiPlan] (update only): write which EMI plan the row belongs to
+  /// — the expense form does; every other edit leaves it as it is.
   Map<String, dynamic> toInsertMap({
     required bool includeMerchant,
     required bool includeBankLink,
@@ -161,6 +163,7 @@ class Expense {
     required bool includeBankLink,
     bool includeCardLink = false,
     bool includePersonal = false,
+    bool includeEmiPlan = false,
   }) {
     final Map<String, dynamic> map = <String, dynamic>{
       'amount': amount,
@@ -173,6 +176,11 @@ class Expense {
     if (includeMerchant) map['merchant'] = blankToNull(merchant);
     _writeFunding(map, includeBankLink, includeCardLink);
     if (includePersonal) map['is_personal'] = isPersonal;
+    if (includeEmiPlan) {
+      map['emi_plan_id'] = emiPlanId;
+      // A part of a plan means nothing without the plan.
+      if (emiPlanId == null) map['emi_component'] = null;
+    }
     return map;
   }
 

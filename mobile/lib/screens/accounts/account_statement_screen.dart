@@ -32,6 +32,7 @@ import '../../widgets/transaction_tile.dart';
 import '../cards/card_statement_screen.dart';
 import '../export/export_screen.dart';
 import '../statement_import/import_statement_screen.dart';
+import 'account_emis.dart';
 import 'deposit_sheet.dart';
 import 'edit_movement_sheet.dart';
 import 'transfer_sheet.dart';
@@ -204,6 +205,11 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
         ),
         children: <Widget>[
           _SummaryCard(statement: statement, currency: currency),
+          // EMIs paid from this account, with what is pending on each.
+          if (SchemaCapabilities.emiBank && !widget.account.isCash) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            AccountEmis(account: widget.account),
+          ],
           const SizedBox(height: AppSpacing.md),
           _TypeFilterBar(provider: provider),
           const SizedBox(height: AppSpacing.sm),

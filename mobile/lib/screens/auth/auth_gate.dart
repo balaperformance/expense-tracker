@@ -14,6 +14,7 @@ import '../../providers/statement_import_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
 import '../../providers/income_provider.dart';
+import '../../providers/tag_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/payment_method_provider.dart';
 import '../../providers/reports_provider.dart';
@@ -199,6 +200,7 @@ class _AuthGateState extends State<AuthGate> {
     context.read<PaymentMethodProvider>().reset();
     context.read<ExpenseProvider>().reset();
     context.read<IncomeProvider>().reset();
+    context.read<TagProvider>().reset();
     context.read<BudgetProvider>().reset();
     context.read<DashboardProvider>().reset();
     context.read<BankAccountProvider>().reset();

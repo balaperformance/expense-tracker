@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/app_buttons.dart';
 import 'auth_scaffold.dart';
+import 'forgot_password_screen.dart';
 import 'signup_screen.dart';
 import 'verify_email_screen.dart';
 
@@ -112,20 +113,25 @@ class _LoginScreenState extends State<LoginScreen> {
           onPressed: busy ? null : _openSignUp,
         ),
 
-        // Password reset is deliberately not offered here. Changing a
-        // password needs the current one and happens in Settings once signed
-        // in, so a locked-out user is told who can actually help rather than
-        // being sent to a dead end.
-        const SizedBox(height: AppSpacing.lg),
-        Text(
-          'Forgotten your password? It can only be changed from Settings '
-          'while signed in — ask whoever administers this app to reset it '
-          'for you.',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.labelSmall,
+        // The emailed link opens the web app's reset page; see
+        // ForgotPasswordScreen.
+        const SizedBox(height: AppSpacing.sm),
+        AppButton.submit(
+          label: 'Forgot password?',
+          variant: AppButtonVariant.ghost,
+          onPressed: busy ? null : _openForgotPassword,
         ),
       ],
     );
+  }
+
+  Future<void> _openForgotPassword() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ForgotPasswordScreen(initialEmail: _email.text.trim()),
+      ),
+    );
+    if (mounted) context.read<AuthProvider>().clearError();
   }
 
   Future<void> _openSignUp() async {

@@ -20,6 +20,7 @@ class AccountChoiceChips extends StatelessWidget {
     this.enabled = true,
     this.noneLabel = 'Cash',
     this.fullLabels = false,
+    this.allowNone = true,
   });
 
   final List<BankAccount> accounts;
@@ -30,6 +31,9 @@ class AccountChoiceChips extends StatelessWidget {
 
   /// "Nickname •••• 1234" rather than the nickname alone.
   final bool fullLabels;
+
+  /// Offer the [noneLabel] chip. False where an account is required.
+  final bool allowNone;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +55,7 @@ class AccountChoiceChips extends StatelessWidget {
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.sm,
       children: <Widget>[
-        if (cash == null) none,
+        if (cash == null && allowNone) none,
         for (final BankAccount account in ordered)
           AppChoiceChip(
             label: fullLabels ? account.displayLabel : account.nickname,
@@ -62,7 +66,7 @@ class AccountChoiceChips extends StatelessWidget {
             enabled: enabled,
             onSelected: () => onSelected(account.id),
           ),
-        if (cash != null) none,
+        if (cash != null && allowNone) none,
       ],
     );
   }

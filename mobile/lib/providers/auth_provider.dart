@@ -121,6 +121,12 @@ class AuthProvider extends AsyncProvider {
         ));
   }
 
+  /// Emails a password-reset link. True once Supabase accepted the request;
+  /// on failure [errorMessage] says why.
+  Future<bool> requestPasswordReset(String email) {
+    return _submit(() => _repository.requestPasswordReset(email));
+  }
+
   Future<bool> resendConfirmation() async {
     final String? email = _pendingConfirmationEmail;
     if (email == null) return false;
