@@ -94,6 +94,18 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
   String? _categoryId;
   String? _paymentMethodId;
 
+  /// The user has picked a payment method (or none), or the expense comes
+  /// with one. Until then a new expense opened on a card, and still paid by
+  /// card, is on the Credit Card method — read from the methods as they are
+  /// now, so it also applies when they load after the form opens.
+  late bool _methodChosen;
+
+  String? _methodId(List<PaymentMethod> methods) => _methodChosen
+      ? _paymentMethodId
+      : (_byCard && widget.initialCardId != null
+          ? creditCardMethod(methods)?.id
+          : null);
+
   /// Null means Cash. Any other value is a bank account id, and saving will
   /// record a debit against it.
   String? _bankAccountId;
@@ -196,14 +208,11 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     );
     _notes = TextEditingController(text: existing?.notes ?? prefill?.notes ?? '');
     _categoryId = existing?.categoryId ?? prefill?.categoryId;
-    // A new expense opened on a card (its "Add purchase") is paid by credit
-    // card; an edit keeps the method it was saved with.
-    _paymentMethodId = existing?.paymentMethodId ??
-        prefill?.paymentMethodId ??
-        (widget.initialCardId == null
-            ? null
-            : creditCardMethod(context.read<PaymentMethodProvider>().methods)
-                ?.id);
+    // An edit keeps the method it was saved with; a new expense opened on a
+    // card (its "Add purchase") is on the Credit Card method until one is
+    // picked (see [_methodId]).
+    _paymentMethodId = existing?.paymentMethodId ?? prefill?.paymentMethodId;
+    _methodChosen = existing != null || _paymentMethodId != null;
     _bankAccountId = existing?.bankAccountId;
     _accountChosen = existing != null;
     _creditCardId =
@@ -420,6 +429,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       _merchant.text = suggestion.merchant ?? '';
       _description.text = suggestion.description ?? '';
       _paymentMethodId = suggestion.paymentMethodId;
+      _methodChosen = true;
       // An account or card closed since falls back to cash, as on a blank
       // form.
       _byCard = source?.kind == FrequentSourceKind.card;
@@ -461,6 +471,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       if (scanned.categoryId != null) _categoryId = scanned.categoryId;
       if (scanned.paymentMethodId != null) {
         _paymentMethodId = scanned.paymentMethodId;
+        _methodChosen = true;
       }
       _fromScan = true;
       _quickAdded = null;
@@ -670,10 +681,11 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                     _error = null;
                     // Paid by credit card means the Credit Card method, which
                     // the user can still change below.
-                    if (value) {
-                      _paymentMethodId =
-                          creditCardMethod(payments.methods)?.id ??
-                              _paymentMethodId;
+                    final String? cardMethod =
+                        creditCardMethod(payments.methods)?.id;
+                    if (value && cardMethod != null) {
+                      _paymentMethodId = cardMethod;
+                      _methodChosen = true;
                     }
                   }),
                 ),
@@ -896,10 +908,12 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                     const SizedBox(height: AppSpacing.sm),
                     PaymentMethodChips(
                       methods: payments.methods,
-                      selectedId: _paymentMethodId,
+                      selectedId: _methodId(payments.methods),
                       enabled: !_saving,
-                      onSelected: (String? id) =>
-                          setState(() => _paymentMethodId = id),
+                      onSelected: (String? id) => setState(() {
+                        _paymentMethodId = id;
+                        _methodChosen = true;
+                      }),
                     ),
                   ],
                 ],
@@ -986,7 +1000,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       amount: Validators.parseAmount(_amount.text)!,
       expenseDate: _date,
       categoryId: _categoryId,
-      paymentMethodId: _paymentMethodId,
+      paymentMethodId: _methodId(context.read<PaymentMethodProvider>().methods),
       // One funding source: a card purchase never touches a bank balance.
       bankAccountId: payByCard
           ? null
