@@ -121,6 +121,49 @@ class TagRules {
     return sortTags(byKey.values);
   }
 
+  /// Tags every Groceries expense gets, added automatically (the web app's
+  /// `GROCERY_AUTO_TAGS`). The user can still remove them.
+  static const List<String> groceryAutoTags = <String>['groceries', 'famspendings'];
+
+  /// Whether a category named [name] is Groceries ("Groceries", "grocery",
+  /// any case or spacing).
+  static bool isGroceriesCategory(String? name) {
+    if (name == null) return false;
+    final String n = name.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+    return n == 'groceries' || n == 'grocery';
+  }
+
+  /// [tags] with the automatic tags of a category named [categoryName]
+  /// added — both grocery tags for Groceries, spelled as the user's existing
+  /// tags are, never twice, within the per-transaction limit. Any other
+  /// category leaves [tags] as they are.
+  static List<String> withAutoTags(
+    List<String> tags,
+    String? categoryName, [
+    List<Tag> known = const <Tag>[],
+  ]) {
+    if (!isGroceriesCategory(categoryName)) return List<String>.of(tags);
+    return groceryAutoTags.fold<List<String>>(
+      List<String>.of(tags),
+      (List<String> list, String name) => add(list, name, known),
+    );
+  }
+
+  /// The tags after a form's category changed from [previousName] to
+  /// [nextName]: the automatic tags are added only when it moves INTO
+  /// Groceries, so a user who removes them does not see them come back. Null
+  /// when nothing changes. The web app's `autoTagsOnCategoryChange`.
+  static List<String>? autoTagsOnCategoryChange(
+    List<String> tags,
+    String? previousName,
+    String? nextName, [
+    List<Tag> known = const <Tag>[],
+  ]) {
+    if (isGroceriesCategory(previousName) || !isGroceriesCategory(nextName)) return null;
+    final List<String> next = withAutoTags(tags, nextName, known);
+    return next.length == tags.length ? null : next;
+  }
+
   static List<String> remove(List<String> tags, String name) {
     final String k = key(name);
     return tags.where((String t) => key(t) != k).toList();

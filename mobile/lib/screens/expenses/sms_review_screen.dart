@@ -12,6 +12,7 @@ import '../../models/card_statement.dart';
 import '../../models/credit_card.dart';
 import '../../models/expense.dart';
 import '../../models/expense_category.dart';
+import '../../models/tag_rules.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/category_provider.dart';
@@ -585,7 +586,15 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
       notes: reference == null ? null : SmsReferenceNote.forReference(reference),
     );
 
-    final bool ok = await provider.create(expense);
+    // A Groceries expense is tagged #groceries and #famspendings, as the web
+    // app's SMS review and every other expense form do.
+    final List<String> autoTags = TagRules.withAutoTags(
+      const <String>[],
+      context.read<CategoryProvider>().byId(_categoryId)?.name,
+    );
+    final bool ok = autoTags.isNotEmpty && provider.tagsAvailable
+        ? await provider.save(expense, tags: autoTags)
+        : await provider.create(expense);
     if (!mounted) return;
 
     if (ok) {

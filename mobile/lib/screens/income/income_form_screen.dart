@@ -26,7 +26,7 @@ import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
-import '../../widgets/personal_field.dart';
+import '../../widgets/expense_fields.dart';
 import '../../widgets/tag_field.dart';
 import 'emi_reimbursement_fields.dart';
 
@@ -238,108 +238,44 @@ class _IncomeFormScreenState extends State<IncomeFormScreen> {
             ],
 
             if (_emiMode) ..._emiFields(context, settings) else ...<Widget>[
-            const FieldLabel('Source'),
-            TextFormField(
-              controller: _source,
+            // The same fields as an imported statement row's income.
+            IncomeFields(
+              source: _source,
+              commonSources: _commonSources,
               enabled: !_saving,
-              textCapitalization: TextCapitalization.words,
-              textInputAction: TextInputAction.next,
-              decoration: const InputDecoration(
-                hintText: 'Salary, freelance, interest…',
-                prefixIcon: Icon(
-                  Icons.work_outline_rounded,
-                  size: AppSpacing.iconMd,
+              afterSource: <Widget>[
+                const FieldLabel('Date', isRequired: true),
+                DateField(
+                  date: _date,
+                  enabled: !_saving,
+                  onChanged: (DateTime value) => setState(() => _date = value),
                 ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            ValueListenableBuilder<TextEditingValue>(
-              valueListenable: _source,
-              builder: (BuildContext context, TextEditingValue value, _) {
-                return Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: _commonSources.map((String source) {
-                    return AppChoiceChip(
-                      label: source,
-                      selected:
-                          value.text.trim().toLowerCase() ==
-                              source.toLowerCase(),
-                      enabled: !_saving,
-                      onSelected: () => _source.text = source,
-                    );
-                  }).toList(),
-                );
-              },
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            const FieldLabel('Date', isRequired: true),
-            DateField(
-              date: _date,
-              enabled: !_saving,
-              onChanged: (DateTime value) => setState(() => _date = value),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            if (canLinkAccount) ...<Widget>[
-              FieldLabel(
-                'Deposit into',
-                hint: _bankAccountId == null ? 'No balance affected' : null,
-              ),
-              _AccountPicker(
-                accounts: context.watch<BankAccountProvider>().accounts,
-                selectedId: _bankAccountId,
-                enabled: !_saving,
-                onSelected: (String? id) =>
-                    setState(() => _bankAccountId = id),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-
-            if (SchemaCapabilities.personal) ...<Widget>[
-              PersonalField(
-                value: _isPersonal,
-                enabled: !_saving,
-                onChanged: (bool value) => setState(() => _isPersonal = value),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-
-            const FieldLabel('Details', hint: 'Optional'),
-            SurfaceCard(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                children: <Widget>[
-                  TextFormField(
-                    controller: _description,
-                    enabled: !_saving,
-                    maxLines: 2,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      hintText: 'Description',
-                      alignLabelWithHint: true,
-                      prefixIcon: Icon(
-                        Icons.short_text_rounded,
-                        size: AppSpacing.iconMd,
-                      ),
-                    ),
+                const SizedBox(height: AppSpacing.lg),
+              ],
+              funding: <Widget>[
+                if (canLinkAccount) ...<Widget>[
+                  FieldLabel(
+                    'Deposit into',
+                    hint: _bankAccountId == null ? 'No balance affected' : null,
                   ),
-                  if (_showTags) ...<Widget>[
-                    const SizedBox(height: AppSpacing.sm),
-                    TagField(
-                      tags: _tags,
-                      draft: _tagDraft,
-                      known: _knownTags,
-                      enabled: !_saving,
-                      onChanged: (List<String> next) =>
-                          setState(() => _tags = next),
-                    ),
-                  ],
+                  _AccountPicker(
+                    accounts: context.watch<BankAccountProvider>().accounts,
+                    selectedId: _bankAccountId,
+                    enabled: !_saving,
+                    onSelected: (String? id) =>
+                        setState(() => _bankAccountId = id),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
                 ],
-              ),
+              ],
+              isPersonal: SchemaCapabilities.personal ? _isPersonal : null,
+              onPersonal: (bool value) => setState(() => _isPersonal = value),
+              description: _description,
+              tags: _showTags ? _tags : null,
+              tagDraft: _tagDraft,
+              knownTags: _knownTags,
+              onTags: (List<String> next) => setState(() => _tags = next),
             ),
-
             ],
 
             if (_error != null) ...<Widget>[

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
@@ -28,16 +27,14 @@ import '../../providers/settings_provider.dart';
 import '../../services/schema_capabilities.dart';
 import '../../widgets/card_widgets.dart';
 import '../../widgets/account_choice_chips.dart';
-import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/expense_fields.dart';
 import '../../widgets/paid_for_field.dart';
-import '../../widgets/payment_method_chips.dart';
-import '../../widgets/personal_field.dart';
 import '../../widgets/tag_field.dart';
 import 'paid_for_view.dart';
 import 'paste_sms_screen.dart';
@@ -229,6 +226,12 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadQuickAdd());
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadClaim());
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadTags());
+    // A new expense opened as Groceries (a scan, an SMS) starts with its tags.
+    if (existing == null && _categoryId != null) {
+      final String? initial = _categoryId;
+      _categoryId = null;
+      _setCategory(initial);
+    }
   }
 
   /// "Paid for someone else" can be saved (migration 005).
@@ -236,15 +239,6 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
 
   /// Tags can be read and saved (migration 006).
   late final bool _tagsOffered;
-
-  /// "Home loan · ₹36,000 pending": the plan and what is left on it.
-  String _emiChipLabel(EmiPlan plan, CreditCardProvider cards, String currency) {
-    final String? pending = emiPendingText(
-      cards.pendingLeftFor(plan),
-      (double v) => Formatters.currency(v, currencyCode: currency, compact: true),
-    );
-    return pending == null ? plan.title : '${plan.title} · $pending';
-  }
 
   /// Picks the EMI (or, tapped again, none). On a new expense it fills only
   /// what is still empty: the monthly amount, the plan's category and
@@ -261,7 +255,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
       if (_amount.text.trim().isEmpty && monthly != null) {
         _amount.text = Formatters.amountInput(monthly);
       }
-      _categoryId ??= plan.categoryId;
+      if (_categoryId == null) _setCategory(plan.categoryId);
       final String? account = plan.bankAccountId;
       if (!_accountChosen && !_byCard && account != null) {
         _bankAccountId = account;
@@ -271,43 +265,39 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     });
   }
 
-  /// "Pending after this: ₹34,000" under the picker, when the chosen plan
-  /// has a pending amount. An edit's own amount is already deducted when it
-  /// was recorded after the pending amount was set.
-  List<Widget> _pendingAfter(
-    List<EmiPlan> plans,
-    CreditCardProvider cards,
-    String currency,
-  ) {
+  /// For an edit already deducted from the chosen plan's pending amount
+  /// (recorded after it was set): its own amount, so the "Pending after
+  /// this" line does not deduct it twice.
+  double _emiAlreadyCounted(List<EmiPlan> plans) {
+    final Expense? existing = widget.expense;
     EmiPlan? plan;
     for (final EmiPlan p in plans) {
       if (p.id == _emiPlanId) plan = p;
     }
-    final double? left = plan == null ? null : cards.pendingLeftFor(plan);
-    if (plan == null || left == null) return const <Widget>[];
-    final Expense? existing = widget.expense;
-    final DateTime? since = plan.pendingSetAt;
+    final DateTime? since = plan?.pendingSetAt;
     final bool counted = existing != null &&
+        plan != null &&
         existing.emiPlanId == plan.id &&
         (existing.emiComponent == null || existing.emiComponent == 'principal') &&
         since != null &&
         existing.createdAt != null &&
         !existing.createdAt!.isBefore(since);
-    final double before = left + (counted ? existing.amount : 0);
-    return <Widget>[
-      const SizedBox(height: AppSpacing.sm),
-      ValueListenableBuilder<TextEditingValue>(
-        valueListenable: _amount,
-        builder: (BuildContext context, TextEditingValue value, _) {
-          final double? after =
-              pendingLeft(before, Validators.parseAmount(value.text) ?? 0);
-          return Text(
-            'Pending after this: ${Formatters.currency(after ?? before, currencyCode: currency)}',
-            style: Theme.of(context).textTheme.labelMedium,
-          );
-        },
-      ),
-    ];
+    return counted ? existing.amount : 0;
+  }
+
+  /// Sets the category from anywhere but the chips (an EMI, Quick add, a
+  /// scan); moving into Groceries adds its tags, as picking it does. Call
+  /// inside setState.
+  void _setCategory(String? id) {
+    final List<String>? withAuto = ExpenseFields.tagsAfterCategoryChange(
+      categories: context.read<CategoryProvider>().categories,
+      tags: _tags,
+      fromId: _categoryId,
+      toId: id,
+      known: _knownTags,
+    );
+    _categoryId = id;
+    if (withAuto != null) _tags = withAuto;
   }
 
   /// Records money paid back for [claim], then shows the claim as it is now.
@@ -425,7 +415,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
     setState(() {
       // A varying amount is left blank for the user to type.
       _amount.text = amount == null ? '' : Formatters.amountInput(amount);
-      _categoryId = suggestion.categoryId;
+      _setCategory(suggestion.categoryId);
       _merchant.text = suggestion.merchant ?? '';
       _description.text = suggestion.description ?? '';
       _paymentMethodId = suggestion.paymentMethodId;
@@ -468,7 +458,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         _description.text = scanned.description!;
       }
       if (scanned.date != null) _date = scanned.date!;
-      if (scanned.categoryId != null) _categoryId = scanned.categoryId;
+      if (scanned.categoryId != null) _setCategory(scanned.categoryId);
       if (scanned.paymentMethodId != null) {
         _paymentMethodId = scanned.paymentMethodId;
         _methodChosen = true;
@@ -627,297 +617,185 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
             const SizedBox(height: AppSpacing.xl),
 
             // ---------------------------------------------------------
-            // Category
+            // The expense's fields — shared with the statement imports
             // ---------------------------------------------------------
-            FieldLabel(
-              'Category',
-              isRequired: true,
-              hint: categoryMissing ? 'Pick one' : null,
-            ),
-            _CategoryPicker(
+            ExpenseFields(
               categories: categories.categories,
-              selectedId: _categoryId,
+              categoryId: _categoryId,
+              categoryHint: categoryMissing ? 'Pick one' : null,
+              categoryError: categoryMissing,
               enabled: !_saving,
-              hasError: categoryMissing,
-              onSelected: (String id) => setState(() {
+              onCategory: (String? id) => setState(() {
                 _categoryId = id;
                 _submitted = false;
               }),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            // ---------------------------------------------------------
-            // Date
-            // ---------------------------------------------------------
-            const FieldLabel('Date', isRequired: true),
-            DateField(
-              date: _date,
-              enabled: !_saving,
-              onChanged: (DateTime value) => setState(() => _date = value),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-
-            // ---------------------------------------------------------
-            // Payment source — decides whether a bank balance moves
-            // ---------------------------------------------------------
-            if (SchemaCapabilities.phase2Ready ||
-                cardOptions.isNotEmpty ||
-                payByCard) ...<Widget>[
-              FieldLabel(
-                'Paid from',
-                isRequired: true,
-                hint: payByCard
-                    ? (cardMissing ? 'Pick a card' : null)
-                    : (_sourceAccountId(accounts.accounts) == null
-                        ? 'No balance affected'
-                        : null),
-              ),
-              if (cardOptions.isNotEmpty || payByCard) ...<Widget>[
-                FundingToggle(
-                  byCard: payByCard,
+              afterCategory: <Widget>[
+                const FieldLabel('Date', isRequired: true),
+                DateField(
+                  date: _date,
                   enabled: !_saving,
-                  onChanged: (bool value) => setState(() {
-                    _byCard = value;
-                    _error = null;
-                    // Paid by credit card means the Credit Card method, which
-                    // the user can still change below.
-                    final String? cardMethod =
-                        creditCardMethod(payments.methods)?.id;
-                    if (value && cardMethod != null) {
-                      _paymentMethodId = cardMethod;
-                      _methodChosen = true;
-                    }
-                  }),
+                  onChanged: (DateTime value) => setState(() => _date = value),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: AppSpacing.lg),
               ],
-              if (payByCard && cardOptions.isEmpty)
-                cards.isLoading || cards.isIdle
-                    ? const Skeleton(height: 40, radius: AppSpacing.radiusMd)
-                    : cards.hasError
-                        ? AppNotice(
-                            icon: Icons.error_outline_rounded,
-                            tone: theme.colorScheme.error,
-                            message: 'Could not load your cards. '
-                                '${cards.errorMessage ?? ''}',
-                          )
-                        : const AppNotice(
-                            message: 'No active credit cards. Add one from '
-                                'Credit cards, or switch to cash or account.',
-                          )
-              else if (payByCard) ...<Widget>[
-                CardChoiceChips(
-                  cards: cardOptions.map((CardOverview o) => o.card).toList(),
-                  selectedId: _creditCardId,
-                  enabled: !_saving,
-                  onSelected: (String id) => setState(() {
-                    _creditCardId = id;
-                    _error = null;
-                  }),
-                ),
-                if (selectedCard != null) ...<Widget>[
-                  const SizedBox(height: AppSpacing.sm),
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _amount,
-                    builder: (BuildContext context, TextEditingValue value, _) =>
-                        AvailableCreditLine(
-                      card: selectedCard!.card,
-                      summary: selectedCard.summary,
-                      amount: Validators.parseAmount(value.text),
-                      currency: settings.currency,
-                      alreadyCounted:
-                          widget.expense?.creditCardId == selectedCard.card.id
-                              ? widget.expense!.amount
-                              : 0,
-                    ),
+              funding: <Widget>[
+                if (SchemaCapabilities.phase2Ready ||
+                    cardOptions.isNotEmpty ||
+                    payByCard) ...<Widget>[
+                  FieldLabel(
+                    'Paid from',
+                    isRequired: true,
+                    hint: payByCard
+                        ? (cardMissing ? 'Pick a card' : null)
+                        : (_sourceAccountId(accounts.accounts) == null
+                            ? 'No balance affected'
+                            : null),
                   ),
-                ],
-              ] else if (SchemaCapabilities.phase2Ready)
-                _SourcePicker(
-                  accounts: accounts.accounts,
-                  selectedAccountId: _sourceAccountId(accounts.accounts),
-                  enabled: !_saving,
-                  onSelected: (String? id) => setState(() {
-                    _bankAccountId = id;
-                    _accountChosen = true;
-                  }),
-                )
-              else
-                const AppNotice(message: 'Recorded as cash: no balance changes.'),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-
-            // ---------------------------------------------------------
-            // EMI — a month's payment comes off the plan's pending amount
-            // ---------------------------------------------------------
-            if (emiPlans.isNotEmpty) ...<Widget>[
-              const FieldLabel('EMI', hint: 'Optional · lowers what is pending'),
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: <Widget>[
-                  for (final EmiPlan plan in emiPlans)
-                    AppChoiceChip(
-                      label: _emiChipLabel(plan, cards, settings.currency),
-                      icon: Icons.all_inclusive_rounded,
-                      selected: _emiPlanId == plan.id,
+                  if (cardOptions.isNotEmpty || payByCard) ...<Widget>[
+                    FundingToggle(
+                      byCard: payByCard,
                       enabled: !_saving,
-                      onSelected: () => _pickEmiPlan(plan),
-                    ),
-                ],
-              ),
-              ..._pendingAfter(emiPlans, cards, settings.currency),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-
-            // ---------------------------------------------------------
-            // Paid for someone else — owed back, so not your spending
-            // ---------------------------------------------------------
-            if (_paidForOffered && _claimRead != _ClaimRead.failed) ...<Widget>[
-              if (_claimRead == _ClaimRead.reading)
-                // Chip-shaped: a list skeleton cannot sit inside this list.
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Skeleton(
-                    height: 34,
-                    width: 190,
-                    radius: AppSpacing.radiusPill,
-                  ),
-                )
-              else
-                PaidForField(
-                  value: _paidFor,
-                  onChanged: (bool value) => setState(() {
-                    _paidFor = value;
-                    _error = null;
-                  }),
-                  person: _paidForPerson,
-                  people: _people,
-                  submitted: _submitted,
-                  enabled: !_saving,
-                  progress: claim == null
-                      ? null
-                      : '${Formatters.currency(claim.received, currencyCode: settings.currency)} '
-                          'of ${Formatters.currency(claim.principal, currencyCode: settings.currency)} '
-                          'paid back · ${claim.status.label}',
-                ),
-              if (claim != null && _paidFor) ...<Widget>[
-                const SizedBox(height: AppSpacing.md),
-                PaidForCard(
-                  claim: claim,
-                  currency: settings.currency,
-                  today: AppDateUtils.today(),
-                  onRepay: _saving ? null : () => _repay(claim),
-                ),
-              ],
-              if (claim != null && !_paidFor && claim.received > 0) ...<Widget>[
-                const SizedBox(height: AppSpacing.sm),
-                AppNotice(
-                  message: '${Formatters.currency(claim.received, currencyCode: settings.currency)} '
-                      'already paid back stays as plain money in on its '
-                      'account, and this becomes your own spending again.',
-                ),
-              ],
-              const SizedBox(height: AppSpacing.lg),
-            ],
-
-            // ---------------------------------------------------------
-            // Whose money — someone else's is not your spending
-            // ---------------------------------------------------------
-            if (SchemaCapabilities.personal) ...<Widget>[
-              PersonalField(
-                value: _isPersonal,
-                enabled: !_saving,
-                onChanged: (bool value) => setState(() => _isPersonal = value),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-            ],
-
-            // ---------------------------------------------------------
-            // Optional detail, grouped and visually quieter
-            // ---------------------------------------------------------
-            const FieldLabel('Details', hint: 'Optional'),
-            SurfaceCard(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                children: <Widget>[
-                  if (SchemaCapabilities.merchant) ...<Widget>[
-                    TextFormField(
-                      controller: _merchant,
-                      enabled: !_saving,
-                      textCapitalization: TextCapitalization.words,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        hintText: 'Merchant',
-                        prefixIcon: Icon(
-                          Icons.storefront_outlined,
-                          size: AppSpacing.iconMd,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                  ],
-                  TextFormField(
-                    controller: _description,
-                    enabled: !_saving,
-                    textCapitalization: TextCapitalization.sentences,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      hintText: 'Description',
-                      prefixIcon: Icon(
-                        Icons.short_text_rounded,
-                        size: AppSpacing.iconMd,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  if (showTags) ...<Widget>[
-                    TagField(
-                      tags: _tags,
-                      draft: _tagDraft,
-                      known: _knownTags,
-                      enabled: !_saving,
-                      onChanged: (List<String> next) =>
-                          setState(() => _tags = next),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                  ],
-                  TextFormField(
-                    controller: _notes,
-                    enabled: !_saving,
-                    maxLines: 2,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: const InputDecoration(
-                      hintText: 'Notes',
-                      alignLabelWithHint: true,
-                      prefixIcon: Icon(
-                        Icons.notes_rounded,
-                        size: AppSpacing.iconMd,
-                      ),
-                    ),
-                  ),
-                  if (payments.methods.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: AppSpacing.md),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Payment method',
-                        style: theme.textTheme.labelMedium,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    PaymentMethodChips(
-                      methods: payments.methods,
-                      selectedId: _methodId(payments.methods),
-                      enabled: !_saving,
-                      onSelected: (String? id) => setState(() {
-                        _paymentMethodId = id;
-                        _methodChosen = true;
+                      onChanged: (bool value) => setState(() {
+                        _byCard = value;
+                        _error = null;
+                        // Paid by credit card means the Credit Card method, which
+                        // the user can still change below.
+                        final String? cardMethod =
+                            creditCardMethod(payments.methods)?.id;
+                        if (value && cardMethod != null) {
+                          _paymentMethodId = cardMethod;
+                          _methodChosen = true;
+                        }
                       }),
                     ),
+                    const SizedBox(height: AppSpacing.sm),
+                  ],
+                  if (payByCard && cardOptions.isEmpty)
+                    cards.isLoading || cards.isIdle
+                        ? const Skeleton(height: 40, radius: AppSpacing.radiusMd)
+                        : cards.hasError
+                            ? AppNotice(
+                                icon: Icons.error_outline_rounded,
+                                tone: theme.colorScheme.error,
+                                message: 'Could not load your cards. '
+                                    '${cards.errorMessage ?? ''}',
+                              )
+                            : const AppNotice(
+                                message: 'No active credit cards. Add one from '
+                                    'Credit cards, or switch to cash or account.',
+                              )
+                  else if (payByCard) ...<Widget>[
+                    CardChoiceChips(
+                      cards: cardOptions.map((CardOverview o) => o.card).toList(),
+                      selectedId: _creditCardId,
+                      enabled: !_saving,
+                      onSelected: (String id) => setState(() {
+                        _creditCardId = id;
+                        _error = null;
+                      }),
+                    ),
+                    if (selectedCard != null) ...<Widget>[
+                      const SizedBox(height: AppSpacing.sm),
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _amount,
+                        builder: (BuildContext context, TextEditingValue value, _) =>
+                            AvailableCreditLine(
+                          card: selectedCard!.card,
+                          summary: selectedCard.summary,
+                          amount: Validators.parseAmount(value.text),
+                          currency: settings.currency,
+                          alreadyCounted:
+                              widget.expense?.creditCardId == selectedCard.card.id
+                                  ? widget.expense!.amount
+                                  : 0,
+                        ),
+                      ),
+                    ],
+                  ] else if (SchemaCapabilities.phase2Ready)
+                    _SourcePicker(
+                      accounts: accounts.accounts,
+                      selectedAccountId: _sourceAccountId(accounts.accounts),
+                      enabled: !_saving,
+                      onSelected: (String? id) => setState(() {
+                        _bankAccountId = id;
+                        _accountChosen = true;
+                      }),
+                    )
+                  else
+                    const AppNotice(message: 'Recorded as cash: no balance changes.'),
+                  const SizedBox(height: AppSpacing.lg),
+                ],
+              ],
+              emiPlans: emiPlans,
+              emiPlanId: _emiPlanId,
+              onEmiPicked: _pickEmiPlan,
+              emiPendingLeft: cards.pendingLeftFor,
+              amount: _amount,
+              emiAlreadyCounted: _emiAlreadyCounted(emiPlans),
+              currency: settings.currency,
+              paidFor: <Widget>[
+                if (_paidForOffered && _claimRead != _ClaimRead.failed) ...<Widget>[
+                  if (_claimRead == _ClaimRead.reading)
+                    // Chip-shaped: a list skeleton cannot sit inside this list.
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Skeleton(
+                        height: 34,
+                        width: 190,
+                        radius: AppSpacing.radiusPill,
+                      ),
+                    )
+                  else
+                    PaidForField(
+                      value: _paidFor,
+                      onChanged: (bool value) => setState(() {
+                        _paidFor = value;
+                        _error = null;
+                      }),
+                      person: _paidForPerson,
+                      people: _people,
+                      submitted: _submitted,
+                      enabled: !_saving,
+                      progress: claim == null
+                          ? null
+                          : '${Formatters.currency(claim.received, currencyCode: settings.currency)} '
+                              'of ${Formatters.currency(claim.principal, currencyCode: settings.currency)} '
+                              'paid back · ${claim.status.label}',
+                    ),
+                  if (claim != null && _paidFor) ...<Widget>[
+                    const SizedBox(height: AppSpacing.md),
+                    PaidForCard(
+                      claim: claim,
+                      currency: settings.currency,
+                      today: AppDateUtils.today(),
+                      onRepay: _saving ? null : () => _repay(claim),
+                    ),
+                  ],
+                  if (claim != null && !_paidFor && claim.received > 0) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    AppNotice(
+                      message: '${Formatters.currency(claim.received, currencyCode: settings.currency)} '
+                          'already paid back stays as plain money in on its '
+                          'account, and this becomes your own spending again.',
+                    ),
                   ],
                 ],
-              ),
+              ],
+              isPersonal: SchemaCapabilities.personal ? _isPersonal : null,
+              onPersonal: (bool value) => setState(() => _isPersonal = value),
+              merchant: SchemaCapabilities.merchant ? _merchant : null,
+              description: _description,
+              tags: showTags ? _tags : null,
+              tagDraft: _tagDraft,
+              knownTags: _knownTags,
+              onTags: (List<String> next) => setState(() => _tags = next),
+              notes: _notes,
+              methods: payments.methods,
+              methodId: _methodId(payments.methods),
+              onMethod: (String? id) => setState(() {
+                _paymentMethodId = id;
+                _methodChosen = true;
+              }),
             ),
 
             if (!SchemaCapabilities.merchant &&
@@ -1146,64 +1024,6 @@ class _SaveBar extends StatelessWidget {
         busy: busy,
         busyLabel: 'Saving…',
         onPressed: busy ? null : onPressed,
-      ),
-    );
-  }
-}
-
-class _CategoryPicker extends StatelessWidget {
-  const _CategoryPicker({
-    required this.categories,
-    required this.selectedId,
-    required this.onSelected,
-    required this.enabled,
-    required this.hasError,
-  });
-
-  final List<ExpenseCategory> categories;
-  final String? selectedId;
-  final ValueChanged<String> onSelected;
-  final bool enabled;
-  final bool hasError;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-
-    if (categories.isEmpty) {
-      return const AppNotice(
-        message: 'No categories yet. Add one from Settings › Categories.',
-      );
-    }
-
-    return Container(
-      padding: hasError ? const EdgeInsets.all(AppSpacing.sm) : EdgeInsets.zero,
-      decoration: hasError
-          ? BoxDecoration(
-              borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-              border: Border.all(color: theme.colorScheme.error),
-            )
-          : null,
-      child: Wrap(
-        spacing: AppSpacing.sm,
-        runSpacing: AppSpacing.sm,
-        children: categories.map((ExpenseCategory category) {
-          return AppChoiceChip(
-            label: category.name,
-            selected: category.id == selectedId,
-            enabled: enabled,
-            tone: AppColors.readableOn(
-              AppColors.fromHex(category.color),
-              theme.brightness,
-            ),
-            avatar: CategoryAvatar(
-              icon: category.icon,
-              color: category.color,
-              size: 20,
-            ),
-            onSelected: () => onSelected(category.id),
-          );
-        }).toList(),
       ),
     );
   }

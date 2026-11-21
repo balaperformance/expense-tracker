@@ -887,7 +887,9 @@ class CardImportProvider extends AsyncProvider {
           merchant: op['merchant'] as String?,
           description: op['description'] as String?,
           notes: op['notes'] as String?,
-          emiPlanId: planId,
+          // A grouped instalment names its plan through the group; a plain
+          // purchase may be a month's payment of one picked in review.
+          emiPlanId: planId ?? op['emiPlanId'] as String?,
           emiComponent: emi?['component'] as String?,
           statementDate: statement == null ? null : AppDateUtils.parseDate(statement),
           isPersonal: isPersonalItem(op['itemId'] as String? ?? ''),

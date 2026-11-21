@@ -131,6 +131,9 @@ class ImportRow {
   /// statement's channel suggests is used.
   bool get hasPaymentMethodChoice => json.containsKey('paymentMethodId');
   String? get paymentMethodId => json['paymentMethodId'] as String?;
+
+  /// For an expense: the EMI it is a month's payment of, as chosen in review.
+  String? get emiPlanId => json['emiPlanId'] as String?;
   String? get channel => json['channel'] as String?;
 
   /// The payment method the statement's channel suggests — the engine's
@@ -1237,6 +1240,9 @@ class StatementImportProvider extends AsyncProvider {
             description: description,
             notes: op['notes'] as String?,
             isPersonal: isPersonal,
+            // The EMI it pays a month of (migration 016/020): a plain payment
+            // of the plan, not a card component.
+            emiPlanId: op['emiPlanId'] as String?,
           ),
           details: details,
         );

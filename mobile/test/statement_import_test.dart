@@ -944,6 +944,25 @@ void main() {
       expect(engine.argsOf('finalPlan').single['fresh'], isA<List<Object?>>());
     });
 
+    test('an expense picked as an EMI payment is written with its plan', () async {
+      final List<Object?> ops = <Object?>[
+        op('expense', itemId: 'r1', extra: <String, Object?>{'emiPlanId': 'plan-home'}),
+        op('expense', itemId: 'r2'),
+      ];
+      final FakeEngine engine = FakeEngine(<String,
+          Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        'plan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+        'finalPlan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+      });
+      SchemaCapabilities.debugOverride(emi: true);
+      final StatementImportProvider provider = await ready(engine);
+      await provider.execute((await provider.preview(paymentMethods: const []))!);
+      expect(expenses.created.map((Expense e) => e.emiPlanId), <String?>['plan-home', null]);
+      // A plain payment of the plan, not one of a card instalment's parts.
+      expect(expenses.created.first.emiComponent, isNull);
+    });
+
     test('writes each row into its own account, and tags and UPI details with it',
         () async {
       final Map<String, Object?> details = <String, Object?>{

@@ -352,8 +352,13 @@ class Harness {
   }
 }
 
-Future<void> scrollTo(WidgetTester tester, Finder finder, {double delta = 200}) =>
-    tester.scrollUntilVisible(finder, delta, scrollable: find.byType(Scrollable).first);
+/// Scrolls [finder] into view. The form's fields are built in one piece, so
+/// a chip can exist off-screen: it is also brought fully into view.
+Future<void> scrollTo(WidgetTester tester, Finder finder, {double delta = 200}) async {
+  await tester.scrollUntilVisible(finder, delta, scrollable: find.byType(Scrollable).first);
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+}
 
 bool chipSelected(WidgetTester tester, String label) =>
     tester.widget<AppChoiceChip>(find.widgetWithText(AppChoiceChip, label)).selected;

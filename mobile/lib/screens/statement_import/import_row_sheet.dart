@@ -3,13 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/validators.dart';
 import '../../models/bank_account.dart';
 import '../../models/credit_card.dart';
+import '../../models/emi_plan.dart';
 import '../../models/expense_category.dart';
 import '../../models/payment_method.dart';
 import '../../models/receivable.dart';
@@ -21,15 +21,14 @@ import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_import_provider.dart';
 import '../../services/schema_capabilities.dart';
-import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/expense_fields.dart';
 import '../../widgets/paid_for_field.dart';
-import '../../widgets/personal_field.dart';
 import '../../widgets/tag_field.dart';
 
 /// The other side of a transfer, as the review item stores it.
@@ -182,6 +181,9 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
   late String? _time = _hhmm(widget.row.transactionTime);
   late List<String> _tags = List<String>.of(widget.row.tags);
 
+  /// The EMI an expense is a month's payment of (migration 016/020).
+  late String? _emiPlanId = widget.row.emiPlanId;
+
   /// The user's tags, offered as suggestions and reused with their own
   /// spelling.
   List<Tag> _knownTags = const <Tag>[];
@@ -237,6 +239,56 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
 
   List<String> get _kinds => _debit ? _debitKinds : _creditKinds;
 
+  /// The statement's own account, shown as the shared fields show where an
+  /// expense was paid from — fixed here. A multi-account statement's row
+  /// chooses it at the top instead.
+  List<Widget> _fixedAccount(List<BankAccount> accounts, ImportRow row, String label) {
+    if (row.movable) return const <Widget>[];
+    BankAccount? account;
+    for (final BankAccount a in accounts) {
+      if (a.id == _bankAccountId) account = a;
+    }
+    if (account == null) return const <Widget>[];
+    return <Widget>[
+      FieldLabel(label, hint: 'From the statement'),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: AppChoiceChip(
+          label: account.displayLabel,
+          icon: Icons.account_balance_outlined,
+          selected: true,
+          onSelected: () {},
+        ),
+      ),
+      const SizedBox(height: AppSpacing.lg),
+    ];
+  }
+
+  /// Picks the EMI (or, tapped again, none). The statement's amount, date and
+  /// account stay; an empty category is filled from the plan (Groceries adds
+  /// its tags, as picking it does).
+  void _pickEmiPlan(EmiPlan plan) {
+    setState(() {
+      if (_emiPlanId == plan.id) {
+        _emiPlanId = null;
+        return;
+      }
+      _emiPlanId = plan.id;
+      if (_categoryId == null && plan.categoryId != null) {
+        final List<String>? withAuto = ExpenseFields.tagsAfterCategoryChange(
+          categories: context.read<CategoryProvider>().categories,
+          tags: _tags,
+          fromId: _categoryId,
+          toId: plan.categoryId,
+          known: _knownTags,
+        );
+        _categoryId = plan.categoryId;
+        if (withAuto != null && _taggable) _tags = withAuto;
+      }
+      if (_description.text.trim().isEmpty) _description.text = plan.title;
+    });
+  }
+
   bool get _taggable =>
       SchemaCapabilities.tags && (_kind == 'expense' || _kind == 'income');
 
@@ -248,7 +300,8 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         context.watch<StatementImportProvider>();
     final List<ExpenseCategory> categories =
         context.watch<CategoryProvider>().categories;
-    final List<CreditCard> cards = context.watch<CreditCardProvider>().cards;
+    final CreditCardProvider cardProvider = context.watch<CreditCardProvider>();
+    final List<CreditCard> cards = cardProvider.cards;
     final List<PaymentMethod> methods =
         context.watch<PaymentMethodProvider?>()?.methods ?? const <PaymentMethod>[];
     final List<ClaimSummary> claims = SchemaCapabilities.treatments
@@ -446,91 +499,65 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         ],
         if (_kind == 'expense') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          FieldLabel('Category', isRequired: true, hint: issue?.field == 'category' ? 'Needed' : null),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: categories
-                .map((ExpenseCategory c) => AppChoiceChip(
-                      label: c.name,
-                      selected: c.id == _categoryId,
-                      tone: AppColors.readableOn(
-                        AppColors.fromHex(c.color),
-                        theme.brightness,
-                      ),
-                      avatar: CategoryAvatar(icon: c.icon, color: c.color, size: 20),
-                      onSelected: () => setState(() => _categoryId = c.id),
-                    ))
-                .toList(),
+          // The same fields as Add Expense; the account, amount and date are
+          // the statement's, above.
+          ExpenseFields(
+            categories: categories,
+            categoryId: _categoryId,
+            categoryHint: issue?.field == 'category' ? 'Needed' : null,
+            onCategory: (String? id) => setState(() => _categoryId = id),
+            funding: _fixedAccount(accounts, row, 'Paid from'),
+            emiPlans: SchemaCapabilities.emi && !_reimbursable
+                ? cardProvider.plansForExpense(keepId: row.emiPlanId)
+                : const <EmiPlan>[],
+            emiPlanId: _emiPlanId,
+            onEmiPicked: _pickEmiPlan,
+            emiPendingLeft: cardProvider.pendingLeftFor,
+            amount: _amount,
+            currency: settings.currency,
+            paidFor: <Widget>[
+              if (SchemaCapabilities.treatments)
+                PaidForField(
+                  value: _reimbursable,
+                  onChanged: (bool value) => setState(() {
+                    _reimbursable = value;
+                    _error = null;
+                    // A name to start from: the payee the bank printed.
+                    if (value && _person.text.trim().isEmpty) _person.text = _payee.text.trim();
+                  }),
+                  person: _person,
+                  people: knownPeople(claims),
+                  submitted: _submitted,
+                ),
+            ],
+            isPersonal: SchemaCapabilities.personal ? _isPersonal : null,
+            onPersonal: (bool value) => setState(() => _isPersonal = value),
+            tags: _taggable ? _tags : null,
+            tagDraft: _tagDraft,
+            knownTags: _knownTags,
+            onTags: (List<String> next) => setState(() => _tags = next),
+            notes: row.hasNotes ? _notes : null,
+            methods: methods,
+            methodId: _paymentMethodId,
+            onMethod: (String? id) => setState(() => _paymentMethodId = id),
+            methodHint: hintFor('paymentMethod'),
           ),
-          if (methods.isNotEmpty) ...<Widget>[
-            const SizedBox(height: AppSpacing.lg),
-            FieldLabel('Payment method', hint: hintFor('paymentMethod')),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: methods
-                  .map((PaymentMethod m) => AppChoiceChip(
-                        label: m.name,
-                        selected: m.id == _paymentMethodId,
-                        onSelected: () => setState(() => _paymentMethodId =
-                            _paymentMethodId == m.id ? null : m.id),
-                      ))
-                  .toList(),
-            ),
-          ],
-          if (SchemaCapabilities.treatments) ...<Widget>[
-            const SizedBox(height: AppSpacing.lg),
-            PaidForField(
-              value: _reimbursable,
-              onChanged: (bool value) => setState(() {
-                _reimbursable = value;
-                _error = null;
-                // A name to start from: the payee the bank printed.
-                if (value && _person.text.trim().isEmpty) _person.text = _payee.text.trim();
-              }),
-              person: _person,
-              people: knownPeople(claims),
-              submitted: _submitted,
-            ),
-          ],
         ],
         if (_kind == 'income') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          FieldLabel('Source', hint: hintFor('source')),
-          TextField(
-            controller: _source,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(hintText: 'Salary, Interest…'),
-          ),
-        ],
-        if (SchemaCapabilities.personal &&
-            (_kind == 'expense' || _kind == 'income')) ...<Widget>[
-          const SizedBox(height: AppSpacing.lg),
-          PersonalField(
-            value: _isPersonal,
-            onChanged: (bool value) => setState(() => _isPersonal = value),
-          ),
-        ],
-        if (row.hasNotes && (_kind == 'expense' || _kind == 'income')) ...<Widget>[
-          const SizedBox(height: AppSpacing.lg),
-          const FieldLabel('Notes', hint: 'Optional'),
-          TextField(
-            controller: _notes,
-            minLines: 1,
-            maxLines: 4,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(hintText: 'Notes'),
-          ),
-        ],
-        if (_taggable) ...<Widget>[
-          const SizedBox(height: AppSpacing.lg),
-          const FieldLabel('Tags', hint: 'Optional'),
-          TagField(
-            tags: _tags,
-            draft: _tagDraft,
-            known: _knownTags,
-            onChanged: (List<String> next) => setState(() => _tags = next),
+          // The same fields as Add Income.
+          IncomeFields(
+            source: _source,
+            sourceHint: hintFor('source'),
+            sourcePlaceholder: 'Salary, Interest…',
+            funding: _fixedAccount(accounts, row, 'Received in'),
+            isPersonal: SchemaCapabilities.personal ? _isPersonal : null,
+            onPersonal: (bool value) => setState(() => _isPersonal = value),
+            tags: _taggable ? _tags : null,
+            tagDraft: _tagDraft,
+            knownTags: _knownTags,
+            onTags: (List<String> next) => setState(() => _tags = next),
+            notes: row.hasNotes ? _notes : null,
           ),
         ],
         const SizedBox(height: AppSpacing.lg),
@@ -879,6 +906,8 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
           _SettleChoice.keyOf(_settles) != _SettleChoice.keyOf(row.settles))
         'settles': _settles,
       if (personal != row.isPersonal) 'isPersonal': personal,
+      if (_kind == 'expense' && (paidFor ? null : _emiPlanId) != row.emiPlanId)
+        'emiPlanId': paidFor ? null : _emiPlanId,
       if (_kind == 'expense' && _paymentMethodId != _suggestedMethod)
         'paymentMethodId': _paymentMethodId,
     };

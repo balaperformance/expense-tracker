@@ -15,18 +15,17 @@ import '../../models/tag.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/card_import_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/credit_card_provider.dart';
 import '../../providers/receivable_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/schema_capabilities.dart';
-import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_sheet.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/surface_card.dart';
+import '../../widgets/expense_fields.dart';
 import '../../widgets/paid_for_field.dart';
-import '../../widgets/payment_method_chips.dart';
-import '../../widgets/personal_field.dart';
 import '../../widgets/tag_field.dart';
 import 'emi_plan_sheet.dart';
 
@@ -81,6 +80,10 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
   late String? _paymentMethodId = _initialMethodId;
   late bool _paidFor = _initialPerson.isNotEmpty;
   late final TextEditingController _paidForPerson = TextEditingController(text: _initialPerson);
+
+  /// For a purchase: the EMI it is a month's payment of.
+  late final String? _initialEmiPlanId = _item['emiPlanId'] as String?;
+  late String? _emiPlanId = _initialEmiPlanId;
   List<LedgerEntry>? _candidates;
   bool _submitted = false;
 
@@ -131,6 +134,31 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
   String get _effectiveKind => _kinds.contains(_kind) ? _kind : _kinds.first;
   bool get _needsCategory => _effectiveKind == 'purchase' || _effectiveKind == 'emiPrincipal';
 
+  /// Picks the EMI (or, tapped again, none). The statement's amount, date and
+  /// card stay; an empty category is filled from the plan (Groceries adds its
+  /// tags, as picking it does).
+  void _pickEmiPlan(EmiPlan plan) {
+    setState(() {
+      if (_emiPlanId == plan.id) {
+        _emiPlanId = null;
+        return;
+      }
+      _emiPlanId = plan.id;
+      if (_categoryId == null && plan.categoryId != null) {
+        final List<String>? withAuto = ExpenseFields.tagsAfterCategoryChange(
+          categories: context.read<CategoryProvider>().categories,
+          tags: _tags,
+          fromId: _categoryId,
+          toId: plan.categoryId,
+          known: _knownTags,
+        );
+        _categoryId = plan.categoryId;
+        if (withAuto != null && SchemaCapabilities.tags) _tags = withAuto;
+      }
+      if (_title.text.trim().isEmpty) _title.text = plan.title;
+    });
+  }
+
   /// Only a plain purchase can be paid for someone else.
   bool get _paidForShown => _effectiveKind == 'purchase' && SchemaCapabilities.treatments;
   double? get _value => Validators.parseAmount(_amount.text);
@@ -165,6 +193,7 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
       if (_notes.text.trim() != _initialNotes) edit['notes'] = _notes.text.trim();
       if (_paymentMethodId != _initialMethodId) edit['paymentMethodId'] = _paymentMethodId;
       if (_paidForShown && person != _initialPerson) edit['paidForPerson'] = person;
+      if (_effectiveKind == 'purchase' && _emiPlanId != _initialEmiPlanId) edit['emiPlanId'] = _emiPlanId;
     }
     final NavigatorState navigator = Navigator.of(context);
     // Only a purchase can be someone else's money.
@@ -197,6 +226,7 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
     final String? groupId = item['groupId'] as String?;
     final Map<String, Object?>? link = item['paymentLink'] as Map<String, Object?>?;
     final BankAccountProvider accounts = context.read<BankAccountProvider>();
+    final CreditCardProvider? cardProvider = context.watch<CreditCardProvider?>();
 
     return AppSheet(
       title: 'Statement row',
@@ -290,81 +320,52 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
         DateField(date: _date, onChanged: (DateTime v) => setState(() => _date = v)),
         if (_needsCategory) ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          FieldLabel('Category', isRequired: true, hint: categoryError),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: categories
-                .map((ExpenseCategory c) => AppChoiceChip(
-                      label: c.name,
-                      selected: c.id == _categoryId,
-                      avatar: CategoryAvatar(icon: c.icon, color: c.color, size: 22),
-                      onSelected: () => setState(() => _categoryId = c.id == _categoryId ? null : c.id),
-                    ))
-                .toList(),
-          ),
-          if (SchemaCapabilities.personal && _effectiveKind == 'purchase') ...<Widget>[
-            const SizedBox(height: AppSpacing.lg),
-            PersonalField(
-              value: _isPersonal,
-              onChanged: (bool value) => setState(() => _isPersonal = value),
-            ),
-          ],
-          if (_effectiveKind == 'emiPrincipal') ...<Widget>[
-            const SizedBox(height: AppSpacing.xs),
-            Text('Used only if the instalment is not part of a plan with its own category.',
-                style: theme.textTheme.labelSmall),
-          ],
-          if (_paidForShown) ...<Widget>[
-            const SizedBox(height: AppSpacing.lg),
-            PaidForField(
-              value: _paidFor,
-              onChanged: (bool value) => setState(() => _paidFor = value),
-              person: _paidForPerson,
-              people: context.read<ReceivableProvider?>()?.people ?? const <String>[],
-              submitted: _submitted,
-            ),
-          ],
-          const SizedBox(height: AppSpacing.lg),
-          const FieldLabel('Details', hint: 'Optional'),
-          SurfaceCard(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              children: <Widget>[
-                if (SchemaCapabilities.tags) ...<Widget>[
-                  TagField(
-                    tags: _tags,
-                    draft: _tagDraft,
-                    known: _knownTags,
-                    onChanged: (List<String> next) => setState(() => _tags = next),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                ],
-                TextField(
-                  controller: _notes,
-                  maxLines: 2,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    hintText: 'Notes',
-                    alignLabelWithHint: true,
-                    prefixIcon: Icon(Icons.notes_rounded, size: AppSpacing.iconMd),
-                  ),
-                ),
-                if (provider.paymentMethods.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: AppSpacing.md),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Payment method', style: theme.textTheme.labelMedium),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  PaymentMethodChips(
-                    methods: provider.paymentMethods,
-                    selectedId: _paymentMethodId,
-                    onSelected: (String? id) => setState(() => _paymentMethodId = id),
-                  ),
-                ],
+          // The same fields as Add Expense; the card, amount and date are the
+          // statement's, above.
+          ExpenseFields(
+            categories: categories,
+            categoryId: _categoryId,
+            categoryHint: categoryError,
+            categoryError: categoryError != null,
+            categoryDeselect: true,
+            onCategory: (String? id) => setState(() => _categoryId = id),
+            afterCategory: <Widget>[
+              if (_effectiveKind == 'emiPrincipal') ...<Widget>[
+                Text('Used only if the instalment is not part of a plan with its own category.',
+                    style: theme.textTheme.labelSmall),
+                const SizedBox(height: AppSpacing.lg),
               ],
-            ),
+            ],
+            // EMI principal belongs to its instalment (grouped below); a plain
+            // purchase can be a month's payment of an EMI.
+            emiPlans: SchemaCapabilities.emi && _effectiveKind == 'purchase'
+                ? cardProvider?.plansForExpense(keepId: _initialEmiPlanId) ?? const <EmiPlan>[]
+                : const <EmiPlan>[],
+            emiPlanId: _emiPlanId,
+            onEmiPicked: _pickEmiPlan,
+            emiPendingLeft: cardProvider?.pendingLeftFor,
+            amount: _amount,
+            currency: settings.currency,
+            paidFor: <Widget>[
+              if (_paidForShown)
+                PaidForField(
+                  value: _paidFor,
+                  onChanged: (bool value) => setState(() => _paidFor = value),
+                  person: _paidForPerson,
+                  people: context.read<ReceivableProvider?>()?.people ?? const <String>[],
+                  submitted: _submitted,
+                ),
+            ],
+            isPersonal: SchemaCapabilities.personal && _effectiveKind == 'purchase' ? _isPersonal : null,
+            onPersonal: (bool value) => setState(() => _isPersonal = value),
+            tags: SchemaCapabilities.tags ? _tags : null,
+            tagDraft: _tagDraft,
+            knownTags: _knownTags,
+            onTags: (List<String> next) => setState(() => _tags = next),
+            notes: _notes,
+            methods: provider.paymentMethods,
+            methodId: _paymentMethodId,
+            onMethod: (String? id) => setState(() => _paymentMethodId = id),
           ),
         ],
         if (_effectiveKind == 'payment' && _direction == 'credit') ...<Widget>[
@@ -403,7 +404,9 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
         ],
         if (_effectiveKind.startsWith('emi')) ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          const FieldLabel('Instalment', hint: "One month's EMI, shown as one transaction"),
+          // The explanation sits under the chips: beside the label it does not
+          // fit a 360 dp phone.
+          const FieldLabel('Instalment'),
           Wrap(
             spacing: AppSpacing.sm,
             runSpacing: AppSpacing.sm,
@@ -427,6 +430,8 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.xs),
+          Text("One month's EMI, shown as one transaction.", style: theme.textTheme.labelSmall),
         ],
         if (item['detail'] != null) ...<Widget>[
           const SizedBox(height: AppSpacing.md),

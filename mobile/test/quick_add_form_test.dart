@@ -230,9 +230,14 @@ Future<FakeHistory> pumpForm(WidgetTester tester, Widget screen) async {
 bool chipSelected(WidgetTester tester, String label) =>
     tester.widget<AppChoiceChip>(find.widgetWithText(AppChoiceChip, label)).selected;
 
-Future<void> scrollTo(WidgetTester tester, Finder finder) =>
-    tester.scrollUntilVisible(finder, 200,
-        scrollable: find.byType(Scrollable).first);
+/// Scrolls [finder] into view. The form's fields are built in one piece, so
+/// a chip can exist off-screen: it is also brought fully into view.
+Future<void> scrollTo(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(finder, 200,
+      scrollable: find.byType(Scrollable).first);
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+}
 
 void main() {
   setUp(() => SchemaCapabilities.debugOverride(
