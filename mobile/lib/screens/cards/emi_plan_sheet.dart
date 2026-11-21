@@ -127,24 +127,29 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
     super.dispose();
   }
 
-  double? _amount(TextEditingController c) => Validators.parseAmount(c.text);
+  double? _amount(TextEditingController c) {
+    final String text = c.text.trim();
+    if (text.isEmpty) return null;
+    return double.tryParse(text);
+  }
 
-  /// Blank is fine (every amount is optional); otherwise a number within what
-  /// the app records, above zero unless [allowZero].
-  String? _amountError(TextEditingController c, String label,
-      {bool allowZero = false}) {
-    if (c.text.trim().isEmpty) return null;
-    final double? value = _amount(c);
-    if (value == null || value < 0 || (value == 0 && !allowZero)) {
-      return 'Enter a valid $label';
-    }
-    if (value > Validators.maxAmount) return 'Amount is too large';
+  String? _amountError(TextEditingController c, String label) {
+    final String text = c.text.trim();
+    if (text.isEmpty) return null;
+    final double? value = double.tryParse(text);
+    if (value == null || value <= 0) return 'Enter a valid $label';
+    if (value > 999999999) return 'Amount is too large';
     return null;
   }
 
-  /// A pending amount of zero is a real answer: nothing left to pay.
-  String? get _pendingError =>
-      _amountError(_pending, 'pending amount', allowZero: true);
+  String? get _pendingError {
+    final String text = _pending.text.trim();
+    if (text.isEmpty) return null;
+    final double? value = double.tryParse(text);
+    if (value == null || value < 0) return 'Enter a valid pending amount';
+    if (value > 999999999) return 'Amount is too large';
+    return null;
+  }
 
   int? get _tenureValue =>
       _tenure.text.trim().isEmpty ? null : int.tryParse(_tenure.text.trim());
@@ -174,10 +179,9 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
         categoryId: _categoryId,
         notes: _notes.text,
         isClosed: _closed,
-        // Both are written only once migration 020 exists (the repository
-        // strips them before), and start from the plan's own values.
-        bankAccountId: _accountId,
-        pendingAmount: _amount(_pending),
+        bankAccountId: _showBank ? _accountId : widget.plan?.bankAccountId,
+        pendingAmount:
+            _showBank ? _amount(_pending) : widget.plan?.pendingAmount,
         createdAt: widget.plan?.createdAt,
       );
 
