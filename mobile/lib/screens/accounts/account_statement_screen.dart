@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/formatters.dart';
+import '../../models/balance_adjustment.dart';
 import '../../models/bank_account.dart';
 import '../../models/card_statement.dart';
 import '../../models/credit_card.dart';
 import '../../models/ledger_entry.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/balance_adjustment_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/budget_provider.dart';
 import '../../providers/credit_card_provider.dart';
@@ -33,6 +35,7 @@ import '../cards/card_statement_screen.dart';
 import '../export/export_screen.dart';
 import '../statement_import/import_statement_screen.dart';
 import 'account_emis.dart';
+import 'balance_adjustment_sheets.dart';
 import 'deposit_sheet.dart';
 import 'edit_movement_sheet.dart';
 import 'transfer_sheet.dart';
@@ -68,6 +71,14 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
     // "mark as card payment" action.
     if (SchemaCapabilities.creditCards) {
       context.read<CreditCardProvider>().load(userId: userId);
+    }
+    // The balance the Adjust balance action compares against, and the
+    // account's adjustments (migration 021).
+    if (SchemaCapabilities.balanceAdjustments) {
+      context.read<BankAccountProvider>().load(userId: userId);
+      context
+          .read<BalanceAdjustmentProvider>()
+          .load(userId: userId, accountId: widget.account.id);
     }
     await context
         .read<StatementProvider>()
@@ -205,6 +216,11 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
         ),
         children: <Widget>[
           _SummaryCard(statement: statement, currency: currency),
+          // Correct the balance to the bank's figure, and what was corrected.
+          if (SchemaCapabilities.balanceAdjustments) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            AccountBalanceAdjustments(account: widget.account),
+          ],
           // EMIs paid from this account, with what is pending on each.
           if (SchemaCapabilities.emiBank && !widget.account.isCash) ...<Widget>[
             const SizedBox(height: AppSpacing.md),
@@ -248,11 +264,17 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
                               .read<BankAccountProvider>()
                               .byId(row.entry.counterpartyAccountId)
                               ?.nickname,
-                      // Changing how a movement is recorded needs 005.
-                      onTap: SchemaCapabilities.treatments
-                          ? () => _openEditor(row)
-                          : null,
-                      onLongPress: () => _onLongPress(row),
+                      // An adjustment's row opens the adjustment: only the
+                      // database writes it. Changing how any other movement
+                      // is recorded needs 005.
+                      onTap: row.entry.isBalanceAdjustment
+                          ? () => _openAdjustment(row.entry)
+                          : SchemaCapabilities.treatments
+                              ? () => _openEditor(row)
+                              : null,
+                      onLongPress: row.entry.isBalanceAdjustment
+                          ? () => _openAdjustment(row.entry)
+                          : () => _onLongPress(row),
                     ),
                 ],
               ),
@@ -334,6 +356,30 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
     ));
     if (!mounted) return;
     await context.read<StatementProvider>().load(force: true);
+  }
+
+  /// The adjustment behind a ledger row, re-read when it is not loaded yet.
+  Future<void> _openAdjustment(LedgerEntry entry) async {
+    final BalanceAdjustmentProvider adjustments =
+        context.read<BalanceAdjustmentProvider>();
+    if (adjustments.byId(entry.balanceAdjustmentId) == null) {
+      final String? userId = context.read<AuthProvider>().userId;
+      if (userId != null) {
+        await adjustments.load(
+            userId: userId, accountId: widget.account.id, force: true);
+      }
+      if (!mounted) return;
+    }
+    final BalanceAdjustment? adjustment =
+        adjustments.byId(entry.balanceAdjustmentId);
+    if (adjustment == null) {
+      AppFeedback.info(
+        context,
+        "This is a balance adjustment. It changes with the account's balance adjustments.",
+      );
+      return;
+    }
+    await openBalanceAdjustment(context, widget.account, adjustment);
   }
 
   String _cardName(String? cardId) =>
@@ -811,7 +857,8 @@ class _StatementRowTile extends StatelessWidget {
     final bool titleNamesCounterparty = other != null &&
         entry.title.toLowerCase().contains(other.toLowerCase());
 
-    final bool linkedRow = entry.isTransfer || entry.isCardPayment;
+    final bool linkedRow =
+        entry.isTransfer || entry.isCardPayment || entry.isBalanceAdjustment;
     // Money paid back is not income: the same neutral tone.
     final bool neutral = linkedRow || entry.isRepayment;
     return TransactionRow(
@@ -843,6 +890,7 @@ class _StatementRowTile extends StatelessWidget {
   }
 
   Widget _leading(LedgerEntry entry) {
+    if (entry.isBalanceAdjustment) return const AdjustmentAvatar();
     if (entry.isTransfer) return const TransferAvatar();
     if (entry.isCardPayment) return const CardAvatar();
     if (entry.category != null) {

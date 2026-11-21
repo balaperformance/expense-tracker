@@ -53,6 +53,7 @@ class SchemaCapabilities {
   static bool _personal = false;
   static bool _emiBank = false;
   static bool _tagDelete = false;
+  static bool _balanceAdjustments = false;
 
   static bool get resolved => _resolved;
 
@@ -137,6 +138,11 @@ class SchemaCapabilities {
   /// deleted, its transactions moving to "Others". Builds on 006.
   static bool get tagDelete => _tagDelete;
 
+  /// `balance_adjustments` and `account_transactions.balance_adjustment_id`
+  /// (migration 021): an account's balance can be corrected to the bank's
+  /// figure, which then counts as its reference balance from that date on.
+  static bool get balanceAdjustments => _balanceAdjustments;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -164,6 +170,7 @@ class SchemaCapabilities {
       if (!_emi) 'card statement import and EMI plans (016)',
       if (!_personal) 'personal and non-personal entries (019)',
       if (!_emiBank || !_tagDelete) 'bank account EMIs and deleting hashtags (020)',
+      if (!_balanceAdjustments) 'balance adjustments (021)',
     ];
     return missing.join(', ');
   }
@@ -232,6 +239,11 @@ class SchemaCapabilities {
                   'bank_account_id, pending_amount, pending_set_at'),
               _probeFunction(client, 'tag_usage'),
               _probeFunction(client, 'emi_plan_balances'),
+              // 30–31: balance adjustments (021).
+              _probe(client, 'balance_adjustments',
+                  'id, account_id, adjusted_on, adjusted_at, target_balance, '
+                      'previous_balance, remarks'),
+              _probe(client, 'account_transactions', 'balance_adjustment_id'),
             ]));
 
     _merchant = results[0];
@@ -256,6 +268,8 @@ class SchemaCapabilities {
     // One migration adds the columns and both functions.
     _emiBank = _emi && results[27] && results[29];
     _tagDelete = _tags && results[28];
+    // One migration adds the table and the ledger column.
+    _balanceAdjustments = _bankAccounts && results[30] && results[31];
     _resolved = true;
   }
 
@@ -322,6 +336,7 @@ class SchemaCapabilities {
     bool? personal,
     bool? emiBank,
     bool? tagDelete,
+    bool? balanceAdjustments,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -341,6 +356,7 @@ class SchemaCapabilities {
     _personal = personal ?? _personal;
     _emiBank = emiBank ?? _emiBank;
     _tagDelete = tagDelete ?? _tagDelete;
+    _balanceAdjustments = balanceAdjustments ?? _balanceAdjustments;
     _resolved = true;
   }
 
@@ -364,5 +380,6 @@ class SchemaCapabilities {
     _personal = false;
     _emiBank = false;
     _tagDelete = false;
+    _balanceAdjustments = false;
   }
 }

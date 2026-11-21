@@ -675,6 +675,8 @@ bool isLinkableDebit(LedgerEntry entry, {Set<String> lentIds = const <String>{}}
     entry.incomeId == null &&
     entry.transferGroupId == null &&
     entry.creditCardId == null &&
+    // A balance adjustment's row belongs to the database (migration 021).
+    !entry.isBalanceAdjustment &&
     !lentIds.contains(entry.id);
 
 const int paymentMatchDays = 3;

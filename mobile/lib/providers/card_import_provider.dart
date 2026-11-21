@@ -543,8 +543,10 @@ class CardImportProvider extends AsyncProvider {
       'entries': (results[0] as List<CardEntry>).map(EngineJson.cardEntry).toList(),
       'recorded': (results[1] as List<Expense>).map(EngineJson.recordedExpense).toList(),
       'plans': plans.map((EmiPlan p) => p.toEngineMap()).toList(),
+      // A balance adjustment is never a bill payment.
       'debits': (results[3] as List<List<LedgerEntry>>)
           .expand((List<LedgerEntry> l) => l)
+          .withoutAdjustments()
           .map((LedgerEntry e) => EngineJson.ledgerEntry(e))
           .toList(),
     };

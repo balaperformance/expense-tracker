@@ -198,6 +198,8 @@ class EngineJson {
         'direction': e.direction.wire,
         'description': e.description,
         'creditCardId': e.creditCardId,
+        if (e.balanceAdjustmentId != null)
+          'balanceAdjustmentId': e.balanceAdjustmentId,
         if (e.reference != null) 'reference': e.reference,
         if (e.upiId != null) 'upiId': e.upiId,
         // The expense or income it belongs to: an entry the ledger check has
@@ -262,6 +264,8 @@ class EngineJson {
         'counterpartyAccountId': e.counterpartyAccountId,
         'creditCardId': e.creditCardId,
         'receivableId': e.receivableId,
+        if (e.balanceAdjustmentId != null)
+          'balanceAdjustmentId': e.balanceAdjustmentId,
         'claim': claim ??
             (lent
                 ? const <String, Object?>{

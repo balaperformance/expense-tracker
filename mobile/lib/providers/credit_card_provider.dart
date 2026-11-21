@@ -473,7 +473,7 @@ class CreditCardProvider extends AsyncProvider {
       ]);
       final Set<String> lent = read[1] as Set<String>;
       return (read[0] as List<LedgerEntry>)
-          .where((LedgerEntry e) => !lent.contains(e.id))
+          .where((LedgerEntry e) => !lent.contains(e.id) && !e.isBalanceAdjustment)
           .toList();
     } catch (_) {
       return null;

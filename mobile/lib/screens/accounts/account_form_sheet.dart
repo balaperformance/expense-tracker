@@ -4,9 +4,13 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_spacing.dart';
 import '../../core/utils/validators.dart';
+import '../../models/balance_adjustment.dart';
 import '../../models/bank_account.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/balance_adjustment_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/app_buttons.dart';
@@ -49,7 +53,33 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
 
   bool get _isEditing => widget.account != null;
 
+  /// The account's latest balance adjustment, when it has any loaded.
+  BalanceAdjustment? _latestAdjustment(BuildContext context) {
+    final BankAccount? account = widget.account;
+    if (account == null) return null;
+    return context.watch<BalanceAdjustmentProvider?>()?.latestFor(account.id);
+  }
+
   bool get _isCash => widget.account?.isCash ?? widget.cash;
+
+  @override
+  void initState() {
+    super.initState();
+    // Whether the balance was adjusted decides what the opening balance hint
+    // says (migration 021).
+    final BankAccount? account = widget.account;
+    if (account != null && SchemaCapabilities.balanceAdjustments) {
+      final String? userId = context.read<AuthProvider?>()?.userId;
+      final BalanceAdjustmentProvider? adjustments =
+          context.read<BalanceAdjustmentProvider?>();
+      if (userId != null && adjustments != null) {
+        // After the first frame: loading notifies listeners.
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => adjustments.load(userId: userId, accountId: account.id),
+        );
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -169,6 +199,18 @@ class _AccountFormSheetState extends State<AccountFormSheet> {
               helperMaxLines: 2,
             ),
           ),
+
+          // With an adjustment the balance from its date on is the one the
+          // user set (migration 021): the opening balance no longer moves it.
+          if (_latestAdjustment(context) case final BalanceAdjustment latest)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.sm),
+              child: Text(
+                'Balance adjusted on ${Formatters.dayMonthYear(latest.adjustedOn)}: '
+                'changing this only affects balances before that date.',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ),
 
           if (_error != null) ...<Widget>[
             const SizedBox(height: AppSpacing.lg),

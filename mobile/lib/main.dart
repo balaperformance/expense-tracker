@@ -20,6 +20,7 @@ import 'providers/expense_provider.dart';
 import 'providers/export_provider.dart';
 import 'providers/income_provider.dart';
 import 'providers/tag_provider.dart';
+import 'providers/balance_adjustment_provider.dart';
 import 'providers/insights_provider.dart';
 import 'providers/notification_inbox_provider.dart';
 import 'providers/notification_provider.dart';
@@ -46,6 +47,7 @@ import 'repositories/profile_repository.dart';
 import 'repositories/receivable_repository.dart';
 import 'repositories/reconciliation_repository.dart';
 import 'repositories/tag_repository.dart';
+import 'repositories/balance_adjustment_repository.dart';
 import 'screens/auth/auth_gate.dart';
 import 'services/ai/ai_chat_service.dart';
 import 'services/preferences_service.dart';
@@ -133,6 +135,9 @@ class ExpenseTrackerApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<TagProvider>(
           create: (_) => TagProvider(TagRepository(client)),
+        ),
+        ChangeNotifierProvider<BalanceAdjustmentProvider>(
+          create: (_) => BalanceAdjustmentProvider(BalanceAdjustmentRepository(client)),
         ),
         ChangeNotifierProvider<IncomeProvider>(
           create: (_) => IncomeProvider(

@@ -264,12 +264,14 @@ class StatementProvider extends AsyncProvider {
     required DateTime date,
     required List<ClaimSummary> claims,
   }) async {
-    final List<LedgerEntry> rows = await _ledger.fetchForAccount(
+    // A balance adjustment is never the other leg of a transfer.
+    final List<LedgerEntry> rows = (await _ledger.fetchForAccount(
       userId: _requireUser,
       accountId: accountId,
       from: DateTime(date.year, date.month, date.day - transferMatchDays),
       toExclusive: DateTime(date.year, date.month, date.day + transferMatchDays + 1),
-    );
+    ))
+        .withoutAdjustments();
     if (rows.isEmpty) return const <LedgerEntry>[];
     // A claim's own rows — money lent, a purchase paid for someone — are
     // never the other leg; the engine knows them by their claim.

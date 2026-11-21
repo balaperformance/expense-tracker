@@ -799,9 +799,10 @@ class StatementImportProvider extends AsyncProvider {
             ),
           ),
     );
+    // A balance adjustment is never a bank line, so never a duplicate of one.
     return <Map<String, Object?>>[
       for (final List<LedgerEntry> entries in lists)
-        ...entries.map(EngineJson.existing),
+        ...entries.withoutAdjustments().map(EngineJson.existing),
     ];
   }
 
@@ -1190,7 +1191,8 @@ class StatementImportProvider extends AsyncProvider {
     final List<List<LedgerEntry>> perWindow = read[1] as List<List<LedgerEntry>>;
     final List<Map<String, Object?>> entries = <Map<String, Object?>>[
       for (final List<LedgerEntry> rows in perWindow)
-        ...rows.map((LedgerEntry e) => EngineJson.ledgerEntry(e, lent: lent.contains(e.id))),
+        ...rows.withoutAdjustments().map(
+            (LedgerEntry e) => EngineJson.ledgerEntry(e, lent: lent.contains(e.id))),
     ];
     final Object? found = await _engine.call('autoMatches', <String, Object?>{
       'operations': operations,

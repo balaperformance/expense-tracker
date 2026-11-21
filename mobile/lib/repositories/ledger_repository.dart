@@ -38,6 +38,7 @@ class LedgerRepository {
       '${SchemaCapabilities.creditCards ? 'credit_card_id, ' : ''}'
       '${SchemaCapabilities.treatments ? 'receivable_id, ' : ''}'
       '${SchemaCapabilities.statementDetails ? 'reference, upi_id, txn_time, ' : ''}'
+      '${SchemaCapabilities.balanceAdjustments ? 'balance_adjustment_id, ' : ''}'
       'created_at, categories(*)';
 
   /// What a statement printed about a movement, as columns — nothing at all

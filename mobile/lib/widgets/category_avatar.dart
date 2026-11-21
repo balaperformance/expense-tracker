@@ -84,6 +84,23 @@ class TransferAvatar extends StatelessWidget {
 }
 
 /// Avatar for a manual bank movement that is not an expense or income.
+/// The row behind a balance adjustment (migration 021): neither income nor
+/// spending, so the neutral transfer tone with a "verified" glyph.
+class AdjustmentAvatar extends StatelessWidget {
+  const AdjustmentAvatar({super.key, this.size = AppSpacing.avatar});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ToneAvatar(
+      size: size,
+      tone: ToneColors.transfer(context),
+      icon: Icons.verified_outlined,
+    );
+  }
+}
+
 class LedgerAvatar extends StatelessWidget {
   const LedgerAvatar({super.key, required this.isCredit, this.size = AppSpacing.avatar});
 

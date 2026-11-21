@@ -22,6 +22,11 @@ const String cardPaymentLabel = 'Card bill payment';
 /// Money paid back for something paid for someone — never income.
 const String repaymentLabel = 'Repayment';
 
+/// The row behind a balance adjustment (migration 021): the difference
+/// between the app's balance and the bank's, written by the database. Like a
+/// transfer it is neither income nor spending.
+const String balanceAdjustmentLabel = 'Balance adjustment';
+
 /// What a statement printed about a movement beyond its figures — its
 /// reference (a UPI reference number), the other side's UPI ID and the time
 /// of day — kept on the movement's own ledger row (migration 007), the same
@@ -98,6 +103,7 @@ class LedgerEntry {
     this.counterpartyAccountId,
     this.creditCardId,
     this.receivableId,
+    this.balanceAdjustmentId,
     this.reference,
     this.upiId,
     this.txnTime,
@@ -145,6 +151,11 @@ class LedgerEntry {
   /// for a plain movement, e.g. as the other leg of an imported transfer.
   final String? receivableId;
 
+  /// Set on the one row that backs a balance adjustment (migration 021). The
+  /// database keeps its amount equal to the difference the adjustment needs;
+  /// the app never edits, treats or deletes it — only the adjustment itself.
+  final String? balanceAdjustmentId;
+
   /// What an imported statement printed about this movement (migration 007):
   /// its reference, the other side's UPI ID and the time of day ("HH:mm:ss").
   final String? reference;
@@ -163,6 +174,18 @@ class LedgerEntry {
   /// True for a bank debit that paid a credit-card bill.
   bool get isCardPayment => creditCardId != null;
 
+  /// True for the row behind a balance adjustment.
+  bool get isBalanceAdjustment => balanceAdjustmentId != null;
+
+  /// The adjustment's remarks, which the database appends to the row's
+  /// description ("Balance adjustment · Matched with the bank app").
+  String? get adjustmentRemarks {
+    if (!isBalanceAdjustment) return null;
+    const String prefix = '$balanceAdjustmentLabel · ';
+    final String text = description?.trim() ?? '';
+    return text.startsWith(prefix) ? blankToNull(text.substring(prefix.length)) : null;
+  }
+
   /// True when this movement belongs to an expense or income record and so
   /// must be edited or deleted there rather than on the statement.
   bool get isDocumentBacked => expenseId != null || incomeId != null;
@@ -171,7 +194,9 @@ class LedgerEntry {
   ///
   /// A transfer has no real category — it is not spending — so the label is
   /// derived here instead of being stored as a row in `categories`.
-  String? get categoryLabel => isTransfer
+  String? get categoryLabel => isBalanceAdjustment
+      ? adjustmentRemarks
+      : isTransfer
       ? moneyTransferLabel
       : isCardPayment
           ? cardPaymentLabel
@@ -187,6 +212,7 @@ class LedgerEntry {
   double get signedAmount => isDebit ? -amount : amount;
 
   String get title {
+    if (isBalanceAdjustment) return balanceAdjustmentLabel;
     final String? text = description?.trim();
     if (text != null && text.isNotEmpty) return text;
     if (isTransfer) return moneyTransferLabel;
@@ -213,6 +239,7 @@ class LedgerEntry {
       counterpartyAccountId: map['counterparty_account_id'] as String?,
       creditCardId: map['credit_card_id'] as String?,
       receivableId: map['receivable_id'] as String?,
+      balanceAdjustmentId: map['balance_adjustment_id'] as String?,
       reference: map['reference'] as String?,
       upiId: map['upi_id'] as String?,
       txnTime: map['txn_time'] as String?,
@@ -242,6 +269,15 @@ class LedgerEntry {
         if (counterpartyAccountId != null)
           'counterparty_account_id': counterpartyAccountId,
       };
+}
+
+/// Movements the user recorded, without the rows behind balance adjustments
+/// (migration 021). Duplicate checks, transfer and payment matching and
+/// reconciliation look only at these: an adjustment is never a bank line.
+/// Balances keep every row.
+extension WithoutBalanceAdjustments on Iterable<LedgerEntry> {
+  List<LedgerEntry> withoutAdjustments() =>
+      where((LedgerEntry e) => !e.isBalanceAdjustment).toList();
 }
 
 /// One printed statement line: a movement plus the balance after it.

@@ -399,6 +399,9 @@ class ReconciliationProvider extends AsyncProvider {
               'type': 'account',
               'id': id,
               'opening': (((account?.openingBalance ?? 0) + (got[1] as double)) * 100).round() / 100,
+              // Adjustment rows stay in, so the app's figures add up; each
+              // carries its balanceAdjustmentId, and the engine never pairs it
+              // with a bank line or reports it missing.
               'entries': (got[0] as List<LedgerEntry>)
                   .map((LedgerEntry e) => EngineJson.ledgerEntry(e, claim: claimOf(e)))
                   .toList(),
