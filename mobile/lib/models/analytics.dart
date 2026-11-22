@@ -13,6 +13,7 @@ class CategorySpend {
     required this.icon,
     required this.total,
     required this.transactionCount,
+    this.expenses = const <Expense>[],
   });
 
   final String? categoryId;
@@ -21,6 +22,10 @@ class CategorySpend {
   final String icon;
   final double total;
   final int transactionCount;
+
+  /// The expenses behind [total], newest first — what a tap on the category
+  /// lists. Exactly the rows counted, so the list always adds up to [total].
+  final List<Expense> expenses;
 
   /// Share of the period total, assigned by the caller that knows the total.
   double shareOf(double periodTotal) =>
@@ -117,11 +122,11 @@ List<CategorySpend> buildCategoryBreakdown(
   };
 
   final Map<String?, double> totals = <String?, double>{};
-  final Map<String?, int> counts = <String?, int>{};
+  final Map<String?, List<Expense>> rows = <String?, List<Expense>>{};
 
   for (final Expense e in expenses) {
     totals[e.categoryId] = (totals[e.categoryId] ?? 0) + e.amount;
-    counts[e.categoryId] = (counts[e.categoryId] ?? 0) + 1;
+    (rows[e.categoryId] ??= <Expense>[]).add(e);
   }
 
   final List<CategorySpend> result = totals.entries.map((
@@ -135,10 +140,67 @@ List<CategorySpend> buildCategoryBreakdown(
       color: category?.color ?? '#78909C',
       icon: category?.icon ?? 'category',
       total: entry.value,
-      transactionCount: counts[entry.key] ?? 0,
+      transactionCount: rows[entry.key]?.length ?? 0,
+      expenses: _newestFirst(rows[entry.key] ?? const <Expense>[]),
     );
   }).toList();
 
   result.sort((CategorySpend a, CategorySpend b) => b.total.compareTo(a.total));
   return result;
+}
+
+List<Expense> _newestFirst(List<Expense> expenses) => List<Expense>.of(expenses)
+  ..sort((Expense a, Expense b) {
+    final int byDate = b.expenseDate.compareTo(a.expenseDate);
+    if (byDate != 0) return byDate;
+    final DateTime? ac = a.createdAt;
+    final DateTime? bc = b.createdAt;
+    if (ac == null || bc == null) return 0;
+    return bc.compareTo(ac);
+  });
+
+/// One month's spending by category: what the dashboard's "Where it went"
+/// shows for that month, with every category and its expenses.
+class CategoryMonthSpending {
+  const CategoryMonthSpending({
+    required this.month,
+    required this.total,
+    required this.breakdown,
+  });
+
+  /// The first day of the month.
+  final DateTime month;
+
+  /// The month's spending — the sum of every category, as on the dashboard.
+  final double total;
+
+  /// Every category with spending, largest first.
+  final List<CategorySpend> breakdown;
+
+  bool get isEmpty => breakdown.isEmpty;
+
+  /// The category's figures for the month, or null when it has none. A null
+  /// [categoryId] is the uncategorised group.
+  CategorySpend? category(String? categoryId) {
+    for (final CategorySpend c in breakdown) {
+      if (c.categoryId == categoryId) return c;
+    }
+    return null;
+  }
+}
+
+/// [personalExpenses] — the month's own spending, already through
+/// [personalSpending] — grouped exactly as the dashboard groups them.
+CategoryMonthSpending buildCategoryMonthSpending(
+  DateTime month,
+  List<Expense> personalExpenses,
+  List<ExpenseCategory> categories,
+) {
+  final List<CategorySpend> breakdown =
+      buildCategoryBreakdown(personalExpenses, categories);
+  return CategoryMonthSpending(
+    month: DateTime(month.year, month.month, 1),
+    total: breakdown.fold<double>(0, (double sum, CategorySpend c) => sum + c.total),
+    breakdown: breakdown,
+  );
 }

@@ -126,10 +126,18 @@ class CategoryBreakdownList extends StatelessWidget {
     required this.currency,
     this.limit,
     this.maxSlices = 6,
+    this.onTap,
+    this.showCounts = false,
   });
 
   final List<CategorySpend> breakdown;
   final String currency;
+
+  /// Makes each row tappable — the category screen opens its transactions.
+  final ValueChanged<CategorySpend>? onTap;
+
+  /// Shows "3 expenses · 42%" under each name instead of the share alone.
+  final bool showCounts;
 
   /// Caps how many rows are shown — the dashboard shows the top few, Reports
   /// shows them all.
@@ -162,6 +170,8 @@ class CategoryBreakdownList extends StatelessWidget {
             share: visible[i].shareOf(total),
             currency: currency,
             tone: palette.segment(i, breakdown.length, maxSlices: maxSlices),
+            showCount: showCounts,
+            onTap: onTap == null ? null : () => onTap!(visible[i]),
           ),
         ],
       ],
@@ -175,6 +185,8 @@ class _CategoryRow extends StatelessWidget {
     required this.share,
     required this.currency,
     required this.tone,
+    this.showCount = false,
+    this.onTap,
   });
 
   final CategorySpend spend;
@@ -183,9 +195,24 @@ class _CategoryRow extends StatelessWidget {
 
   /// The row's slice colour in the donut above it.
   final Color tone;
+  final bool showCount;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final Widget row = _row(context);
+    if (onTap == null) return row;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+        child: row,
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context) {
     final ThemeData theme = Theme.of(context);
 
     return Row(
@@ -233,6 +260,15 @@ class _CategoryRow extends StatelessWidget {
                   ),
                 ],
               ),
+              if (showCount) ...<Widget>[
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  categorySpendDetail(spend, share),
+                  style: theme.textTheme.labelSmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
               const SizedBox(height: AppSpacing.sm),
               Row(
                 children: <Widget>[
@@ -259,15 +295,17 @@ class _CategoryRow extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: AppSpacing.sm),
-                  SizedBox(
-                    width: 34,
-                    child: Text(
-                      Formatters.percent(share),
-                      textAlign: TextAlign.right,
-                      style: theme.textTheme.labelSmall,
+                  if (!showCount) ...<Widget>[
+                    const SizedBox(width: AppSpacing.sm),
+                    SizedBox(
+                      width: 34,
+                      child: Text(
+                        Formatters.percent(share),
+                        textAlign: TextAlign.right,
+                        style: theme.textTheme.labelSmall,
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ],
@@ -276,4 +314,10 @@ class _CategoryRow extends StatelessWidget {
       ],
     );
   }
+}
+
+/// "3 expenses · 42%": how many expenses and the share of the month.
+String categorySpendDetail(CategorySpend spend, double share) {
+  final int n = spend.transactionCount;
+  return '$n ${n == 1 ? 'expense' : 'expenses'} · ${Formatters.percent(share)}';
 }

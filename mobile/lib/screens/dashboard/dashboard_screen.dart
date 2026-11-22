@@ -15,6 +15,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/budget_provider.dart';
 import '../../providers/category_provider.dart';
+import '../../providers/category_spending_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/dashboard_provider.dart';
 import '../../providers/expense_provider.dart';
@@ -39,6 +40,7 @@ import '../cards/card_statement_screen.dart';
 import '../cards/credit_cards_screen.dart';
 import '../expenses/expense_form_screen.dart';
 import '../income/income_form_screen.dart';
+import '../reports/category_spending_screen.dart';
 import '../settings/budgets_screen.dart';
 
 /// The financial snapshot.
@@ -212,7 +214,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // look at, and putting them under four other sections meant scrolling
         // to reach the answer every single time.
         if (data.hasAnyData) ...<Widget>[
-          AppFadeIn(child: _chartsSection(data, currency)),
+          AppFadeIn(
+            child: DashboardChartsCarousel(
+              data: data,
+              currency: currency,
+              onOpenCategories: () => _openCategories(data.month),
+            ),
+          ),
           const SizedBox(height: AppSpacing.section),
         ],
 
@@ -470,64 +478,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// The two charts, as one swipeable card.
-  ///
-  /// Stacked, these were two full-height cards the user had to scroll past to
-  /// reach anything below them. Side by side in a pager they cost one card's
-  /// height, and the pair reads as what it is: two views of the same month.
-  ///
-  /// "Where it went" leads because it answers the question people actually
-  /// open a spending app with. The trend is context, and context goes second.
-  ///
-  /// Either page is dropped when it has no data, and a single remaining page
-  /// simply renders without a pager.
-  Widget _chartsSection(DashboardData data, String currency) {
-    final bool hasTrend =
-        data.trend.any((MonthlyPoint p) => p.expense > 0 || p.income > 0);
-    final bool hasBreakdown = data.categoryBreakdown.isNotEmpty;
-    if (!hasTrend && !hasBreakdown) return const SizedBox.shrink();
-
-    // No leading gap: this is now the first thing under the app bar, and the
-    // list's own top padding is the only space it needs.
-    return CardCarousel(
-      height: DashboardCharts.cardHeight,
-      interval: DashboardCharts.carouselInterval,
-      pages: <CarouselPage>[
-        if (hasBreakdown)
-          CarouselPage(
-            title: 'Where it went',
-            caption: Formatters.shortMonth(data.month),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                CategoryDonut(
-                  breakdown: data.categoryBreakdown,
-                  currency: currency,
-                  size: DashboardCharts.donutSize,
-                ),
-                const SizedBox(height: AppSpacing.md),
-                CategoryBreakdownList(
-                  breakdown: data.categoryBreakdown,
-                  currency: currency,
-                  limit: 3,
-                ),
-              ],
-            ),
-          ),
-        if (hasTrend)
-          CarouselPage(
-            title: 'Monthly spending',
-            child: MonthlyTrendCard(
-              points: data.trend,
-              currency: currency,
-              chartHeight: DashboardCharts.trendHeight,
-            ),
-          ),
-      ],
-    );
-  }
-
-
   // -----------------------------------------------------------------------
   // Navigation
   // -----------------------------------------------------------------------
@@ -590,6 +540,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
       MaterialPageRoute<bool>(builder: (_) => const IncomeFormScreen()),
     );
     if (saved == true) _invalidateAndReload();
+  }
+
+  /// Every category's spending for [month], with its expenses a tap away.
+  Future<void> _openCategories(DateTime month) async {
+    // Read afresh: something may have changed since the screen was last open.
+    context.read<CategorySpendingProvider>().invalidate();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => CategorySpendingScreen(month: month)),
+    );
   }
 
   Future<void> _openBudgets() async {
@@ -839,6 +798,82 @@ class _CarouselDots extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// The two charts, as one swipeable card.
+///
+/// Stacked, these were two full-height cards the user had to scroll past to
+/// reach anything below them. Side by side in a pager they cost one card's
+/// height, and the pair reads as what it is: two views of the same month.
+///
+/// "Where it went" leads because it answers the question people actually
+/// open a spending app with. The trend is context, and context goes second.
+///
+/// Either page is dropped when it has no data, and a single remaining page
+/// simply renders without a pager.
+///
+/// Tapping "Where it went" (or its "See all categories") opens every
+/// category's spending for the month.
+class DashboardChartsCarousel extends StatelessWidget {
+  const DashboardChartsCarousel({
+    super.key,
+    required this.data,
+    required this.currency,
+    required this.onOpenCategories,
+  });
+
+  final DashboardData data;
+  final String currency;
+  final VoidCallback onOpenCategories;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasTrend =
+        data.trend.any((MonthlyPoint p) => p.expense > 0 || p.income > 0);
+    final bool hasBreakdown = data.categoryBreakdown.isNotEmpty;
+    if (!hasTrend && !hasBreakdown) return const SizedBox.shrink();
+
+    // No leading gap: this is now the first thing under the app bar, and the
+    // list's own top padding is the only space it needs.
+    return CardCarousel(
+      height: DashboardCharts.cardHeight,
+      interval: DashboardCharts.carouselInterval,
+      pages: <CarouselPage>[
+        if (hasBreakdown)
+          CarouselPage(
+            title: 'Where it went',
+            caption: Formatters.shortMonth(data.month),
+            onTap: onOpenCategories,
+            actionLabel: 'See all categories',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                CategoryDonut(
+                  breakdown: data.categoryBreakdown,
+                  currency: currency,
+                  size: DashboardCharts.donutSize,
+                ),
+                const SizedBox(height: AppSpacing.md),
+                CategoryBreakdownList(
+                  breakdown: data.categoryBreakdown,
+                  currency: currency,
+                  limit: 3,
+                ),
+              ],
+            ),
+          ),
+        if (hasTrend)
+          CarouselPage(
+            title: 'Monthly spending',
+            child: MonthlyTrendCard(
+              points: data.trend,
+              currency: currency,
+              chartHeight: DashboardCharts.trendHeight,
+            ),
+          ),
       ],
     );
   }

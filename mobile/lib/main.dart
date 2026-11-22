@@ -26,6 +26,7 @@ import 'providers/notification_inbox_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/payment_method_provider.dart';
 import 'providers/receivable_provider.dart';
+import 'providers/category_spending_provider.dart';
 import 'providers/reports_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/reconciliation_provider.dart';
@@ -212,6 +213,10 @@ class ExpenseTrackerApp extends StatelessWidget {
             expenses: expenseRepository,
             income: incomeRepository,
           ),
+        ),
+        ChangeNotifierProvider<CategorySpendingProvider>(
+          create: (_) =>
+              CategorySpendingProvider(expenses: expenseRepository),
         ),
         // A card statement from screenshots: read on the phone, grouped and
         // checked by the web app's own engine.

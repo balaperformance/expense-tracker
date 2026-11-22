@@ -18,6 +18,7 @@ import '../../providers/tag_provider.dart';
 import '../../providers/balance_adjustment_provider.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/payment_method_provider.dart';
+import '../../providers/category_spending_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/statement_provider.dart';
@@ -211,6 +212,7 @@ class _AuthGateState extends State<AuthGate> {
     // The session holds picked statement files; the next account must not see them.
     context.read<StatementImportProvider>().reset();
     context.read<ReportsProvider>().reset();
+    context.read<CategorySpendingProvider>().reset();
     // The conversation is the user's; the next account must not read it.
     context.read<AiChatProvider>().reset();
     // The phone stops showing the previous account's notifications at once.

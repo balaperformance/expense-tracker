@@ -13,6 +13,8 @@ class CarouselPage {
     required this.title,
     required this.child,
     this.caption,
+    this.onTap,
+    this.actionLabel,
   });
 
   /// Shown in the header, which changes as the carousel moves. Each page owns
@@ -24,6 +26,11 @@ class CarouselPage {
   final String? caption;
 
   final Widget child;
+
+  /// Makes the page's card tappable; [actionLabel], when set, is shown as a
+  /// text button in the header that does the same, in place of [caption].
+  final VoidCallback? onTap;
+  final String? actionLabel;
 }
 
 /// A horizontal pager for cards that answer related questions.
@@ -170,12 +177,24 @@ class _CardCarouselState extends State<CardCarousel> {
                   ),
                 ),
               ),
-              if (current.caption != null) ...<Widget>[
+              if (current.caption != null &&
+                  (current.actionLabel == null || current.onTap == null)) ...<Widget>[
                 Text(
                   current.caption!,
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
                 const SizedBox(width: AppSpacing.sm),
+              ],
+              if (current.actionLabel != null && current.onTap != null) ...<Widget>[
+                TextButton(
+                  onPressed: current.onTap,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                  ),
+                  child: Text(current.actionLabel!),
+                ),
+                const SizedBox(width: AppSpacing.xs),
               ],
               _Dots(count: widget.pages.length, index: _index),
             ],
@@ -193,7 +212,10 @@ class _CardCarouselState extends State<CardCarousel> {
                 return Semantics(
                   label: '${widget.pages[page].title}, '
                       'card ${page + 1} of ${widget.pages.length}',
-                  child: SurfaceCard(child: widget.pages[page].child),
+                  child: SurfaceCard(
+                    onTap: widget.pages[page].onTap,
+                    child: widget.pages[page].child,
+                  ),
                 );
               },
             ),
