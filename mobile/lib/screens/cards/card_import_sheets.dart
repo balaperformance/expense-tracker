@@ -597,7 +597,7 @@ class EmiGroupSheet extends StatelessWidget {
 
     return AppSheet(
       title: 'Monthly instalment',
-      subtitle: '${date == null ? '' : '${Formatters.dayMonthYear(AppDateUtils.parseDate(date))} · '}'
+      subtitle: '${date == null ? '' : '${Formatters.dayDate(AppDateUtils.parseDate(date))} · '}'
           '${Formatters.currency(total, currencyCode: currency)} in all',
       footer: Row(
         children: <Widget>[
@@ -661,7 +661,7 @@ class EmiGroupSheet extends StatelessWidget {
                 return AppListRow(
                   dense: true,
                   title: m['title']! as String,
-                  subtitle: '${flags['kindLabel'] ?? ''} · ${Formatters.dayMonth(AppDateUtils.parseDate(m['date']! as String))}'
+                  subtitle: '${flags['kindLabel'] ?? ''} · ${Formatters.dayDate(AppDateUtils.parseDate(m['date']! as String))}'
                       '${flags['leftOut'] == true ? ' · left out as a duplicate' : ''}',
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,

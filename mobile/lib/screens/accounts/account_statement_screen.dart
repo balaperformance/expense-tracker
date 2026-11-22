@@ -258,7 +258,7 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
           else ...<Widget>[
             for (int g = 0; g < groups.length; g++) ...<Widget>[
               DayHeader(
-                label: Formatters.relativeDay(groups[g].day),
+                label: Formatters.dayDate(groups[g].day),
                 total: groups[g].net,
                 currency: currency,
                 tone: AmountTone.auto,

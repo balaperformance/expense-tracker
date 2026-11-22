@@ -629,7 +629,7 @@ class _ImportStatementScreenState extends State<ImportStatementScreen> {
         i++;
       }
       out.add(DayHeader(
-        label: Formatters.relativeDay(group.first.date),
+        label: Formatters.dayDate(group.first.date),
         total: net,
         currency: currency,
         tone: AmountTone.auto,
@@ -874,7 +874,7 @@ String _rowName(StatementImportProvider provider, String itemId, String Function
   for (final ImportRow row in provider.rows) {
     if (row.id != itemId) continue;
     final String who = row.counterparty?.isNotEmpty == true ? row.counterparty! : row.description;
-    return '${Formatters.dayMonth(row.date)} · $who · ${money(row.amount)}';
+    return '${Formatters.dayDate(row.date)} · $who · ${money(row.amount)}';
   }
   return 'A row';
 }

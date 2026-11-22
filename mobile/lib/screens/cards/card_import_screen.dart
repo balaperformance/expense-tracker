@@ -437,9 +437,16 @@ class _CardImportScreenState extends State<CardImportScreen> {
           if (warnings.isNotEmpty)
             Theme(
               data: theme.copyWith(dividerColor: Colors.transparent),
+              // Open from the start: a line that could not be read is a row
+              // missing from the review, and must never pass unnoticed.
               child: ExpansionTile(
                 dense: true,
-                title: Text('What could not be read', style: theme.textTheme.labelMedium),
+                initiallyExpanded: true,
+                leading: Icon(Icons.warning_amber_rounded, color: ToneColors.warning(context), size: 20),
+                title: Text(
+                  '${warnings.length} ${warnings.length == 1 ? 'line' : 'lines'} could not be read — check them and add any missing row by hand',
+                  style: theme.textTheme.labelMedium,
+                ),
                 children: warnings
                     .take(12)
                     .map((String w) => ListTile(dense: true, title: Text(w, style: theme.textTheme.bodySmall)))
@@ -524,7 +531,7 @@ class _CardImportScreenState extends State<CardImportScreen> {
         i++;
       }
       out.add(DayHeader(
-        label: Formatters.relativeDay(AppDateUtils.parseDate(day)),
+        label: Formatters.dayDate(AppDateUtils.parseDate(day)),
         total: net,
         currency: currency,
         tone: AmountTone.auto,

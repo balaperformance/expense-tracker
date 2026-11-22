@@ -461,9 +461,15 @@ class CardImportProvider extends AsyncProvider {
         final List<Map<String, Object?>> added =
             (read['items']! as List<Object?>).cast<Map<String, Object?>>();
         if (added.isEmpty) {
+          // What the reader skipped says why — show it rather than lose it.
+          final List<String> skipped = ((parsed['warnings'] as List<Object?>?) ?? const <Object?>[])
+              .whereType<String>()
+              .where((String w) => !w.startsWith('No transactions were found'))
+              .toList();
           _problem = 'No transactions were found in ${file.name}. Screenshots of '
               "the statement's transaction list work best — one row per "
-              'transaction, with the amount on the right.';
+              'transaction, with the amount on the right.'
+              '${skipped.isEmpty ? '' : ' Could not read: ${skipped.take(3).join('; ')}'}';
           continue;
         }
         _shots = <ImportedShot>[
@@ -542,7 +548,12 @@ class CardImportProvider extends AsyncProvider {
     return <String, Object?>{
       'card': EngineJson.card(card),
       'cycle': cycle.cycle,
-      'entries': (results[0] as List<CardEntry>).map(EngineJson.cardEntry).toList(),
+      // A statement adjustment (023) is the database's figure for a bill, not a
+      // row a screenshot shows: never matched as one.
+      'entries': (results[0] as List<CardEntry>)
+          .where((CardEntry e) => !e.isStatementAdjustment)
+          .map(EngineJson.cardEntry)
+          .toList(),
       'recorded': (results[1] as List<Expense>).map(EngineJson.recordedExpense).toList(),
       'plans': plans.map((EmiPlan p) => p.toEngineMap()).toList(),
       // A balance adjustment is never a bill payment.
@@ -829,7 +840,10 @@ class CardImportProvider extends AsyncProvider {
       final Map<String, Object?> plan = (await _engine.call('cardFinalPlan', <String, Object?>{
         'plan': planned['plan'],
         'items': items,
-        'fresh': fresh.map(EngineJson.cardEntry).toList(),
+        'fresh': fresh
+            .where((CardEntry e) => !e.isStatementAdjustment)
+            .map(EngineJson.cardEntry)
+            .toList(),
       }))! as Map<String, Object?>;
       final List<Map<String, Object?>> operations =
           (plan['operations']! as List<Object?>).cast<Map<String, Object?>>();

@@ -51,6 +51,8 @@ class CreditCardProvider extends AsyncProvider {
   List<CardEntry> _entries = <CardEntry>[];
   List<EmiPlan> _emiPlans = <EmiPlan>[];
   Map<String, EmiBalance> _balances = const <String, EmiBalance>{};
+  List<CardStatementAdjustment> _statementAdjustments =
+      <CardStatementAdjustment>[];
   String? _userId;
   bool _stale = true;
   int _revision = 0;
@@ -214,6 +216,38 @@ class CreditCardProvider extends AsyncProvider {
     return null;
   }
 
+  // ---- Statement (bill) adjustments: migration 023 -------------------------
+
+  /// Whether a statement's bill can be set to the bank's figure.
+  bool get canAdjustStatements => SchemaCapabilities.cardStatementAdjustments;
+
+  /// The confirmed bill of [cardId]'s statement of [statementEnd], if any.
+  CardStatementAdjustment? statementAdjustment(
+          String cardId, DateTime statementEnd) =>
+      statementAdjustmentOn(_statementAdjustments, cardId, statementEnd);
+
+  /// Sets that statement's bill to [balance]; the database keeps the
+  /// difference as one card row. No expense is added.
+  Future<bool> adjustStatement({
+    required String cardId,
+    required DateTime statementDate,
+    required double balance,
+    String? remarks,
+  }) =>
+      _write((String _) => _repository.adjustStatement(
+            cardId: cardId,
+            statementDate: statementDate,
+            balance: balance,
+            remarks: remarks,
+          ));
+
+  /// Back to the bill the app's rows add up to.
+  Future<bool> resetStatement(CardStatementAdjustment adjustment) =>
+      _write((String userId) => _repository.deleteStatementAdjustment(
+            userId: userId,
+            id: adjustment.id,
+          ));
+
   void invalidate() => _stale = true;
 
   Future<void> load({required String userId, bool force = false}) async {
@@ -224,6 +258,7 @@ class CreditCardProvider extends AsyncProvider {
       _entries = <CardEntry>[];
       _emiPlans = <EmiPlan>[];
       _balances = const <String, EmiBalance>{};
+      _statementAdjustments = <CardStatementAdjustment>[];
     }
     // Re-probe while the feature looks missing: 004 may have been applied
     // since the app started.
@@ -243,6 +278,10 @@ class CreditCardProvider extends AsyncProvider {
     if (_cards.isEmpty) setLoading();
     try {
       final EmiPlanRepository? plans = _plans;
+      // The confirmed bills (023) are read beside the rest; before the
+      // migration there are none.
+      final Future<List<CardStatementAdjustment>> adjustments =
+          _repository.fetchStatementAdjustments(userId);
       final List<Object> results = await Future.wait(<Future<Object>>[
         _repository.fetchCards(userId),
         _repository.fetchEntries(userId: userId),
@@ -250,6 +289,7 @@ class CreditCardProvider extends AsyncProvider {
           plans.fetchPlans(userId: userId),
         if (plans != null && SchemaCapabilities.emiBank) plans.fetchBalances(),
       ]);
+      _statementAdjustments = await adjustments;
       _cards = results[0] as List<CreditCard>;
       _entries = results[1] as List<CardEntry>;
       _emiPlans =
@@ -582,6 +622,7 @@ class CreditCardProvider extends AsyncProvider {
     _entries = <CardEntry>[];
     _emiPlans = <EmiPlan>[];
     _balances = const <String, EmiBalance>{};
+    _statementAdjustments = <CardStatementAdjustment>[];
     _userId = null;
     _stale = true;
     safeNotify();

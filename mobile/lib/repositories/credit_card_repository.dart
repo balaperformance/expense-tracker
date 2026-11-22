@@ -41,7 +41,8 @@ class CreditCardRepository {
   String get _transactionSelect =>
       'id, user_id, card_id, kind, direction, amount, txn_date, description, '
       'reference, original_expense_id, created_at'
-      '${SchemaCapabilities.emi ? ', emi_plan_id, emi_component, statement_date' : ''}';
+      '${SchemaCapabilities.emi ? ', emi_plan_id, emi_component, statement_date' : ''}'
+      '${SchemaCapabilities.cardStatementAdjustments ? ', statement_adjustment_id' : ''}';
 
   /// Fees, interest, refunds and cashback since [from], signed the way the
   /// reports read them: a fee or interest is a positive charge (a credit of
@@ -280,6 +281,64 @@ class CreditCardRepository {
         count(_transactions, 'card_id'),
       ]);
       return (purchases: counts[0], payments: counts[1], others: counts[2]);
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  // ---- Statement (bill) adjustments: migration 023 --------------------------
+
+  /// Every confirmed bill of the user's cards; empty before migration 023.
+  Future<List<CardStatementAdjustment>> fetchStatementAdjustments(
+      String userId) async {
+    await SchemaCapabilities.resolve(_client);
+    if (!SchemaCapabilities.cardStatementAdjustments) {
+      return const <CardStatementAdjustment>[];
+    }
+    try {
+      final List<Map<String, dynamic>> rows = await _client
+          .from('card_statement_adjustments')
+          .select('id, card_id, statement_date, target_balance, calculated_balance, remarks')
+          .eq('user_id', userId)
+          .order('statement_date');
+      return rows.map(CardStatementAdjustment.fromMap).toList();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Sets the statement of [statementDate] to the bank's [balance] (creates
+  /// the adjustment or replaces its figure). The database keeps the card row
+  /// for the difference; nothing else changes and no expense is added.
+  Future<void> adjustStatement({
+    required String cardId,
+    required DateTime statementDate,
+    required double balance,
+    String? remarks,
+  }) async {
+    try {
+      await _client.rpc<dynamic>('adjust_card_statement', params: <String, dynamic>{
+        'p_card': cardId,
+        'p_statement': AppDateUtils.toDateString(statementDate),
+        'p_balance': balance,
+        'p_remarks': remarks == null || remarks.trim().isEmpty ? null : remarks.trim(),
+      });
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Goes back to the calculated bill: the adjustment and its card row go.
+  Future<void> deleteStatementAdjustment({
+    required String userId,
+    required String id,
+  }) async {
+    try {
+      await _client
+          .from('card_statement_adjustments')
+          .delete()
+          .eq('user_id', userId)
+          .eq('id', id);
     } catch (error) {
       throw ErrorMapper.map(error);
     }

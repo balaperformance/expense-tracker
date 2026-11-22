@@ -510,7 +510,7 @@ class InsightRowTile extends StatelessWidget {
       leading: CategoryAvatar(icon: row.categoryIcon, color: row.categoryColor),
       title: row.title,
       meta: <String>[
-        Formatters.relativeDay(row.date),
+        Formatters.dayDate(row.date),
         row.categoryName,
         if (row.funding != null) row.funding!,
         if (row.refunded > 0) '${Formatters.currency(row.refunded, currencyCode: currency)} refunded',

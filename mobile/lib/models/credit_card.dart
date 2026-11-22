@@ -187,6 +187,7 @@ class CardTransaction {
     this.emiComponent,
     this.statementDate,
     this.createdAt,
+    this.statementAdjustmentId,
   });
 
   final String id;
@@ -211,6 +212,11 @@ class CardTransaction {
   final DateTime? statementDate;
   final DateTime? createdAt;
 
+  /// Set on the one row the database keeps for a statement adjustment
+  /// (migration 023): the difference between the bill the bank printed and
+  /// what the app's rows add up to. Never edited by the app.
+  final String? statementAdjustmentId;
+
   factory CardTransaction.fromMap(Map<String, dynamic> map) {
     return CardTransaction(
       id: map['id'] as String,
@@ -233,6 +239,7 @@ class CardTransaction {
       createdAt: map['created_at'] == null
           ? null
           : DateTime.parse(map['created_at'] as String),
+      statementAdjustmentId: map['statement_adjustment_id'] as String?,
     );
   }
 }

@@ -89,6 +89,7 @@ class CardEntry {
     this.statementDate,
     this.createdAt,
     this.expense,
+    this.statementAdjustmentId,
   });
 
   /// Unique across the three sources.
@@ -121,6 +122,14 @@ class CardEntry {
 
   /// The purchase's own expense row, so it can be opened and edited there.
   final Expense? expense;
+
+  /// The statement adjustment this card row stands for (migration 023): the
+  /// database keeps it equal to the bill the user confirmed minus what the
+  /// other rows add up to. It counts in every figure but is never edited,
+  /// matched or listed as a payment.
+  final String? statementAdjustmentId;
+
+  bool get isStatementAdjustment => statementAdjustmentId != null;
 
   bool get isCharge => direction == LedgerDirection.debit;
 
@@ -175,6 +184,7 @@ class CardEntry {
         emiComponent: t.emiComponent,
         statementDate: t.statementDate,
         createdAt: t.createdAt,
+        statementAdjustmentId: t.statementAdjustmentId,
       );
 
   /// A bank debit that paid the card: the same row that lowered the bank balance.
@@ -1026,3 +1036,111 @@ String dueSummaryText(
       'No bill due · next statement ${dayMonth(summary.currentCycle.end)}',
   };
 }
+
+// ---------------------------------------------------------------------------
+// Statement (bill) adjustments — migration 023, the web app's same rules
+// ---------------------------------------------------------------------------
+
+/// The bill the bank printed for one statement, confirmed by the user. The
+/// database keeps one card row (kind adjustment, billed on the statement) for
+/// the difference, so every figure — the bill, what is still to pay, the
+/// outstanding — counts from [targetBalance]. Never an expense.
+class CardStatementAdjustment {
+  const CardStatementAdjustment({
+    required this.id,
+    required this.cardId,
+    required this.statementDate,
+    required this.targetBalance,
+    required this.calculatedBalance,
+    this.remarks,
+  });
+
+  final String id;
+  final String cardId;
+
+  /// The statement's date: the last day of its cycle.
+  final DateTime statementDate;
+
+  /// The amount on the bank's statement — what the app now uses.
+  final double targetBalance;
+
+  /// What the app's rows added up to when the bill was confirmed.
+  final double calculatedBalance;
+  final String? remarks;
+
+  factory CardStatementAdjustment.fromMap(Map<String, dynamic> map) {
+    double number(Object? v) =>
+        v is num ? v.toDouble() : (v is String ? double.tryParse(v) ?? 0 : 0);
+    final String remarks = ((map['remarks'] as String?) ?? '').trim();
+    final String date = map['statement_date'] as String;
+    return CardStatementAdjustment(
+      id: map['id'] as String,
+      cardId: map['card_id'] as String,
+      statementDate: DateTime.parse(date),
+      targetBalance: number(map['target_balance']),
+      calculatedBalance: number(map['calculated_balance']),
+      remarks: remarks.isEmpty ? null : remarks,
+    );
+  }
+}
+
+bool _sameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
+/// The confirmed bill of [cardId]'s statement of [statementEnd], if any.
+CardStatementAdjustment? statementAdjustmentOn(
+  Iterable<CardStatementAdjustment> adjustments,
+  String cardId,
+  DateTime statementEnd,
+) {
+  for (final CardStatementAdjustment a in adjustments) {
+    if (a.cardId == cardId && _sameDay(a.statementDate, statementEnd)) return a;
+  }
+  return null;
+}
+
+/// The card's balance on the statement of [statementEnd]: opening outstanding
+/// and every row billed on or before it — the confirmed bill when adjusted.
+double statementBalanceOn(
+  double openingOutstanding,
+  Iterable<CardEntry> entries,
+  DateTime statementEnd,
+) {
+  final DateTime end = DateTime(statementEnd.year, statementEnd.month, statementEnd.day);
+  return outstandingOf(
+    openingOutstanding,
+    entries.where((CardEntry e) => !e.billingDate.isAfter(end)),
+  );
+}
+
+/// What the app's own rows put on that statement: [balance] less the
+/// statement's adjustment row. Equal to [balance] when nothing is adjusted.
+double calculatedStatementBalance(
+  double balance,
+  Iterable<CardEntry> entries,
+  DateTime statementEnd,
+) {
+  int adjustment = 0;
+  for (final CardEntry e in entries) {
+    if (e.isStatementAdjustment && _sameDay(e.billingDate, statementEnd)) {
+      adjustment += toCents(e.outstandingDelta);
+    }
+  }
+  return _fromCents(toCents(balance) - adjustment);
+}
+
+/// The Adjust bill sheet's live line: what the typed amount does to the bill.
+String billAdjustmentLine(
+  double calculated,
+  double typed,
+  String Function(double) money,
+) {
+  final int difference = toCents(typed) - toCents(calculated);
+  if (difference > 0) return 'Adds ${money(_fromCents(difference))} to this bill';
+  if (difference < 0) return 'Lowers this bill by ${money(_fromCents(-difference))}';
+  return "Matches the app's figure";
+}
+
+/// "Calculated by the app: ₹15,000.00 · confirmed from your statement".
+String billAdjustedLine(double calculated, String Function(double) money) =>
+    'Calculated by the app: ${money(calculated)} · confirmed from your statement';

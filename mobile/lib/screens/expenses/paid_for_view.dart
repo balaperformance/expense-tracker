@@ -335,7 +335,7 @@ class PaidForCard extends StatelessWidget {
     final String title = onOpen != null ? (source?.title ?? 'Paid for them') : claim.receivable.title;
     final String meta = <String>[
       if (source != null)
-        Formatters.dayMonthYear(source.date)
+        Formatters.dayDate(source.date)
       else
         'What was paid is no longer available',
       if (from != null) from!,
@@ -468,7 +468,7 @@ class PaidForCard extends StatelessWidget {
                         children: <Widget>[
                           Expanded(
                             child: Text(
-                              '${Formatters.dayMonthYear(r.date)} · '
+                              '${Formatters.dayDate(r.date)} · '
                               '${(r.description?.trim().isNotEmpty ?? false) ? r.description!.trim() : 'Repayment'}',
                               style: theme.textTheme.bodySmall,
                               maxLines: 1,

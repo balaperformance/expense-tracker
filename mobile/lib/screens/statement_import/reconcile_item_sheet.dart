@@ -79,14 +79,14 @@ class _ReconcileItemSheetState extends State<ReconcileItemSheet> {
             .map((Map<String, Object?> l) => (
                   l['key']! as String,
                   ((l['counterparty'] as String?) ?? (l['description'] as String?) ?? '').trim(),
-                  '${Formatters.dayMonth(AppDateUtils.parseDate(l['date']! as String))} · ${_money((l['amount'] as num?) ?? 0)}',
+                  '${Formatters.dayDate(AppDateUtils.parseDate(l['date']! as String))} · ${_money((l['amount'] as num?) ?? 0)}',
                 ))
             .toList()
         : item.candidates
             .map((Map<String, Object?> m) => (
                   m['id']! as String,
                   (m['description'] as String?) ?? recon.kindLabel(m['kind']! as String),
-                  '${Formatters.dayMonth(AppDateUtils.parseDate(m['date']! as String))} · ${_money((m['amount'] as num?) ?? 0)} · ${recon.kindLabel(m['kind']! as String)}',
+                  '${Formatters.dayDate(AppDateUtils.parseDate(m['date']! as String))} · ${_money((m['amount'] as num?) ?? 0)} · ${recon.kindLabel(m['kind']! as String)}',
                 ))
             .toList();
 
@@ -182,7 +182,7 @@ class _ReconcileItemSheetState extends State<ReconcileItemSheet> {
           lines: line == null
               ? const <String>[]
               : <String>[
-                  '${Formatters.dayMonthYear(AppDateUtils.parseDate(line['date']! as String))}'
+                  '${Formatters.dayDate(AppDateUtils.parseDate(line['date']! as String))}'
                       '${line['time'] != null ? ' · ${Formatters.clockTime(line['time']! as String)}' : ''}',
                   (line['rawDescription'] as String?) ?? '',
                 ],
@@ -208,7 +208,7 @@ class _ReconcileItemSheetState extends State<ReconcileItemSheet> {
                 ? ((elsewhere['amount'] as num?) ?? 0).toDouble()
                 : -((elsewhere['amount'] as num?) ?? 0).toDouble(),
             lines: <String>[
-              Formatters.dayMonthYear(AppDateUtils.parseDate(elsewhere['date']! as String)),
+              Formatters.dayDate(AppDateUtils.parseDate(elsewhere['date']! as String)),
               (elsewhere['label'] as String?) ?? '',
             ],
             details: <String>[
@@ -293,7 +293,7 @@ class _ReconcileItemSheetState extends State<ReconcileItemSheet> {
         heading: heading,
         amount: _signed(m),
         lines: <String>[
-          Formatters.dayMonthYear(AppDateUtils.parseDate(m['date']! as String)),
+          Formatters.dayDate(AppDateUtils.parseDate(m['date']! as String)),
           (m['description'] as String?) ?? 'No description',
         ],
         details: <String>[

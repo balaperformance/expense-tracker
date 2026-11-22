@@ -212,7 +212,7 @@ class _PaymentRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${Formatters.dayMonthYear(row.date)} · ${row.status.label}',
+                  '${Formatters.dayDate(row.date)} · ${row.status.label}',
                   style: theme.textTheme.labelSmall,
                 ),
                 if (row.possibleDuplicate) ...<Widget>[

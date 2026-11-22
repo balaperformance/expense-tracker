@@ -314,7 +314,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             DayHeader(
-              label: Formatters.relativeDay(group.day),
+              label: Formatters.dayDate(group.day),
               total: group.total,
               currency: currency,
               isFirst: index == 0,

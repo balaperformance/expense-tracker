@@ -601,7 +601,7 @@ class _ItemRow extends StatelessWidget {
                   children: <Widget>[
                     Text(item.name, style: theme.textTheme.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                     Text(
-                      '${item.title} · ${Formatters.dayMonth(item.date)}'
+                      '${item.title} · ${Formatters.dayDate(item.date)}'
                       '${scopeLabel != null ? ' · $scopeLabel' : ''}'
                       '${item.resolved ? ' · Accepted' : item.decision == 'link' ? ' · Linked' : ''}',
                       style: theme.textTheme.bodySmall,

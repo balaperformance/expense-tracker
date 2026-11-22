@@ -35,6 +35,7 @@ import 'card_import_screen.dart';
 import 'card_payment_sheet.dart';
 import 'card_transaction_sheet.dart';
 import 'emi_plan_sheet.dart';
+import 'statement_adjustment_sheet.dart';
 
 /// One card: what is owed, the latest bill, and a statement by billing cycle
 /// with the outstanding after every line.
@@ -266,7 +267,11 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
                     ),
                   ],
                   const SizedBox(height: AppSpacing.md),
-                  _LatestBill(overview: overview, currency: currency),
+                  _LatestBill(
+                    overview: overview,
+                    currency: currency,
+                    onChanged: () => _reloadAfter(true),
+                  ),
                   if (SchemaCapabilities.emi) ...<Widget>[
                     const SizedBox(height: AppSpacing.md),
                     _EmiPlans(
@@ -288,6 +293,20 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
                         ? 'Outstanding now'
                         : 'Outstanding on ${Formatters.dayMonth(cycle.end)}',
                   ),
+                  // An earlier statement's bill, confirmable like the latest.
+                  if (!_wholeHistory &&
+                      !openCycle &&
+                      !_sameDay(cycle.end, overview.summary.lastStatement.cycle.end) &&
+                      provider.canAdjustStatements) ...<Widget>[
+                    const SizedBox(height: AppSpacing.md),
+                    _StatementBill(
+                      card: card,
+                      statementEnd: cycle.end,
+                      balance: statementBalanceOn(card.openingOutstanding, entries, cycle.end),
+                      currency: currency,
+                      onChanged: () => _reloadAfter(true),
+                    ),
+                  ],
                   const SizedBox(height: AppSpacing.md),
                   SizedBox(
                     width: double.infinity,
@@ -387,7 +406,7 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
         i++;
       }
       out.add(DayHeader(
-        label: Formatters.relativeDay(day),
+        label: Formatters.dayDate(day),
         total: net,
         currency: currency,
         tone: AmountTone.auto,
@@ -401,10 +420,14 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
                       currency: currency,
                       accountName: accounts.byId(row.entry.accountId)?.nickname,
                       badge: _planBadge(row.entry, cards),
-                      onTap: row.entry.expense != null
-                          ? () => _openExpense(row.entry)
-                          : null,
-                      onLongPress: () => _onLongPress(row.entry),
+                      onTap: row.entry.isStatementAdjustment
+                          ? () => _openStatementAdjustment(card, row.entry)
+                          : row.entry.expense != null
+                              ? () => _openExpense(row.entry)
+                              : null,
+                      onLongPress: row.entry.isStatementAdjustment
+                          ? () => _openStatementAdjustment(card, row.entry)
+                          : () => _onLongPress(row.entry),
                     ),
                   InstallmentLine() => _InstallmentLine(
                       line: line,
@@ -510,6 +533,23 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
     await _reloadAfter(changed);
   }
 
+  /// A statement adjustment's row is the database's figure for a bill: it is
+  /// changed on that statement's bill, never edited or deleted as a row.
+  Future<void> _openStatementAdjustment(CreditCard card, CardEntry entry) async {
+    final DateTime end = cardCycleContaining(card, entry.billingDate).end;
+    final bool? changed = await showStatementAdjustmentSheet(
+      context,
+      card: card,
+      statementEnd: end,
+      balance: statementBalanceOn(
+        card.openingOutstanding,
+        context.read<CreditCardProvider>().entriesFor(card.id),
+        end,
+      ),
+    );
+    await _reloadAfter(changed);
+  }
+
   Future<void> _openPay(CardOverview overview) async {
     final bool? changed = await showAppSheet<bool>(
       context: context,
@@ -574,7 +614,7 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
       context: context,
       builder: (BuildContext sheet) => AppSheet(
         title: 'Purchase',
-        subtitle: '${entry.title} · ${Formatters.dayMonthYear(entry.date)}',
+        subtitle: '${entry.title} · ${Formatters.dayDate(entry.date)}',
         children: <Widget>[
           CardList(
             dividerIndent: AppSpacing.md,
@@ -612,7 +652,7 @@ class _CardStatementScreenState extends State<CardStatementScreen> {
       builder: (BuildContext sheet) => AppSheet(
         title:
             'Payment · ${Formatters.currency(entry.amount, currencyCode: currency)}',
-        subtitle: Formatters.dayMonthYear(entry.date),
+        subtitle: Formatters.dayDate(entry.date),
         children: <Widget>[
           CardList(
             dividerIndent: AppSpacing.md,
@@ -777,10 +817,11 @@ class _OutstandingHero extends StatelessWidget {
 }
 
 class _LatestBill extends StatelessWidget {
-  const _LatestBill({required this.overview, required this.currency});
+  const _LatestBill({required this.overview, required this.currency, required this.onChanged});
 
   final CardOverview overview;
   final String currency;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -820,6 +861,13 @@ class _LatestBill extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: AppSpacing.xs),
+          StatementBillAdjustment(
+            card: overview.card,
+            statementEnd: bill.cycle.end,
+            balance: bill.balance,
+            onChanged: onChanged,
+          ),
           const SizedBox(height: AppSpacing.md),
           Row(
             children: <Widget>[
@@ -853,6 +901,53 @@ class _LatestBill extends StatelessWidget {
             'charged so far, billed on ${Formatters.dayMonthYear(current.end)} '
             'and due ${Formatters.dayMonthYear(current.dueDate)}.',
             style: theme.textTheme.labelSmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+bool _sameDay(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
+/// An earlier statement's bill: its balance, and confirming it from the
+/// bank's statement (migration 023).
+class _StatementBill extends StatelessWidget {
+  const _StatementBill({
+    required this.card,
+    required this.statementEnd,
+    required this.balance,
+    required this.currency,
+    required this.onChanged,
+  });
+
+  final CreditCard card;
+  final DateTime statementEnd;
+  final double balance;
+  final String currency;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return SurfaceCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(child: Text('Statement balance', style: theme.textTheme.labelSmall)),
+              MoneyText(balance, currency: currency, style: theme.textTheme.titleSmall),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          StatementBillAdjustment(
+            card: card,
+            statementEnd: statementEnd,
+            balance: balance,
+            onChanged: onChanged,
           ),
         ],
       ),
@@ -1111,7 +1206,7 @@ class _InstallmentSheet extends StatelessWidget {
         );
     return AppSheet(
       title: 'EMI instalment · ${Formatters.currency(i.total, currencyCode: currency)}',
-      subtitle: '${Formatters.dayMonthYear(i.date)} · ${plan?.label ?? 'No plan'}',
+      subtitle: '${Formatters.dayDate(i.date)} · ${plan?.label ?? 'No plan'}',
       children: <Widget>[
         AppNotice(
           message: plan?.person != null
@@ -1139,7 +1234,7 @@ class _InstallmentSheet extends StatelessWidget {
                     dense: true,
                     title: row.entry.title,
                     subtitle:
-                        '${emiComponentLabels[row.entry.emiComponent] ?? row.entry.kind.label} · ${Formatters.dayMonth(row.entry.date)}',
+                        '${emiComponentLabels[row.entry.emiComponent] ?? row.entry.kind.label} · ${Formatters.dayDate(row.entry.date)}',
                     trailing: MoneyText(row.entry.amount,
                         currency: currency, style: theme.textTheme.titleSmall),
                     showChevron: true,

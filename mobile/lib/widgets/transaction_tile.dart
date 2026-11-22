@@ -230,7 +230,7 @@ class ExpenseTile extends StatelessWidget {
           : (expense.isPersonal ? null : nonPersonalBadge),
       trailingBelow: person != null ? paidForStatus : null,
       meta: <String>[
-        if (showDate) Formatters.relativeDay(expense.expenseDate),
+        if (showDate) Formatters.dayDate(expense.expenseDate),
         if (person != null) 'Paid for $person' else expense.categoryName,
         if (sourceLabel != null)
           sourceLabel!
@@ -272,7 +272,7 @@ class IncomeTile extends StatelessWidget {
       tone: income.isPersonal ? AmountTone.positive : AmountTone.neutral,
       badge: income.isPersonal ? null : nonPersonalBadge,
       meta: <String>[
-        if (showDate) Formatters.relativeDay(income.incomeDate),
+        if (showDate) Formatters.dayDate(income.incomeDate),
         if (income.subtitle != null) income.subtitle!,
         if (destinationLabel != null) destinationLabel!,
       ],

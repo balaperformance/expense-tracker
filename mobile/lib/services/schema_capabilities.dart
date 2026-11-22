@@ -55,6 +55,7 @@ class SchemaCapabilities {
   static bool _tagDelete = false;
   static bool _balanceAdjustments = false;
   static bool _cardAccounting = false;
+  static bool _cardStatementAdjustments = false;
 
   static bool get resolved => _resolved;
 
@@ -151,6 +152,12 @@ class SchemaCapabilities {
   /// expenses that are not the user's spending. Builds on 004, 016 and 021.
   static bool get cardAccounting => _cardAccounting;
 
+  /// `card_statement_adjustments` and
+  /// `credit_card_transactions.statement_adjustment_id` (migration 023): a
+  /// statement's bill can be set to the figure the bank printed, which then
+  /// counts as that statement's balance. Builds on 004.
+  static bool get cardStatementAdjustments => _cardStatementAdjustments;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -180,6 +187,7 @@ class SchemaCapabilities {
       if (!_emiBank || !_tagDelete) 'bank account EMIs and deleting hashtags (020)',
       if (!_balanceAdjustments) 'balance adjustments (021)',
       if (!_cardAccounting) 'credit card accounting (022)',
+      if (!_cardStatementAdjustments) 'card statement adjustments (023)',
     ];
     return missing.join(', ');
   }
@@ -257,6 +265,11 @@ class SchemaCapabilities {
               // so the call reads no rows.
               _probeFunction(client, 'spending_excluded_expense_ids',
                   params: const <String, dynamic>{'p_user': _nilUuid}),
+              // 33–34: card statement adjustments (023).
+              _probe(client, 'card_statement_adjustments',
+                  'id, card_id, statement_date, target_balance, '
+                      'calculated_balance, remarks'),
+              _probe(client, 'credit_card_transactions', 'statement_adjustment_id'),
             ]));
 
     _merchant = results[0];
@@ -285,6 +298,8 @@ class SchemaCapabilities {
     _balanceAdjustments = _bankAccounts && results[30] && results[31];
     // One migration adds every function; it needs cards, EMI plans and 021.
     _cardAccounting = _creditCards && _emi && _balanceAdjustments && results[32];
+    // One migration adds the table and the card column.
+    _cardStatementAdjustments = _creditCards && results[33] && results[34];
     _resolved = true;
   }
 
@@ -360,6 +375,7 @@ class SchemaCapabilities {
     bool? tagDelete,
     bool? balanceAdjustments,
     bool? cardAccounting,
+    bool? cardStatementAdjustments,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -381,6 +397,7 @@ class SchemaCapabilities {
     _tagDelete = tagDelete ?? _tagDelete;
     _balanceAdjustments = balanceAdjustments ?? _balanceAdjustments;
     _cardAccounting = cardAccounting ?? _cardAccounting;
+    _cardStatementAdjustments = cardStatementAdjustments ?? _cardStatementAdjustments;
     _resolved = true;
   }
 
@@ -406,5 +423,6 @@ class SchemaCapabilities {
     _tagDelete = false;
     _balanceAdjustments = false;
     _cardAccounting = false;
+    _cardStatementAdjustments = false;
   }
 }

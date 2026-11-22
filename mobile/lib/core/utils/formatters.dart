@@ -58,17 +58,15 @@ class Formatters {
 
   static String shortMonth(DateTime date) => _shortMonth.format(date);
 
-  /// "Today" / "Yesterday" / "Monday" / "12 Mar 2025" depending on recency.
-  static String relativeDay(DateTime date) {
-    final DateTime today = DateTime.now();
-    final DateTime d = DateTime(date.year, date.month, date.day);
-    final DateTime t = DateTime(today.year, today.month, today.day);
-    final int diff = t.difference(d).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
-    if (diff > 1 && diff < 7) return _weekday.format(date);
-    if (d.year == t.year) return _dayMonth.format(date);
-    return _dayMonthYear.format(date);
+  /// A transaction's date with its weekday, the way every list and row shows
+  /// it: "22 Nov · Sunday" in the current year, "22 Nov 2026 · Sunday" in any
+  /// other (a filter on last year must still say which year). [today] is for
+  /// tests; the web app's `dayDate` gives the same text.
+  static String dayDate(DateTime date, {DateTime? today}) {
+    final DateTime now = today ?? DateTime.now();
+    final String day =
+        date.year == now.year ? _dayMonth.format(date) : _dayMonthYear.format(date);
+    return '$day · ${_weekday.format(date)}';
   }
 
   static String percent(double ratio) =>
