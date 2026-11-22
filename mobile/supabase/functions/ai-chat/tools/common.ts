@@ -1,6 +1,6 @@
 import { LIMITS } from "../core/limits.ts";
 import type { JsonSchema } from "../core/messages.ts";
-import type { AccountRow, CategoryRow, DbPort, PaymentMethodRow, TagRow } from "../db/port.ts";
+import type { AccountRow, CardRow, CategoryRow, DbPort, PaymentMethodRow, TagRow } from "../db/port.ts";
 import { formatMoney } from "./money.ts";
 import {
   addDays,
@@ -30,7 +30,7 @@ export type ToolContext = {
 /** A write the model proposed, validated, and waiting for the user. */
 export type PendingAction = {
   id: string;
-  tool: "create_expense" | "create_income" | "transfer_money";
+  tool: "create_expense" | "create_income" | "transfer_money" | "record_card_bill_payment";
   /** Normalised arguments with resolved ids. Re-verified at execution. */
   args: Record<string, unknown>;
   /** The question shown on the confirmation card. */
@@ -159,6 +159,18 @@ export function accountNamed(account: AccountRow): Named & { row: AccountRow } {
   return { id: account.id, labels, row: account };
 }
 
+export function cardLabel(card: CardRow): string {
+  const digits = card.last4?.trim();
+  return digits ? `${card.card_name} •••• ${digits}` : card.card_name;
+}
+
+export function cardNamed(card: CardRow): Named & { row: CardRow } {
+  const labels = [card.card_name];
+  if (card.issuer) labels.push(card.issuer, `${card.issuer} ${card.card_name}`, `${card.card_name} ${card.issuer}`);
+  if (card.last4) labels.push(card.last4, `${card.card_name} ${card.last4}`);
+  return { id: card.id, labels, row: card };
+}
+
 export function categoryNamed(category: CategoryRow): Named & { row: CategoryRow } {
   return { id: category.id, labels: [category.name], row: category };
 }
@@ -201,6 +213,10 @@ export function findAccount(accounts: AccountRow[], query: string) {
   );
 }
 
+export function findCard(cards: CardRow[], query: string) {
+  return pickOne(resolveByName(cards.map(cardNamed), query), "credit card", cards.map(cardLabel));
+}
+
 export function findCategory(categories: CategoryRow[], query: string) {
   return pickOne(
     resolveByName(categories.map(categoryNamed), query),
@@ -216,6 +232,36 @@ export function findPaymentMethod(methods: PaymentMethodRow[], query: string) {
     methods.map((m) => m.name),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Credit card bill payments
+// ---------------------------------------------------------------------------
+
+/** The apps' wording rule (creditCards.ts BILL_PAYMENT_WORDING), plus "CC bill". */
+const BILL_PAYMENT_WORDING =
+  /\b(credit ?card|cc)\b[^.]*\b(payment|pymt|bill|dues?|repayment)\b|\b(card|cc) ?bill\b|\btowards\b[^.]*\b(credit ?card|cc)\b/i;
+/** Apps that pay many kinds of bill: a card bill only when the card is named too. */
+const BILL_PAYMENT_APPS = /\b(bill ?desk|bbps|payzapp|amazon ?pay|phone ?pe|paytm)\b/i;
+const CARD_WORD = /\b(credit ?card|cc|card)\b/i;
+const CASHBACK = /\bcash ?back\b/i;
+
+/**
+ * Text that reads like paying a credit card bill rather than spending:
+ * "HDFC credit card payment", "CC bill", "paid my card bill on CRED",
+ * "BillDesk credit card". Such money is not an expense — the card
+ * purchases already are — and a cashback is not a payment at all.
+ */
+export function looksLikeCardBillPayment(text: string): boolean {
+  if (!text.trim() || CASHBACK.test(text)) return false;
+  if (BILL_PAYMENT_WORDING.test(text)) return true;
+  // CRED is almost only used for card bills, but rent paid through CRED is
+  // a card purchase, not a bill payment.
+  if (/\bcred\b/i.test(text)) return /\b(bill|pay|paid|payment|card|cc|dues?)\b/i.test(text) && !/\brent\b/i.test(text);
+  return BILL_PAYMENT_APPS.test(text) && CARD_WORD.test(text);
+}
+
+/** How far apart two records of one bill payment can be: the same 10 days the database accepts. */
+export const SAME_PAYMENT_DAYS = 10;
 
 /**
  * A tag name as both apps store and compare it (their TagRules): no leading

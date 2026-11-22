@@ -292,6 +292,11 @@ class LedgerRepository {
 
   /// Pays a card bill from a bank account. [details]: what an imported
   /// statement printed about the payment.
+  ///
+  /// With migration 022 it goes through `record_card_payment`, like every
+  /// other bill payment, and [replaces] — the card-side payment of the same
+  /// bill, which the user confirmed is the same one — is removed in the same
+  /// transaction, so the outstanding drops exactly once.
   Future<void> recordCardPayment({
     required String userId,
     required String accountId,
@@ -300,7 +305,24 @@ class LedgerRepository {
     required DateTime date,
     required String description,
     MovementDetails? details,
+    String? replaces,
   }) async {
+    if (SchemaCapabilities.cardAccounting) {
+      final Map<String, dynamic> printed = _detailsColumns(details);
+      await _cardRpc('record_card_payment', <String, dynamic>{
+        'p_account': accountId,
+        'p_card': cardId,
+        'p_amount': amount,
+        'p_date': AppDateUtils.toDateString(date),
+        'p_description': description,
+        'p_reference': printed['reference'],
+        'p_upi_id': printed['upi_id'],
+        'p_txn_time': printed['txn_time'],
+        'p_replaces': replaces,
+      });
+      return;
+    }
+    if (replaces != null) throw _needs022;
     try {
       await _client.from(_table).insert(<String, dynamic>{
         'user_id': userId,
@@ -668,11 +690,25 @@ class LedgerRepository {
   /// Linking only claims an unlinked plain debit: it never moves another
   /// card's payment, even from a screen that went stale. Unlinking only
   /// touches a linked one. Anything else changes nothing and is reported.
+  ///
+  /// With migration 022 a link goes through `link_card_payment`, which also
+  /// removes [replaces] — the card-side payment of the same bill the user
+  /// confirmed — in the same transaction.
   Future<void> linkToCard({
     required String userId,
     required String entryId,
     required String? cardId,
+    String? replaces,
   }) async {
+    if (cardId != null && SchemaCapabilities.cardAccounting) {
+      await _cardRpc('link_card_payment', <String, dynamic>{
+        'p_entry': entryId,
+        'p_card': cardId,
+        'p_replaces': replaces,
+      });
+      return;
+    }
+    if (replaces != null) throw _needs022;
     List<Map<String, dynamic>> rows;
     try {
       final PostgrestFilterBuilder<dynamic> query = _client
@@ -697,6 +733,41 @@ class LedgerRepository {
               'linked to a card, or changed. Refresh and try again.'
           : 'That payment is no longer linked to a card. Refresh and try '
               'again.');
+    }
+  }
+
+  /// The bank payment [entryId] (already a card's bill payment) absorbs
+  /// [cardTransactionId], the card-side record of the same bill — how a
+  /// payment stored twice is put right, only ever on the user's say
+  /// (migration 022's `merge_card_payment`).
+  Future<void> mergeCardPayment({
+    required String entryId,
+    required String cardTransactionId,
+  }) async {
+    if (!SchemaCapabilities.cardAccounting) throw _needs022;
+    await _cardRpc('merge_card_payment', <String, dynamic>{
+      'p_entry': entryId,
+      'p_card_txn': cardTransactionId,
+    });
+  }
+
+  static const AppException _needs022 = AppException(
+    'This needs the 022 migration. Run ui/supabase/022_card_accounting.sql, '
+    'then try again.',
+  );
+
+  /// Calls one of migration 022's bill payment functions; their own errors
+  /// (P0001, worded for the user) are shown as they are.
+  Future<void> _cardRpc(String name, Map<String, dynamic> params) async {
+    try {
+      await _client.rpc<Object?>(name, params: params);
+    } on PostgrestException catch (error) {
+      if (error.code == 'P0001' && error.message.trim().isNotEmpty) {
+        throw AppException(error.message.trim());
+      }
+      throw ErrorMapper.map(error);
+    } catch (error) {
+      throw ErrorMapper.map(error);
     }
   }
 

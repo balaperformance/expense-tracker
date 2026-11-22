@@ -87,10 +87,20 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
   List<LedgerEntry>? _candidates;
   bool _submitted = false;
 
+  /// For an EMI conversion credit: the purchase it converted — one already
+  /// on the card, or a row of this session (migration 022).
+  late String? _convertsExpenseId = _item['convertsExpenseId'] as String?;
+  late String? _convertsItemId = _item['convertsItemId'] as String?;
+
+  /// Whether the converted purchase is answered: picked, or declined ("not
+  /// in the app" — a null id the engine keeps). Unanswered is left as it is.
+  late bool _conversionAnswered =
+      _convertsItemId != null || _item.containsKey('convertsExpenseId');
+
   static const List<String> _debitKinds = <String>[
-    'purchase', 'fee', 'interest', 'emiPrincipal', 'emiInterest', 'emiTax',
+    'purchase', 'fee', 'interest', 'emiPrincipal', 'emiInterest', 'emiTax', 'emiFee',
   ];
-  static const List<String> _creditKinds = <String>['payment', 'refund', 'cashback'];
+  static const List<String> _creditKinds = <String>['payment', 'refund', 'cashback', 'emiConversion'];
   static const Map<String, String> _labels = <String, String>{
     'purchase': 'Purchase',
     'payment': 'Bill payment',
@@ -101,6 +111,8 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
     'emiPrincipal': 'EMI principal',
     'emiInterest': 'EMI interest',
     'emiTax': 'GST on EMI',
+    'emiFee': 'EMI processing fee',
+    'emiConversion': 'Converted to EMI',
   };
 
   @override
@@ -195,6 +207,10 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
       if (_paidForShown && person != _initialPerson) edit['paidForPerson'] = person;
       if (_effectiveKind == 'purchase' && _emiPlanId != _initialEmiPlanId) edit['emiPlanId'] = _emiPlanId;
     }
+    if (_effectiveKind == 'emiConversion' && _conversionAnswered) {
+      edit['convertsExpenseId'] = _convertsExpenseId;
+      edit['convertsItemId'] = _convertsItemId;
+    }
     final NavigatorState navigator = Navigator.of(context);
     // Only a purchase can be someone else's money.
     widget.provider.setPersonal(
@@ -205,6 +221,93 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
       await widget.provider.edit(widget.itemId, edit);
     }
     if (mounted) navigator.pop();
+  }
+
+  /// How a bill payment row is recorded: linked to its bank debit, made of
+  /// a debit recorded as an expense (on the user's say), or on the card for
+  /// now — matched when the bank statement is imported.
+  List<Widget> _paymentLinks(
+    BuildContext context,
+    CardImportProvider provider,
+    Map<String, Object?> item,
+    Map<String, Object?>? link,
+    BankAccountProvider accounts,
+  ) {
+    // The engine's find: one bank debit of this amount recorded as an
+    // expense (migration 022) — offered, never chosen for the user.
+    final Map<String, Object?>? expenseDebit = item['expenseDebit'] is Map
+        ? (item['expenseDebit']! as Map).cast<String, Object?>()
+        : null;
+    final List<LedgerEntry> asExpense = <LedgerEntry>[
+      if (expenseDebit != null)
+        provider.contextDebit(expenseDebit['entryId'] as String?) ??
+            LedgerEntry.fromMap(<String, dynamic>{
+              'id': expenseDebit['entryId'],
+              'user_id': '',
+              'account_id': '',
+              'direction': 'debit',
+              'amount': item['amount'],
+              'txn_date': expenseDebit['date'],
+              'description': expenseDebit['label'],
+            }),
+    ];
+    String where(LedgerEntry d) => '${d.title} · ${Formatters.dayMonth(d.txnDate)} · '
+        '${accounts.byId(d.accountId)?.nickname ?? 'account'}';
+    final bool anyChoice = (_candidates?.isNotEmpty ?? false) || asExpense.isNotEmpty;
+    return <Widget>[
+      const SizedBox(height: AppSpacing.lg),
+      const FieldLabel('How the bill was paid', hint: 'A recorded bank debit is linked, never debited twice'),
+      if (_candidates == null)
+        const LinearProgressIndicator()
+      else ...<Widget>[
+        if (_candidates!.isEmpty && asExpense.isEmpty)
+          const AppNotice(
+            message: 'No bank debit of this amount is recorded around this date. It is recorded on the card '
+                'for now; when you import the bank statement, its debit is matched to this payment so it '
+                'is never counted twice.',
+          ),
+        if (asExpense.isNotEmpty) ...<Widget>[
+          AppNotice(
+            icon: Icons.warning_amber_rounded,
+            tone: ToneColors.warning(context),
+            message: 'A bank debit of this amount is recorded as an expense — make it this bill payment?',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        if (anyChoice)
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              AppChoiceChip(
+                label: 'Record on the card',
+                selected: link == null || link['type'] == 'record',
+                onSelected: () => provider.setPaymentLink(widget.itemId, const <String, Object?>{'type': 'record'}),
+              ),
+              for (final LedgerEntry d in _candidates!)
+                AppChoiceChip(
+                  label: where(d),
+                  icon: Icons.account_balance_outlined,
+                  selected: link?['type'] == 'entry' && link!['entryId'] == d.id,
+                  onSelected: () => provider.setPaymentLink(
+                    widget.itemId,
+                    <String, Object?>{'type': 'entry', 'entryId': d.id, 'label': d.title},
+                  ),
+                ),
+              for (final LedgerEntry d in asExpense)
+                AppChoiceChip(
+                  label: where(d),
+                  icon: Icons.receipt_long_outlined,
+                  selected: link?['type'] == 'convertExpense' && link!['entryId'] == d.id,
+                  onSelected: () => provider.setPaymentLink(
+                    widget.itemId,
+                    <String, Object?>{'type': 'convertExpense', 'entryId': d.id, 'label': d.title},
+                  ),
+                ),
+            ],
+          ),
+      ],
+    ];
   }
 
   @override
@@ -368,39 +471,45 @@ class _CardImportRowSheetState extends State<CardImportRowSheet> {
             onMethod: (String? id) => setState(() => _paymentMethodId = id),
           ),
         ],
-        if (_effectiveKind == 'payment' && _direction == 'credit') ...<Widget>[
+        if (_effectiveKind == 'payment' && _direction == 'credit')
+          ..._paymentLinks(context, provider, item, link, accounts),
+        if (_effectiveKind == 'emiConversion' && _direction == 'credit') ...<Widget>[
           const SizedBox(height: AppSpacing.lg),
-          const FieldLabel('How the bill was paid', hint: 'A recorded bank debit is linked, never debited twice'),
-          if (_candidates == null)
-            const LinearProgressIndicator()
-          else if (_candidates!.isEmpty)
-            const AppNotice(
-              message: 'No bank debit of this amount is recorded around this date. It is recorded on the card '
-                  "alone; link it to the bank later from the account's statement.",
-            )
-          else
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: <Widget>[
+          const FieldLabel('Converted purchase', hint: 'Optional'),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: <Widget>[
+              AppChoiceChip(
+                label: 'Not recorded in the app',
+                selected: _conversionAnswered && _convertsExpenseId == null && _convertsItemId == null,
+                onSelected: () => setState(() {
+                  _conversionAnswered = true;
+                  _convertsExpenseId = null;
+                  _convertsItemId = null;
+                }),
+              ),
+              for (final ({String? expenseId, String? itemId, String label}) c
+                  in provider.conversionCandidates(item))
                 AppChoiceChip(
-                  label: 'Record on the card',
-                  selected: link == null || link['type'] == 'record',
-                  onSelected: () => provider.setPaymentLink(widget.itemId, const <String, Object?>{'type': 'record'}),
+                  label: c.label,
+                  icon: Icons.shopping_bag_outlined,
+                  selected: (c.expenseId != null && c.expenseId == _convertsExpenseId) ||
+                      (c.itemId != null && c.itemId == _convertsItemId),
+                  onSelected: () => setState(() {
+                    _conversionAnswered = true;
+                    _convertsExpenseId = c.expenseId;
+                    _convertsItemId = c.itemId;
+                  }),
                 ),
-                for (final LedgerEntry d in _candidates!)
-                  AppChoiceChip(
-                    label: '${d.title} · ${Formatters.dayMonth(d.txnDate)} · '
-                        '${accounts.byId(d.accountId)?.nickname ?? 'account'}',
-                    icon: Icons.account_balance_outlined,
-                    selected: link?['type'] == 'entry' && link!['entryId'] == d.id,
-                    onSelected: () => provider.setPaymentLink(
-                      widget.itemId,
-                      <String, Object?>{'type': 'entry', 'entryId': d.id, 'label': d.title},
-                    ),
-                  ),
-              ],
-            ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'The purchase stays on the card, but only the monthly instalments count as spending, '
+            'so it is never counted twice.',
+            style: theme.textTheme.labelSmall,
+          ),
         ],
         if (_effectiveKind.startsWith('emi')) ...<Widget>[
           const SizedBox(height: AppSpacing.lg),

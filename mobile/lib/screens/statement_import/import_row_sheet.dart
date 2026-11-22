@@ -95,19 +95,23 @@ class _DuplicateAnswer extends StatelessWidget {
         ),
       );
     }
+    // A bill payment already recorded on the card alone (migration 022): the
+    // same payment replaces that record when imported, a different one is
+    // imported on its own. Never merged on a guess.
+    final bool cardPayment = row.cardPaymentDuplicate;
     return Wrap(
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.xs,
       children: <Widget>[
         AppButton(
-          label: "Yes, it's a duplicate",
+          label: cardPayment ? 'Same payment' : "Yes, it's a duplicate",
           icon: Icons.content_copy_rounded,
           size: AppButtonSize.small,
           variant: AppButtonVariant.secondary,
           onPressed: () => provider.decideDuplicate(row.id, 'duplicate'),
         ),
         AppButton(
-          label: 'No, keep it',
+          label: cardPayment ? 'Different' : 'No, keep it',
           icon: Icons.check_rounded,
           size: AppButtonSize.small,
           variant: AppButtonVariant.tonal,
@@ -587,6 +591,15 @@ class _ImportRowSheetState extends State<ImportRowSheet> {
         ? cards.where((CreditCard c) => c.isActive).toList()
         : const <CreditCard>[];
     return <Widget>[
+      if (widget.row.cardBill && payable.isNotEmpty && _target?.type != 'card') ...<Widget>[
+        AppNotice(
+          icon: Icons.credit_card_rounded,
+          tone: ToneColors.warning(context),
+          message: 'This pays a credit card bill. Choose the card, so its outstanding drops — '
+              'a bill payment is never spending.',
+        ),
+        const SizedBox(height: AppSpacing.sm),
+      ],
       FieldLabel(_debit ? 'Transfer to' : 'Transfer from', isRequired: true),
       Wrap(
         spacing: AppSpacing.sm,

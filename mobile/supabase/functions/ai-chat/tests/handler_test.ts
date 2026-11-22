@@ -109,7 +109,7 @@ Deno.test("security: the model cannot execute SQL or reach auth.users", async ()
   assertEquals(body.reply, "I can't do that.");
   const touched = db.calls.map((c) => c.method);
   // Only the reference lookups made to build the prompt.
-  assertEquals(touched.filter((m) => !["profileCurrency", "listCategories", "listAccounts", "listPaymentMethods", "listTags"].includes(m)), []);
+  assertEquals(touched.filter((m) => !["profileCurrency", "listCategories", "listAccounts", "listCards", "listPaymentMethods", "listTags"].includes(m)), []);
 });
 
 Deno.test("security: invalid tool arguments are rejected and explained to the model", async () => {

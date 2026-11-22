@@ -52,9 +52,14 @@ class Expense {
   final String? notes;
 
   /// The EMI plan this is an instalment of (migration 016), and which part
-  /// ('principal', 'interest', 'tax' or 'fee').
+  /// ('principal', 'interest', 'tax' or 'fee'; 'conversion' for the original
+  /// purchase a plan converted to EMI, migration 022).
   final String? emiPlanId;
   final String? emiComponent;
+
+  /// The original purchase of an EMI plan (migration 022): it stays on the
+  /// card, but the plan's monthly instalments are the spending instead.
+  bool get isConvertedToEmi => emiComponent == 'conversion';
 
   /// The card statement it was billed on, when an import knew it: it is
   /// filed under that cycle, not the date's.

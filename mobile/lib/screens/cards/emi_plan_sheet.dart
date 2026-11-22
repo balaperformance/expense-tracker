@@ -6,6 +6,7 @@ import '../../core/theme/app_spacing.dart';
 import '../../core/utils/date_utils.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/bank_account.dart';
+import '../../models/card_statement.dart';
 import '../../models/credit_card.dart';
 import '../../models/emi_plan.dart';
 import '../../models/expense_category.dart';
@@ -90,6 +91,13 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
   late DateTime? _startDate = _seed?.startDate;
   late String? _categoryId = _seed?.categoryId;
   late bool _closed = widget.plan?.isClosed ?? false;
+
+  /// The purchase this plan converted (migration 022): it stays on the card,
+  /// but the plan's instalments are the spending instead.
+  late final String? _initialConvertsId = widget.plan == null
+      ? null
+      : context.read<CreditCardProvider>().convertedPurchaseOf(widget.plan!.id)?.id;
+  late String? _convertsId = _initialConvertsId;
   bool _submitted = false;
   bool _saving = false;
   String? _error;
@@ -113,6 +121,44 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
   /// Migration 020's fields — the bank account and the pending amount — are
   /// offered once it has run, never for the import's draft plan.
   bool get _showBank => SchemaCapabilities.emiBank && !widget.draft;
+
+  /// The card purchase this plan converted, picked by the user: marked as
+  /// converted when saved, so it is not counted again beside the
+  /// instalments; clearing it takes the mark off.
+  List<Widget> _originalPurchase(BuildContext context) {
+    final String? cardId = _cardId;
+    if (cardId == null) return const <Widget>[];
+    final List<CardEntry> choices =
+        context.read<CreditCardProvider>().conversionChoices(cardId, keepId: _initialConvertsId);
+    String money(double v) => Formatters.currency(
+        v, currencyCode: context.read<SettingsProvider>().currency, compact: true);
+    return <Widget>[
+      const FieldLabel('Original purchase', hint: 'Optional'),
+      DropdownButtonFormField<String?>(
+        value: choices.any((CardEntry e) => e.id == _convertsId) ? _convertsId : null,
+        isExpanded: true,
+        items: <DropdownMenuItem<String?>>[
+          const DropdownMenuItem<String?>(value: null, child: Text('Not recorded in the app')),
+          for (final CardEntry e in choices)
+            DropdownMenuItem<String?>(
+              value: e.id,
+              child: Text(
+                '${e.title} · ${Formatters.dayMonth(e.date)} · ${money(e.amount)}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: _saving ? null : (String? id) => setState(() => _convertsId = id),
+      ),
+      const SizedBox(height: AppSpacing.xs),
+      Text(
+        'The purchase stays on the card, but only the monthly instalments count as spending, '
+        'so it is never counted twice.',
+        style: Theme.of(context).textTheme.labelSmall,
+      ),
+      const SizedBox(height: AppSpacing.lg),
+    ];
+  }
 
   @override
   void dispose() {
@@ -212,6 +258,23 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
     final CreditCardProvider provider = context.read<CreditCardProvider>();
     final String? id = await provider.savePlan(_draft());
     if (!mounted) return;
+    if (id != null && SchemaCapabilities.cardAccounting && _cardId != null &&
+        _convertsId != _initialConvertsId) {
+      final bool marked = await provider.setConvertedPurchase(
+        planId: id,
+        previousExpenseId: _initialConvertsId,
+        expenseId: _convertsId,
+      );
+      if (!mounted) return;
+      if (!marked) {
+        setState(() {
+          _saving = false;
+          _error = 'The plan was saved, but its original purchase was not: '
+              '${provider.errorMessage ?? 'try again.'}';
+        });
+        return;
+      }
+    }
     if (id != null) {
       context.read<ReceivableProvider?>()?.invalidate();
       AppFeedback.success(
@@ -517,6 +580,8 @@ class _EmiPlanSheetState extends State<EmiPlanSheet> {
             ),
           const SizedBox(height: AppSpacing.lg),
         ],
+        if (_hasCard && !widget.draft && SchemaCapabilities.cardAccounting)
+          ..._originalPurchase(context),
         FieldLabel('EMI reference',
             hint: _hasCard ? 'From the card statement, if printed' : null),
         TextField(

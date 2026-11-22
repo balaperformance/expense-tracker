@@ -34,6 +34,7 @@ Deno.test("registry: exposes exactly the allowlisted tools and nothing generic",
     "get_monthly_expenses",
     "get_recent_transactions",
     "get_tag_spending",
+    "record_card_bill_payment",
     "transfer_money",
   ]);
   for (const forbidden of ["execute_sql", "query_database", "execute_rpc", "arbitrary_supabase_query", "sql"]) {

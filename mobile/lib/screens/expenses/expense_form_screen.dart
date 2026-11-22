@@ -36,6 +36,7 @@ import '../../widgets/common/surface_card.dart';
 import '../../widgets/expense_fields.dart';
 import '../../widgets/paid_for_field.dart';
 import '../../widgets/tag_field.dart';
+import '../cards/card_payment_sheet.dart';
 import 'paid_for_view.dart';
 import 'paste_sms_screen.dart';
 import 'quick_add_chips.dart';
@@ -655,18 +656,7 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                     FundingToggle(
                       byCard: payByCard,
                       enabled: !_saving,
-                      onChanged: (bool value) => setState(() {
-                        _byCard = value;
-                        _error = null;
-                        // Paid by credit card means the Credit Card method, which
-                        // the user can still change below.
-                        final String? cardMethod =
-                            creditCardMethod(payments.methods)?.id;
-                        if (value && cardMethod != null) {
-                          _paymentMethodId = cardMethod;
-                          _methodChosen = true;
-                        }
-                      }),
+                      onChanged: (bool value) => _setFunding(value, payments.methods),
                     ),
                     const SizedBox(height: AppSpacing.sm),
                   ],
@@ -796,6 +786,9 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
                 _paymentMethodId = id;
                 _methodChosen = true;
               }),
+              // A new one only: an expense already saved is turned into the
+              // bill payment from its account's statement instead.
+              onRecordBillPayment: widget.isEditing || _saving ? null : _recordAsBillPayment,
             ),
 
             if (!SchemaCapabilities.merchant &&
@@ -816,6 +809,55 @@ class _ExpenseFormScreenState extends State<ExpenseFormScreen> {
         ),
       ),
     );
+  }
+
+  /// Switches between cash or account and credit card. Moving an expense
+  /// saved as paid from an account onto a card removes its bank debit, so
+  /// that is confirmed first.
+  Future<void> _setFunding(bool byCard, List<PaymentMethod> methods) async {
+    final Expense? existing = widget.expense;
+    final String? fromAccount = existing?.bankAccountId;
+    if (byCard && existing != null && fromAccount != null && !_byCard) {
+      final String name =
+          context.read<BankAccountProvider>().byId(fromAccount)?.nickname ?? 'an account';
+      final bool move = await AppFeedback.confirm(
+        context,
+        title: 'Move this expense to the card?',
+        message: 'It is recorded as paid from $name. Paying it by card removes that '
+            "bank debit and adds it to the card's outstanding.",
+        confirmLabel: 'Move to card',
+        destructive: false,
+      );
+      if (!move || !mounted) return;
+    }
+    setState(() {
+      _byCard = byCard;
+      _error = null;
+      // Paid by credit card means the Credit Card method, which the user can
+      // still change below.
+      final String? cardMethod = creditCardMethod(methods)?.id;
+      if (byCard && cardMethod != null) {
+        _paymentMethodId = cardMethod;
+        _methodChosen = true;
+      }
+    });
+  }
+
+  /// What was typed is a card bill payment, not an expense: it is recorded
+  /// as one — the card's Pay bill, prefilled — and this form closes.
+  Future<void> _recordAsBillPayment() async {
+    FocusScope.of(context).unfocus();
+    final String note = _description.text.trim().isNotEmpty
+        ? _description.text.trim()
+        : _merchant.text.trim();
+    final bool? recorded = await openCardBillPayment(
+      context,
+      amount: Validators.parseAmount(_amount.text),
+      accountId: _byCard ? null : _sourceAccountId(context.read<BankAccountProvider>().accounts),
+      date: _date,
+      note: note.isEmpty ? null : note,
+    );
+    if (recorded == true && mounted) Navigator.of(context).pop(true);
   }
 
   Future<void> _save() async {

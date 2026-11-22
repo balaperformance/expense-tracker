@@ -18,6 +18,7 @@ import 'package:expense_tracker/models/ledger_entry.dart';
 import 'package:expense_tracker/models/payment_method.dart';
 import 'package:expense_tracker/models/receivable.dart';
 import 'package:expense_tracker/providers/statement_import_provider.dart';
+import 'package:expense_tracker/repositories/credit_card_repository.dart';
 import 'package:expense_tracker/repositories/expense_repository.dart';
 import 'package:expense_tracker/repositories/income_repository.dart';
 import 'package:expense_tracker/repositories/ledger_repository.dart';
@@ -107,6 +108,7 @@ class RecordingLedger extends LedgerRepository {
     required DateTime date,
     required String description,
     MovementDetails? details,
+    String? replaces,
   }) async =>
       writes.add(<String, Object?>{
         'type': 'cardPayment',
@@ -114,6 +116,7 @@ class RecordingLedger extends LedgerRepository {
         'cardId': cardId,
         'amount': amount,
         'reference': details?.reference,
+        if (replaces != null) 'replaces': replaces,
       });
 
   @override
@@ -1228,6 +1231,92 @@ void main() {
     expect(provider.account, isNull);
   });
 
+  group('a card bill already recorded on the card (migration 022)', () {
+    late RecordingCards cards;
+
+    setUp(() {
+      cards = RecordingCards(client, expenses: expenses, ledger: ledger);
+      SchemaCapabilities.debugOverride(creditCards: true, cardAccounting: true);
+    });
+
+    StatementImportProvider withCards(FakeEngine engine) {
+      final StatementImportProvider provider = StatementImportProvider(
+        engine: engine,
+        expenses: expenses,
+        income: income,
+        ledger: ledger,
+        tags: tags,
+        cards: cards,
+      );
+      provider.begin(
+        userId: 'u1',
+        account: account,
+        accounts: const <BankAccount>[account, salary],
+        categories: const <ExpenseCategory>[],
+        cards: const <CreditCard>[],
+      );
+      return provider;
+    }
+
+    test('card-side payments around the statement reach the duplicate check', () async {
+      cards.payments = <CardTransaction>[
+        CardTransaction(
+          id: 't1',
+          userId: 'u1',
+          cardId: 'c1',
+          kind: CardTransactionKind.payment,
+          direction: LedgerDirection.credit,
+          amount: 5000,
+          txnDate: DateTime(2026, 9, 4),
+          description: 'Paid in cash',
+        ),
+      ];
+      final FakeEngine engine = FakeEngine(reviewing((_) => statement('s1')));
+      await withCards(engine).addFile();
+
+      // Ten days either side of the statement's 1–30 Sep.
+      expect(cards.windows.single, (DateTime(2026, 8, 22), DateTime(2026, 10, 11)));
+      expect(engine.argsOf('review').single['cardPayments'], <Object?>[
+        <String, Object?>{
+          'id': 't1',
+          'cardId': 'c1',
+          'amount': 5000.0,
+          'date': '2026-09-04',
+          'description': 'Paid in cash',
+        },
+      ]);
+    });
+
+    test('before migration 022 nothing is read', () async {
+      SchemaCapabilities.debugOverride(cardAccounting: false);
+      final FakeEngine engine = FakeEngine(reviewing((_) => statement('s1')));
+      await withCards(engine).addFile();
+      expect(cards.windows, isEmpty);
+      expect(engine.argsOf('review').single['cardPayments'], isEmpty);
+    });
+
+    test('the same payment replaces the card-side record as it is written', () async {
+      final List<Object?> ops = <Object?>[
+        op('movement', card: 'c1', itemId: 'r1', extra: <String, Object?>{'replacesCardTxnId': 't1'}),
+        op('movement', card: 'c1', itemId: 'r2'),
+      ];
+      final FakeEngine engine = FakeEngine(<String, Object? Function(Map<String, Object?>)>{
+        ...reviewing((_) => statement('s1')),
+        'plan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+        'finalPlan': (_) => <String, Object?>{'operations': ops, 'skipped': <Object?>[]},
+      });
+      final StatementImportProvider provider = withCards(engine);
+      await provider.addFile();
+      await provider.execute((await provider.preview(paymentMethods: const []))!);
+
+      expect(ledger.writes.map((Map<String, Object?> w) => w['type']), <String>['cardPayment', 'cardPayment']);
+      expect(ledger.writes.first['replaces'], 't1');
+      expect(ledger.writes.last.containsKey('replaces'), isFalse,
+          reason: 'a different payment is imported on its own');
+      expect(expenses.created, isEmpty, reason: 'a bill payment is never an expense');
+    });
+  });
+
   group('engine JSON', () {
     test('a card is described in the shape the web models use', () {
       const CreditCard card = CreditCard(
@@ -1380,4 +1469,22 @@ void main() {
       expect(after.settles, <String, Object?>{'type': 'claim', 'receivableId': 'c1', 'left': 300});
     });
   });
+}
+
+/// Card-side bill payments for the duplicate check, and the windows read.
+class RecordingCards extends CreditCardRepository {
+  RecordingCards(super.client, {required super.expenses, required super.ledger});
+
+  List<CardTransaction> payments = <CardTransaction>[];
+  final List<(DateTime, DateTime)> windows = <(DateTime, DateTime)>[];
+
+  @override
+  Future<List<CardTransaction>> fetchCardSidePayments({
+    required String userId,
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    windows.add((from, toExclusive));
+    return payments;
+  }
 }

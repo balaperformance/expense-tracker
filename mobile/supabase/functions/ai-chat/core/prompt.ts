@@ -6,6 +6,8 @@ export type PromptContext = {
   /** Names only. No ids, no amounts, no transactions. */
   categoryNames: string[];
   accountLabels: string[];
+  /** The user's credit cards in use, by name and last digits. */
+  cardLabels?: string[];
   paymentMethodNames: string[];
   /** The user's tags, without the "#". Names only, like the rest. */
   tagNames?: string[];
@@ -67,6 +69,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     `Today is ${ctx.today}. Amounts are in ${ctx.currency}; write them like ${symbol}2,000.`,
     `The user's categories: ${list(ctx.categoryNames, "none yet")}.`,
     `The user's bank accounts: ${list(ctx.accountLabels, "none")}. Money not in a bank account is cash.`,
+    `The user's credit cards: ${list(ctx.cardLabels ?? [], "none")}.`,
     `The user's payment methods: ${list(ctx.paymentMethodNames, "none")}.`,
     `The user's tags: ${tagList(ctx.tagNames ?? [])}.`,
     "",
@@ -81,9 +84,10 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         ]),
     "- Read tools may be called freely. For dates, work out the YYYY-MM or",
     "  YYYY-MM-DD from today's date before calling.",
-    "- The write tools create_expense, create_income and transfer_money only",
-    "  PREPARE an action. When one returns status ready_to_confirm, reply with",
-    "  its summary question and nothing else; the app shows Confirm and Cancel.",
+    "- The write tools create_expense, create_income, transfer_money and",
+    "  record_card_bill_payment only PREPARE an action. When one returns status",
+    "  ready_to_confirm, reply with its summary question and nothing else; the",
+    "  app shows Confirm and Cancel.",
     "  Never say something was added, recorded or moved.",
     "- If a request to record money lacks the amount, what it was for, or which",
     "  account, ask for the missing detail. Do not guess and do not invent",
@@ -95,6 +99,14 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     "  which period the figure covers. If it returns found false, say so and name",
     "  the tags it lists. Follow-ups about \"that tag\" mean the last one discussed.",
     "- Transfers between the user's own accounts are not income and not spending.",
+    "- A purchase paid with a credit card is an expense on the day it was bought:",
+    "  record it with create_expense and the card. Paying a credit card bill is",
+    "  NOT an expense (the purchases already are): record it only with",
+    "  record_card_bill_payment, with the card and the bank account it was paid",
+    "  from — CRED, BillDesk and similar card payments included. It lowers the bank",
+    "  balance and the card outstanding and is never spending. When it returns",
+    "  status possible_duplicate, ask whether it is the same payment as the one",
+    "  already recorded or a separate one, and call it again with that answer.",
     "- If a tool returns an error, explain it in one plain sentence and suggest",
     "  what to try. Never mention tool names, ids, or technical details.",
     "",

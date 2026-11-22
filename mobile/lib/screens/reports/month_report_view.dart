@@ -11,6 +11,7 @@ import '../../providers/expense_provider.dart';
 import '../../providers/income_provider.dart';
 import '../../providers/reports_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../widgets/card_bill_payments.dart';
 import '../../widgets/charts/category_breakdown.dart';
 import '../../widgets/charts/monthly_trend_chart.dart';
 import '../../widgets/common/state_views.dart';
@@ -206,6 +207,11 @@ class _MonthReportViewState extends State<MonthReportView> {
             ),
           ),
         ],
+        // What went to the cards this month: for the record, never spending.
+        CardBillPaymentsSection(
+          from: data.month,
+          to: DateTime(data.month.year, data.month.month + 1, 0),
+        ),
       ],
     );
   }

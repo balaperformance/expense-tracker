@@ -23,6 +23,7 @@ import '../../providers/settings_provider.dart';
 import '../../providers/statement_provider.dart';
 import '../../services/export/export_models.dart';
 import '../../services/schema_capabilities.dart';
+import '../../widgets/card_bill_payments.dart';
 import '../../widgets/card_widgets.dart';
 import '../../widgets/category_avatar.dart';
 import '../../widgets/common/app_feedback.dart';
@@ -226,6 +227,17 @@ class _AccountStatementScreenState extends State<AccountStatementScreen> {
             const SizedBox(height: AppSpacing.md),
             AccountEmis(account: widget.account),
           ],
+          // Bills paid to cards from this account in the period: for the
+          // record — they lowered this balance and the card's outstanding
+          // once, and are never spending.
+          if (SchemaCapabilities.creditCards && !provider.wholeHistory)
+            CardBillPaymentsSection(
+              title: 'Card bill payments',
+              accountId: widget.account.id,
+              from: provider.month,
+              to: DateTime(provider.month.year, provider.month.month + 1, 0),
+              gap: AppSpacing.md,
+            ),
           const SizedBox(height: AppSpacing.md),
           _TypeFilterBar(provider: provider),
           const SizedBox(height: AppSpacing.sm),

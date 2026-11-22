@@ -103,6 +103,36 @@ class CreditCardProvider extends AsyncProvider {
   List<CardEntry> entriesFor(String cardId) =>
       _entries.where((CardEntry e) => e.cardId == cardId).toList();
 
+  /// Bill payments already on [cardId] for exactly [amount] within
+  /// [paymentDuplicateDays] of [date] — bank-side or card-side — closest
+  /// first: recording the same bill again would lower the outstanding twice.
+  List<CardEntry> recordedPayments({
+    required String cardId,
+    required double amount,
+    required DateTime date,
+  }) =>
+      findRecordedPayments(_entries, cardId: cardId, amount: amount, date: date);
+
+  /// Every bill payment in [from]–[to], newest first, on every card or only
+  /// those drawn from [accountId]: for the record, never spending.
+  List<CardBillPaymentRow> billPayments({
+    required Iterable<BankAccount> accounts,
+    DateTime? from,
+    DateTime? to,
+    String? accountId,
+  }) {
+    final List<CardBillPaymentRow> rows = cardBillPayments(
+      entries: _entries,
+      cards: _cards,
+      accounts: accounts,
+      from: from,
+      to: to,
+    );
+    return accountId == null
+        ? rows
+        : rows.where((CardBillPaymentRow r) => r.accountId == accountId).toList();
+  }
+
   /// Every EMI plan (migration 016); empty before it.
   List<EmiPlan> get allPlans => List<EmiPlan>.unmodifiable(_emiPlans);
 
@@ -132,6 +162,49 @@ class CreditCardProvider extends AsyncProvider {
       .where((EmiPlan p) =>
           p.id == keepId || (!p.isClosed && p.person == null))
       .toList();
+
+  /// The purchase [planId] converted (migration 022), or null.
+  CardEntry? convertedPurchaseOf(String planId) {
+    for (final CardEntry e in _entries) {
+      if (e.emiPlanId == planId && isEmiConversion(e) && e.kind == CardEntryKind.purchase) return e;
+    }
+    return null;
+  }
+
+  /// Purchases on [cardId] a plan can say it converted: those in no plan,
+  /// newest first (the last 180 days), plus [keepId] — the one it already
+  /// names.
+  List<CardEntry> conversionChoices(String cardId, {String? keepId}) {
+    final DateTime today = AppDateUtils.today();
+    final DateTime since = DateTime(today.year, today.month, today.day - 180);
+    final List<CardEntry> out = _entries
+        .where((CardEntry e) =>
+            e.cardId == cardId &&
+            e.kind == CardEntryKind.purchase &&
+            e.source == CardEntrySource.expense &&
+            (e.id == keepId || (e.emiPlanId == null && !e.date.isBefore(since))))
+        .toList()
+      ..sort((CardEntry a, CardEntry b) => b.date.compareTo(a.date));
+    return out;
+  }
+
+  /// Says which purchase plan [planId] converted: [expenseId] gets the mark,
+  /// [previousExpenseId] loses it. Explicit, from the plan sheet only.
+  Future<bool> setConvertedPurchase({
+    required String planId,
+    required String? previousExpenseId,
+    required String? expenseId,
+  }) =>
+      _write((String userId) async {
+        if (previousExpenseId != null && previousExpenseId != expenseId) {
+          await _repository.setEmiConversion(
+              userId: userId, expenseId: previousExpenseId, planId: null);
+        }
+        if (expenseId != null && expenseId != previousExpenseId) {
+          await _repository.setEmiConversion(
+              userId: userId, expenseId: expenseId, planId: planId);
+        }
+      });
 
   EmiPlan? planById(String? id) {
     if (id == null) return null;
@@ -380,18 +453,40 @@ class CreditCardProvider extends AsyncProvider {
       });
 
   /// Recognises an existing bank debit as a card's bill payment (or, with a
-  /// null [cardId], undoes that). No row is added.
-  Future<bool> link({required String entryId, required String? cardId}) =>
+  /// null [cardId], undoes that). No row is added. [replaces]: the card-side
+  /// record of the same bill, removed with it (migration 022).
+  Future<bool> link({
+    required String entryId,
+    required String? cardId,
+    String? replaces,
+  }) =>
       _write((String userId) => _ledger.linkToCard(
             userId: userId,
             entryId: entryId,
             cardId: cardId,
+            replaces: replaces,
+          ));
+
+  /// Puts right a bill payment stored twice: the bank payment [bankEntryId]
+  /// keeps it, the card-side copy [cardTransactionId] goes. Only on the
+  /// user's say; nothing else changes.
+  Future<bool> mergePayments({
+    required String bankEntryId,
+    required String cardTransactionId,
+  }) =>
+      _write((String _) => _ledger.mergeCardPayment(
+            entryId: bankEntryId,
+            cardTransactionId: cardTransactionId,
           ));
 
   /// Pays a card bill. From an account it is one debit on that account naming
   /// the card, checked against a balance re-derived from the ledger a moment
   /// before the write, as a transfer is. In cash it is one card transaction.
   /// Either way it is never an expense.
+  ///
+  /// [replaces]: a card-side payment of the same bill the user confirmed is
+  /// this one — removed in the same transaction (migration 022), so the
+  /// outstanding drops once.
   Future<bool> payBill({
     required CreditCard card,
     required BankAccount? account,
@@ -399,6 +494,7 @@ class CreditCardProvider extends AsyncProvider {
     required DateTime date,
     String? note,
     String currencyCode = AppConstants.defaultCurrencyCode,
+    String? replaces,
   }) =>
       _write((String userId) async {
         if (!available) {
@@ -447,6 +543,7 @@ class CreditCardProvider extends AsyncProvider {
           amount: amount!,
           date: date,
           description: description,
+          replaces: replaces,
         );
       });
 

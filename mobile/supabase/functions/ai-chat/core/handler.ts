@@ -1,3 +1,4 @@
+import { OwnSpendingDb } from "../db/own_spending.ts";
 import type { DbPort } from "../db/port.ts";
 import {
   type AIProvider,
@@ -5,7 +6,7 @@ import {
   ProviderChainError,
   ProviderError,
 } from "../providers/provider.ts";
-import { accountLabel, type PendingAction, type ToolContext } from "../tools/common.ts";
+import { accountLabel, cardLabel, type PendingAction, type ToolContext } from "../tools/common.ts";
 import { resolveToday } from "../tools/period.ts";
 import { executeWrite, WRITE_TOOLS } from "../tools/write_tools.ts";
 import { runAgent } from "./agent.ts";
@@ -122,10 +123,11 @@ async function handleChat(
   const providers = deps.providers();
   if (providers.length === 0) throw ChatError.notConfigured();
 
-  const [currency, categories, accounts, methods, tags] = await Promise.all([
+  const [currency, categories, accounts, cards, methods, tags] = await Promise.all([
     session.db.profileCurrency(session.userId).catch(() => null),
     session.db.listCategories(session.userId),
     session.db.listAccounts(session.userId).catch(() => []),
+    session.db.listCards(session.userId).catch(() => []),
     session.db.listPaymentMethods(session.userId),
     // Only names for the prompt; the tag tool reads its own figures.
     session.db.listTags(session.userId).catch(() => []),
@@ -133,7 +135,8 @@ async function handleChat(
 
   const ctx: ToolContext = {
     userId: session.userId,
-    db: session.db,
+    // Every expense read leaves out what is not the user's spending, as the apps do.
+    db: new OwnSpendingDb(session.db),
     today,
     currency: currency ?? "INR",
   };
@@ -143,6 +146,7 @@ async function handleChat(
     currency: ctx.currency,
     categoryNames: categories.map((c) => c.name),
     accountLabels: accounts.filter((a) => a.is_active).map(accountLabel),
+    cardLabels: cards.filter((c) => c.is_active).map(cardLabel),
     paymentMethodNames: methods.map((m) => m.name),
     tagNames: tags.map((t) => t.name),
     // Only a client that renders Markdown asks for it; the phone app keeps plain replies.
@@ -252,7 +256,8 @@ async function handleConfirm(
   const currency = await session.db.profileCurrency(session.userId).catch(() => null);
   const ctx: ToolContext = {
     userId: session.userId,
-    db: session.db,
+    // Every expense read leaves out what is not the user's spending, as the apps do.
+    db: new OwnSpendingDb(session.db),
     today: resolveToday(clientContext.today, now()),
     currency: currency ?? "INR",
   };

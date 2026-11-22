@@ -66,6 +66,38 @@ export type BudgetRow = {
   category_id: string | null;
 };
 
+/** A row of `credit_cards` (migration 004). */
+export type CardRow = {
+  id: string;
+  card_name: string;
+  issuer: string;
+  last4: string | null;
+  is_active: boolean;
+};
+
+/**
+ * A bill payment already on record for a card: a bank debit with
+ * credit_card_id (`source: "bank"`), or a card-side payment in cash / not
+ * tracked (`source: "card"`, credit_card_transactions kind 'payment').
+ */
+export type CardPaymentRow = {
+  id: string;
+  source: "bank" | "card";
+  account_id: string | null;
+  amount: number;
+  txn_date: string;
+};
+
+export type NewCardPayment = {
+  account_id: string;
+  card_id: string;
+  amount: number;
+  txn_date: string;
+  description: string | null;
+  /** The card-side payment of the same bill, confirmed by the user: deleted with this write. */
+  replaces: string | null;
+};
+
 /** A row of `tags` (migration 006): a label shared by both apps. */
 export type TagRow = { id: string; name: string };
 
@@ -88,6 +120,8 @@ export type Capabilities = {
    * of every figure. Absent or false before it.
    */
   personal?: boolean;
+  /** `credit_cards` and `expenses.credit_card_id` (migration 004). */
+  creditCards?: boolean;
 };
 
 export type NewExpense = {
@@ -96,6 +130,8 @@ export type NewExpense = {
   category_id: string | null;
   payment_method_id: string | null;
   bank_account_id: string | null;
+  /** A purchase on a credit card: an expense, never a bank movement (migration 004). */
+  credit_card_id?: string | null;
   merchant: string | null;
   description: string | null;
 };
@@ -186,6 +222,32 @@ export interface DbPort {
     fromInclusive: string | null,
     toExclusive: string | null,
   ): Promise<IncomeRow[]>;
+
+  /**
+   * The expenses that are not the user's spending — paid for someone else,
+   * every expense of an EMI someone else pays back, purchases converted to
+   * EMI (spending_excluded_expense_ids, migration 022, with the pre-022 rule
+   * as a fallback). The apps leave out exactly these.
+   */
+  spendingExcludedExpenseIds(userId: string): Promise<string[]>;
+
+  /** The user's credit cards; empty before migration 004. */
+  listCards(userId: string): Promise<CardRow[]>;
+
+  /** Bill payments of one card dated in the range, both kinds (inclusive bounds). */
+  cardPaymentsBetween(
+    userId: string,
+    cardId: string,
+    fromInclusive: string,
+    toInclusive: string,
+  ): Promise<CardPaymentRow[]>;
+
+  /**
+   * One bill payment from an account (record_card_payment, migration 022):
+   * a single debit with credit_card_id — never an expense — which absorbs the
+   * card-side copy in `replaces` in the same transaction.
+   */
+  recordCardPayment(userId: string, payment: NewCardPayment): Promise<{ id: string }>;
 
   insertExpense(userId: string, row: NewExpense): Promise<{ id: string }>;
   insertIncome(userId: string, row: NewIncome): Promise<{ id: string }>;

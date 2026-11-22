@@ -14,6 +14,7 @@ import '../../models/ledger_entry.dart';
 import '../../providers/bank_account_provider.dart';
 import '../../providers/credit_card_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/schema_capabilities.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_feedback.dart';
 import '../../widgets/common/app_fields.dart';
@@ -28,12 +29,75 @@ import '../../widgets/common/surface_card.dart';
 /// bank statement — the sheet offers that debit to link instead, so the
 /// account is never debited twice. Pops true when something was written.
 class CardPaymentSheet extends StatefulWidget {
-  const CardPaymentSheet({super.key, required this.overview});
+  const CardPaymentSheet({
+    super.key,
+    required this.overview,
+    this.initialAmount,
+    this.initialAccountId,
+    this.initialDate,
+    this.initialNote,
+  });
 
   final CardOverview overview;
 
+  /// What the sheet opens with when started from somewhere else — an
+  /// expense form or a bank alert that turned out to be this bill.
+  final double? initialAmount;
+  final String? initialAccountId;
+  final DateTime? initialDate;
+  final String? initialNote;
+
   @override
   State<CardPaymentSheet> createState() => _CardPaymentSheetState();
+}
+
+/// Opens Pay bill for one of the user's active cards — asked which when
+/// there are several — prefilled with what is known. Resolves to true when a
+/// payment was recorded or linked, false when not, null with no card.
+Future<bool?> openCardBillPayment(
+  BuildContext context, {
+  double? amount,
+  String? accountId,
+  DateTime? date,
+  String? note,
+  String? cardId,
+}) async {
+  final CreditCardProvider cards = context.read<CreditCardProvider>();
+  final List<CardOverview> active = cards.selectable(keepId: cardId);
+  if (active.isEmpty) {
+    AppFeedback.error(context, 'Add the credit card first, from Credit cards.');
+    return null;
+  }
+  CardOverview? chosen;
+  for (final CardOverview o in active) {
+    if (o.card.id == cardId) chosen = o;
+  }
+  if (chosen == null && active.length == 1) chosen = active.first;
+  chosen ??= await showAppDialog<CardOverview>(
+    context: context,
+    builder: (BuildContext dialogContext) => SimpleDialog(
+      title: const Text('Which card did this pay?'),
+      children: <Widget>[
+        for (final CardOverview o in active)
+          SimpleDialogOption(
+            onPressed: () => Navigator.of(dialogContext).pop(o),
+            child: Text(o.card.displayLabel),
+          ),
+      ],
+    ),
+  );
+  if (chosen == null || !context.mounted) return null;
+  final CardOverview overview = chosen;
+  return showAppSheet<bool>(
+    context: context,
+    builder: (_) => CardPaymentSheet(
+      overview: overview,
+      initialAmount: amount,
+      initialAccountId: accountId,
+      initialDate: date,
+      initialNote: note,
+    ),
+  );
 }
 
 class _CardPaymentSheetState extends State<CardPaymentSheet> {
@@ -43,11 +107,18 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
   late final TextEditingController _amount;
   final TextEditingController _note = TextEditingController();
 
-  String? _chosenSource;
-  DateTime _date = AppDateUtils.today();
+  late String? _chosenSource = widget.initialAccountId;
+  late DateTime _date = widget.initialDate ?? AppDateUtils.today();
   String? _linkId;
   bool _saving = false;
   String? _error;
+
+  /// The answer about a payment of the same bill already recorded on the
+  /// card alone (migration 022): its id when the user says it is this
+  /// payment (it is replaced, so the outstanding drops once), or
+  /// [_separate] when it is another payment. Unanswered: neither.
+  String? _sameAs;
+  bool _separate = false;
 
   // The duplicate check: debits on the paying account around the date.
   List<LedgerEntry>? _nearby;
@@ -62,7 +133,10 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
   void initState() {
     super.initState();
     final double due = _summary.lastStatement.remaining;
-    _amount = TextEditingController(text: due > 0 ? Formatters.amountInput(due) : '');
+    final double? start = widget.initialAmount ?? (due > 0 ? due : null);
+    _amount = TextEditingController(text: start != null ? Formatters.amountInput(start) : '');
+    final String? note = widget.initialNote?.trim();
+    if (note != null && note.isNotEmpty) _note.text = note;
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshNearby());
   }
 
@@ -146,6 +220,24 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
     for (final LedgerEntry m in matches) {
       if (m.id == _linkId) linked = m;
     }
+    // The same bill already recorded — on an account or on the card alone.
+    final List<CardEntry> recorded = typed == null
+        ? const <CardEntry>[]
+        : context.read<CreditCardProvider>().recordedPayments(
+              cardId: _card.id,
+              amount: linked?.amount ?? typed,
+              date: linked?.txnDate ?? _date,
+            );
+    CardEntry? cardSide;
+    for (final CardEntry e in recorded) {
+      if (e.source == CardEntrySource.card) {
+        cardSide = e;
+        break;
+      }
+    }
+    // From an account, a card-side record can become this payment.
+    final CardEntry? replaceable =
+        source != null && SchemaCapabilities.cardAccounting ? cardSide : null;
 
     final double due = _summary.lastStatement.remaining;
     final double outstanding = _summary.outstanding;
@@ -174,6 +266,8 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
                     linked: linked,
                     hasLookalikes: matches.isNotEmpty || asExpense.isNotEmpty,
                     currency: currency,
+                    recorded: recorded,
+                    replaceable: replaceable,
                   ),
         ),
         children: <Widget>[
@@ -305,6 +399,42 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
                   'on top of the card purchases.',
             ),
           ],
+          if (replaceable != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.md),
+            AppNotice(
+              icon: Icons.content_copy_rounded,
+              tone: ToneColors.warning(context),
+              message: 'A payment of ${money(replaceable.amount)} on '
+                  '${Formatters.dayMonthYear(replaceable.date)} is already recorded on the card. '
+                  'If it is this payment, it is recorded from ${source!.account.nickname} '
+                  'instead, so the card counts it once.',
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: <Widget>[
+                AppChoiceChip(
+                  label: 'Same payment — record it from ${source.account.nickname}',
+                  selected: _sameAs == replaceable.id,
+                  enabled: !_saving,
+                  onSelected: () => setState(() {
+                    _sameAs = replaceable.id;
+                    _separate = false;
+                  }),
+                ),
+                AppChoiceChip(
+                  label: 'Separate payment',
+                  selected: _separate,
+                  enabled: !_saving,
+                  onSelected: () => setState(() {
+                    _separate = true;
+                    _sameAs = null;
+                  }),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           if (linked == null) ...<Widget>[
             const FieldLabel('Date', isRequired: true),
@@ -421,8 +551,17 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
     setState(() {
       _amount.text = Formatters.amountInput(value);
       _linkId = null;
+      _sameAs = null;
+      _separate = false;
     });
     _refreshNearby();
+  }
+
+  /// "from HDFC Salary" or "on the card": where a recorded payment came from.
+  String _recordedWhere(CardEntry entry) {
+    if (entry.source != CardEntrySource.account) return 'on the card';
+    final BankAccount? account = context.read<BankAccountProvider>().byId(entry.accountId);
+    return 'from ${account?.nickname ?? 'an account'}';
   }
 
   Future<void> _submit({
@@ -430,15 +569,43 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
     required LedgerEntry? linked,
     required bool hasLookalikes,
     required String currency,
+    required List<CardEntry> recorded,
+    required CardEntry? replaceable,
   }) async {
     FocusScope.of(context).unfocus();
     setState(() => _error = null);
     final CreditCardProvider cards = context.read<CreditCardProvider>();
     final BankAccountProvider accounts = context.read<BankAccountProvider>();
 
+    // A card-side record of the same bill must be answered: never merged,
+    // and never added beside, on a guess.
+    if (replaceable != null && _sameAs != replaceable.id && !_separate) {
+      setState(() => _error =
+          'Say whether the payment already on the card is this one.');
+      return;
+    }
+    final String? replaces = replaceable != null && _sameAs == replaceable.id ? replaceable.id : null;
+    // Anything else already recorded for this bill: asked once before another goes in.
+    final List<CardEntry> others =
+        recorded.where((CardEntry e) => e.id != replaceable?.id).toList();
+    if (others.isNotEmpty && replaces == null) {
+      final CardEntry first = others.first;
+      final bool again = await AppFeedback.confirm(
+        context,
+        title: 'Already recorded?',
+        message: 'This bill payment may already be recorded — '
+            '${Formatters.currency(first.amount, currencyCode: currency)} on '
+            '${Formatters.dayMonthYear(first.date)} ${_recordedWhere(first)}. '
+            'Record another payment?',
+        confirmLabel: 'Record anyway',
+        destructive: false,
+      );
+      if (!again || !mounted) return;
+    }
+
     if (linked != null) {
       setState(() => _saving = true);
-      final bool ok = await cards.link(entryId: linked.id, cardId: _card.id);
+      final bool ok = await cards.link(entryId: linked.id, cardId: _card.id, replaces: replaces);
       if (!mounted) return;
       if (ok) {
         accounts.invalidate();
@@ -482,6 +649,7 @@ class _CardPaymentSheetState extends State<CardPaymentSheet> {
       date: _date,
       note: _note.text,
       currencyCode: currency,
+      replaces: replaces,
     );
     if (!mounted) return;
     if (ok) {

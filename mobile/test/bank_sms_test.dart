@@ -893,11 +893,20 @@ void main() {
       expect(harness.expenses.created.single.creditCardId, isNull);
     });
 
-    testWidgets('a bill payment message warns it is not spending',
+    testWidgets('a bill payment message is recorded as the bill payment, not spending',
         (WidgetTester tester) async {
       await _pumpReview(tester, billPaid, cards: <CreditCard>[_card()]);
-      expect(find.textContaining('bill payment, not spending'),
-          findsOneWidget);
+      // Migration 022: a bill payment alert defaults to the card's bill
+      // payment — never an expense — and can still be switched to one.
+      expect(find.text('Bill payment'), findsOneWidget);
+      expect(find.text('Record bill payment'), findsOneWidget);
+      expect(find.textContaining("Recorded as the card's bill payment"), findsOneWidget);
+      expect(find.text('Category'), findsNothing);
+
+      await tester.tap(find.text('Expense'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining("A bill payment isn't an expense"), findsOneWidget);
+      expect(find.text('Add expense'), findsOneWidget);
     });
 
     testWidgets('no card wording, no card warning or toggle without cards',

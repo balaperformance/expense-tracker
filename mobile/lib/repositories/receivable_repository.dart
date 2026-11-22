@@ -179,6 +179,17 @@ class ReceivableRepository {
     }
   }
 
+  /// Whether an expense of an EMI plan someone else pays back is owed back:
+  /// its principal always (no component reads as principal), its interest,
+  /// GST and fees only when the plan includes charges, the converted
+  /// purchase never — the rule of the database's claim_principal().
+  static bool emiExpenseOwed(String? component, bool includeCharges) =>
+      switch (component) {
+        null || 'principal' => true,
+        'interest' || 'tax' || 'fee' => includeCharges,
+        _ => false,
+      };
+
   /// What an EMI claim is owed, by plan: every principal instalment billed
   /// so far, plus the interest, GST and fees when the plan includes them —
   /// the same sum the database's claim_principal() guards repayments with.
@@ -194,13 +205,13 @@ class ReceivableRepository {
           'id, card_id, title, include_charges, start_date, created_at', userId, 'id', planIds),
       fetchAllPages(postgrestPages(() => _client
           .from('expenses')
-          .select('id, emi_plan_id, amount, expense_date, statement_date')
+          .select('id, emi_plan_id, emi_component, amount, expense_date, statement_date')
           .eq('user_id', userId)
           .inFilter('emi_plan_id', planIds)
           .order('id'))),
       fetchAllPages(postgrestPages(() => _client
           .from('credit_card_transactions')
-          .select('id, emi_plan_id, amount, direction, txn_date, statement_date')
+          .select('id, emi_plan_id, emi_component, amount, direction, txn_date, statement_date')
           .eq('user_id', userId)
           .inFilter('emi_plan_id', planIds)
           .order('id'))),
@@ -228,6 +239,10 @@ class ReceivableRepository {
 
       for (final Map<String, dynamic> row in read[1]) {
         if (row['emi_plan_id'] != id) continue;
+        // As claim_principal (migration 022): the principal always, the
+        // interest, GST and fees only when the plan includes charges, the
+        // converted purchase never.
+        if (!emiExpenseOwed(row['emi_component'] as String?, includeCharges)) continue;
         total += toCents(_amount(row['amount']));
         final String date = (row['expense_date'] as String).substring(0, 10);
         if (first == null || date.compareTo(first) < 0) first = date;
@@ -235,6 +250,7 @@ class ReceivableRepository {
       }
       for (final Map<String, dynamic> row in read[2]) {
         if (row['emi_plan_id'] != id) continue;
+        if (row['emi_component'] == 'conversion') continue;
         final String date = (row['txn_date'] as String).substring(0, 10);
         if (first == null || date.compareTo(first) < 0) first = date;
         if (!includeCharges) continue;

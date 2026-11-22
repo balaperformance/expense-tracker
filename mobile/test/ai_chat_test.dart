@@ -140,6 +140,29 @@ void main() {
       expect(back?.summary, action.summary);
       expect(back?.expiresAt, action.expiresAt);
     });
+
+    test('labels every write tool, a card bill payment included', () {
+      PendingAction of(String tool, [Map<String, dynamic> args = const <String, dynamic>{}]) =>
+          PendingAction(id: 'x', tool: tool, args: args, summary: 's');
+      expect(of('create_expense').kindLabel, 'New expense');
+      expect(of('create_income').kindLabel, 'New income');
+      expect(of('transfer_money').kindLabel, 'Transfer');
+      expect(of('record_card_bill_payment').kindLabel, 'Pay credit card bill');
+      expect(of('record_card_bill_payment').isCardBillPayment, isTrue);
+      expect(of('something_new').kindLabel, 'Action');
+      expect(
+        of('record_card_bill_payment', <String, dynamic>{
+          'amount': 12000,
+          'card_name': 'Amazon Pay ICICI',
+          'account_name': 'HDFC Salary',
+          'existing_payment': 'same_payment',
+        }).detailLine,
+        'HDFC Salary → Amazon Pay ICICI · replaces the payment already on the card · not counted as spending',
+      );
+      expect(of('create_expense', <String, dynamic>{'card_name': 'Amazon Pay ICICI'}).detailLine,
+          'Paid with Amazon Pay ICICI');
+      expect(_expenseAction().detailLine, isNull);
+    });
   });
 
   group('error mapping', () {

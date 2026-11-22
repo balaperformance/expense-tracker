@@ -172,6 +172,10 @@ class TransactionRow extends StatelessWidget {
 /// The pill on an income or expense that is someone else's money.
 const String nonPersonalBadge = 'Non-personal';
 
+/// A purchase converted to EMI (migration 022): on the card, but its
+/// monthly instalments are the spending instead, so it is not counted.
+const String convertedToEmiBadge = 'Converted to EMI';
+
 /// One expense row.
 class ExpenseTile extends StatelessWidget {
   const ExpenseTile({
@@ -218,8 +222,12 @@ class ExpenseTile extends StatelessWidget {
       // not in the spending colour.
       tone: person != null
           ? AmountTone.transfer
-          : (expense.isPersonal ? AmountTone.negative : AmountTone.neutral),
-      badge: expense.isPersonal ? null : nonPersonalBadge,
+          : (expense.isPersonal && !expense.isConvertedToEmi
+              ? AmountTone.negative
+              : AmountTone.neutral),
+      badge: expense.isConvertedToEmi
+          ? convertedToEmiBadge
+          : (expense.isPersonal ? null : nonPersonalBadge),
       trailingBelow: person != null ? paidForStatus : null,
       meta: <String>[
         if (showDate) Formatters.relativeDay(expense.expenseDate),

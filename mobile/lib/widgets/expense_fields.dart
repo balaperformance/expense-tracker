@@ -5,13 +5,16 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_spacing.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/validators.dart';
+import '../models/card_statement.dart';
 import '../models/emi_plan.dart';
 import '../models/expense_category.dart';
 import '../models/payment_method.dart';
 import '../models/tag.dart';
 import '../models/tag_rules.dart';
 import 'category_avatar.dart';
+import 'common/app_buttons.dart';
 import 'common/app_fields.dart';
+import 'common/money_text.dart';
 import 'common/surface_card.dart';
 import 'payment_method_chips.dart';
 import 'personal_field.dart';
@@ -63,6 +66,7 @@ class ExpenseFields extends StatelessWidget {
     this.onMethod,
     this.methodHint,
     this.enabled = true,
+    this.onRecordBillPayment,
   });
 
   final List<ExpenseCategory> categories;
@@ -125,6 +129,25 @@ class ExpenseFields extends StatelessWidget {
   final ValueChanged<String?>? onMethod;
   final String? methodHint;
   final bool enabled;
+
+  /// When the description, merchant or category reads like paying a card
+  /// bill, the fields say a bill payment is not an expense; this records it
+  /// as one instead (the card's Pay bill). Without it only the notice shows.
+  final VoidCallback? onRecordBillPayment;
+
+  /// Says a bill payment is not an expense — the card purchases already are.
+  static const String billPaymentNotice =
+      "This looks like a credit card bill payment. A bill payment isn't an expense — "
+      'your card purchases already are.';
+
+  /// Whether what is typed (or the category) reads like a card bill payment.
+  static bool looksLikeBillPayment({
+    String? merchant,
+    String? description,
+    String? categoryName,
+  }) =>
+      looksLikeCardBillPayment('${merchant ?? ''} ${description ?? ''}'.trim()) ||
+      isCardBillCategoryName(categoryName);
 
   /// The name of the category with [id], if any.
   static String? categoryName(List<ExpenseCategory> categories, String? id) {
@@ -304,8 +327,55 @@ class ExpenseFields extends StatelessWidget {
             ),
           ),
         ],
+        _billPaymentWarning(),
       ],
     );
+  }
+
+  /// The card-bill warning, following what is typed.
+  Widget _billPaymentWarning() {
+    final List<Listenable> typed = <Listenable>[
+      if (merchant != null) merchant!,
+      if (description != null) description!,
+    ];
+    Widget build(BuildContext context) {
+      final bool bill = looksLikeBillPayment(
+        merchant: merchant?.text,
+        description: description?.text,
+        categoryName: categoryName(categories, categoryId),
+      );
+      if (!bill) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(top: AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            AppNotice(
+              icon: Icons.credit_card_rounded,
+              tone: ToneColors.warning(context),
+              message: billPaymentNotice,
+            ),
+            if (onRecordBillPayment != null) ...<Widget>[
+              const SizedBox(height: AppSpacing.sm),
+              AppButton(
+                label: 'Record as bill payment',
+                icon: Icons.payments_outlined,
+                size: AppButtonSize.small,
+                variant: AppButtonVariant.tonal,
+                onPressed: enabled ? onRecordBillPayment : null,
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    return typed.isEmpty
+        ? Builder(builder: build)
+        : ListenableBuilder(
+            listenable: Listenable.merge(typed),
+            builder: (BuildContext context, Widget? _) => build(context),
+          );
   }
 
   /// "Home loan · ₹36,000 pending": the plan and what is left on it.

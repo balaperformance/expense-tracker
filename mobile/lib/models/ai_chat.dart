@@ -38,13 +38,47 @@ class PendingAction {
   bool get isIncome => tool == 'create_income';
   bool get isTransfer => tool == 'transfer_money';
 
+  /// Paying a credit card bill from an account (migration 022): never an
+  /// expense — it lowers the account and the card's outstanding once.
+  bool get isCardBillPayment => tool == 'record_card_bill_payment';
+
   /// Label for the card header.
   String get kindLabel => switch (tool) {
         'create_expense' => 'New expense',
         'create_income' => 'New income',
         'transfer_money' => 'Transfer',
+        'record_card_bill_payment' => 'Pay credit card bill',
         _ => 'Action',
       };
+
+  /// One line of what the arguments name, under the server's question —
+  /// "HDFC Salary → Amazon Pay ICICI" for a bill payment, "Paid with Amazon
+  /// Pay ICICI" for an expense on a card; null when there is nothing to add.
+  String? get detailLine {
+    String? named(String key) {
+      final Object? value = args[key];
+      return value is String && value.trim().isNotEmpty ? value.trim() : null;
+    }
+
+    switch (tool) {
+      case 'record_card_bill_payment':
+        final String? account = named('account_name');
+        final String? card = named('card_name');
+        final String route = <String>[if (account != null) account, if (card != null) card].join(' → ');
+        final String? existing = switch (named('existing_payment')) {
+          'same_payment' => 'replaces the payment already on the card',
+          'separate_payment' => 'a separate payment',
+          _ => null,
+        };
+        final String line = <String>[if (route.isNotEmpty) route, if (existing != null) existing].join(' · ');
+        return line.isEmpty ? null : '$line · not counted as spending';
+      case 'create_expense':
+        final String? card = named('card_name');
+        return card == null ? null : 'Paid with $card';
+      default:
+        return null;
+    }
+  }
 
   bool isExpired(DateTime now) {
     final DateTime? at = expiresAt;

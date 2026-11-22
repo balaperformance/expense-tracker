@@ -1357,6 +1357,14 @@ class _EmiPlanDetailSheet extends StatelessWidget {
             if (summary.endsOn != null) fact('Last instalment', Formatters.monthYear(summary.endsOn!)),
           ],
         ),
+        if (emiConvertedFromText(summary, Formatters.dayMonth) case final String converted) ...<Widget>[
+          const SizedBox(height: AppSpacing.md),
+          AppNotice(
+            icon: Icons.swap_horiz_rounded,
+            message: '$converted. The purchase stays on the card, but only the monthly '
+                'instalments count as spending.',
+          ),
+        ],
         if (repayment != null) ...<Widget>[
           const SizedBox(height: AppSpacing.md),
           SurfaceCard(

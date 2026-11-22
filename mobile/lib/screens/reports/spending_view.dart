@@ -13,6 +13,7 @@ import '../../models/insights.dart';
 import '../../models/tag_rules.dart';
 import '../../providers/insights_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../widgets/card_bill_payments.dart';
 import '../../widgets/charts/monthly_trend_chart.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/app_fields.dart';
@@ -175,6 +176,8 @@ class _SpendingBodyState extends State<_SpendingBody> {
                 : _report(context, view, currency, filtered: anyFilter, groupBy: groupBy),
           ),
         ),
+        // What went to the cards in the period: for the record, never spending.
+        CardBillPaymentsSection(from: view.period.start, to: view.period.end),
       ],
     );
   }

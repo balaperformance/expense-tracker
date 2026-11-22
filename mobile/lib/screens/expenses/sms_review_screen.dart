@@ -32,6 +32,7 @@ import '../../widgets/common/app_fields.dart';
 import '../../widgets/common/money_text.dart';
 import '../../widgets/common/state_views.dart';
 import '../../widgets/common/surface_card.dart';
+import '../cards/card_payment_sheet.dart';
 import '../cards/credit_cards_screen.dart';
 
 /// Check what the message said, before anything is saved.
@@ -90,6 +91,11 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
   /// its last four digits is the default.
   bool? _chosenByCard;
   String? _chosenCardId;
+
+  /// For a message that reads like paying a card bill: recorded as that
+  /// card's bill payment (the default) or, if the user says so, as an
+  /// expense. A bill payment is never spending.
+  bool _asBillPayment = true;
 
   Timer? _recheck;
 
@@ -226,15 +232,22 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
     final ({bool byCard, CardOverview? card, CreditCard? match}) funding =
         _funding();
     final CardOverview? selectedCard = funding.card;
-    final bool billPayment = SchemaCapabilities.creditCards &&
-        looksLikeCardBillPayment(widget.text);
+    final bool billPayment =
+        SchemaCapabilities.creditCards && looksLikeCardBillPayment(widget.text);
+    // Recorded as the card's bill payment: paid from the message's account,
+    // never by card, never an expense.
+    final bool billMode =
+        billPayment && _asBillPayment && cardOptions.isNotEmpty;
+    final bool byCardShown = funding.byCard && !billMode;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Review transaction')),
       bottomNavigationBar: _ConfirmBar(
-        confirmLabel: warnDuplicate ? 'Add anyway' : 'Add expense',
+        confirmLabel: billMode
+            ? 'Record bill payment'
+            : (warnDuplicate ? 'Add anyway' : 'Add expense'),
         busy: _saving,
-        onConfirm: _save,
+        onConfirm: billMode ? () => _recordBillPayment(funding.match) : _save,
         onCancel: _saving ? null : () => Navigator.of(context).pop(false),
       ),
       body: ListView(
@@ -245,7 +258,40 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
           AppSpacing.xl,
         ),
         children: <Widget>[
-          if (billPayment) ...<Widget>[
+          if (billPayment && cardOptions.isNotEmpty) ...<Widget>[
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<bool>(
+                segments: const <ButtonSegment<bool>>[
+                  ButtonSegment<bool>(value: false, label: Text('Expense')),
+                  ButtonSegment<bool>(value: true, label: Text('Bill payment')),
+                ],
+                selected: <bool>{_asBillPayment},
+                showSelectedIcon: false,
+                onSelectionChanged: _saving
+                    ? null
+                    : (Set<bool> v) => setState(() {
+                          _asBillPayment = v.first;
+                          _error = null;
+                        }),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            AppNotice(
+              icon: billMode
+                  ? Icons.credit_card_rounded
+                  : Icons.warning_amber_rounded,
+              tone: billMode
+                  ? ToneColors.transfer(context)
+                  : ToneColors.expense(context),
+              message: billMode
+                  ? "Recorded as the card's bill payment: it lowers the account and the card's "
+                      'outstanding once, and is never spending — your card purchases already are.'
+                  : "This looks like a credit card bill payment. A bill payment isn't an expense — "
+                      'your card purchases already are.',
+            ),
+            const SizedBox(height: AppSpacing.md),
+          ] else if (billPayment) ...<Widget>[
             AppNotice(
               icon: Icons.warning_amber_rounded,
               tone: ToneColors.expense(context),
@@ -298,11 +344,11 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
           FieldLabel(
             'Paid from',
             isRequired: true,
-            hint: funding.byCard
+            hint: byCardShown
                 ? null
                 : (_bankAccountId == null ? 'No balance affected' : null),
           ),
-          if (cardOptions.isNotEmpty) ...<Widget>[
+          if (cardOptions.isNotEmpty && !billMode) ...<Widget>[
             FundingToggle(
               byCard: funding.byCard,
               enabled: !_saving,
@@ -319,7 +365,7 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
-          if (funding.byCard) ...<Widget>[
+          if (byCardShown) ...<Widget>[
             if (funding.match != null &&
                 selectedCard?.card.id == funding.match!.id) ...<Widget>[
               AppNotice(
@@ -397,58 +443,61 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
           const SizedBox(height: AppSpacing.lg),
 
           // ---------------------------------------------------------------
-          // Category
+          // Category — not for a bill payment, which is never spending
           // ---------------------------------------------------------------
-          FieldLabel(
-            'Category',
-            isRequired: true,
-            hint: categoryMissing ? 'Pick one' : _categoryHint(),
-          ),
-          if (categories.isEmpty)
-            const AppNotice(
-              message: 'No categories yet. Add one from Settings › Categories '
-                  'before importing a message.',
-            )
-          else
-            Container(
-              padding: categoryMissing
-                  ? const EdgeInsets.all(AppSpacing.sm)
-                  : EdgeInsets.zero,
-              decoration: categoryMissing
-                  ? BoxDecoration(
-                      borderRadius:
-                          BorderRadius.circular(AppSpacing.radiusMd),
-                      border: Border.all(color: theme.colorScheme.error),
-                    )
-                  : null,
-              child: Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: categories.map((ExpenseCategory category) {
-                  return AppChoiceChip(
-                    label: category.name,
-                    selected: category.id == _categoryId,
-                    enabled: !_saving,
-                    tone: AppColors.readableOn(
-                      AppColors.fromHex(category.color),
-                      theme.brightness,
-                    ),
-                    avatar: CategoryAvatar(
-                      icon: category.icon,
-                      color: category.color,
-                      size: 20,
-                    ),
-                    onSelected: () => setState(() {
-                      _categoryId = category.id;
-                      _categorySource = SmsCategorySource.user;
-                      _categoryReason = null;
-                      _submitted = false;
-                    }),
-                  );
-                }).toList(),
-              ),
+          if (!billMode) ...<Widget>[
+            FieldLabel(
+              'Category',
+              isRequired: true,
+              hint: categoryMissing ? 'Pick one' : _categoryHint(),
             ),
-          const SizedBox(height: AppSpacing.lg),
+            if (categories.isEmpty)
+              const AppNotice(
+                message:
+                    'No categories yet. Add one from Settings › Categories '
+                    'before importing a message.',
+              )
+            else
+              Container(
+                padding: categoryMissing
+                    ? const EdgeInsets.all(AppSpacing.sm)
+                    : EdgeInsets.zero,
+                decoration: categoryMissing
+                    ? BoxDecoration(
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusMd),
+                        border: Border.all(color: theme.colorScheme.error),
+                      )
+                    : null,
+                child: Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: categories.map((ExpenseCategory category) {
+                    return AppChoiceChip(
+                      label: category.name,
+                      selected: category.id == _categoryId,
+                      enabled: !_saving,
+                      tone: AppColors.readableOn(
+                        AppColors.fromHex(category.color),
+                        theme.brightness,
+                      ),
+                      avatar: CategoryAvatar(
+                        icon: category.icon,
+                        color: category.color,
+                        size: 20,
+                      ),
+                      onSelected: () => setState(() {
+                        _categoryId = category.id;
+                        _categorySource = SmsCategorySource.user;
+                        _categoryReason = null;
+                        _submitted = false;
+                      }),
+                    );
+                  }).toList(),
+                ),
+              ),
+            const SizedBox(height: AppSpacing.lg),
+          ],
 
           // ---------------------------------------------------------------
           // Date
@@ -524,6 +573,26 @@ class _SmsReviewScreenState extends State<SmsReviewScreen> {
       };
 
   // ---------------------------------------------------------------------
+
+  /// Records the message as a card's bill payment: the card's Pay bill,
+  /// prefilled from the message — the card it names, the account it came
+  /// from — with the same check for a payment already recorded. Closes
+  /// when it was recorded.
+  Future<void> _recordBillPayment(CreditCard? card) async {
+    FocusScope.of(context).unfocus();
+    final String note = _merchant.text.trim().isNotEmpty
+        ? _merchant.text.trim()
+        : _description.text.trim();
+    final bool? recorded = await openCardBillPayment(
+      context,
+      amount: Validators.parseAmount(_amount.text),
+      accountId: _bankAccountId,
+      date: _date,
+      note: note.isEmpty ? null : note,
+      cardId: card?.id,
+    );
+    if (recorded == true && mounted) Navigator.of(context).pop(true);
+  }
 
   Future<void> _save() async {
     FocusScope.of(context).unfocus();

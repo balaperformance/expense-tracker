@@ -67,6 +67,43 @@ class CreditCardRepository {
     }
   }
 
+  /// Bill payments recorded on the card alone (kind payment: cash, not
+  /// tracked, or a card statement imported before the bank one) dated from
+  /// [from] up to [toExclusive], on any card — what a bank statement's card
+  /// bill debit may be the other record of.
+  Future<List<CardTransaction>> fetchCardSidePayments({
+    required String userId,
+    required DateTime from,
+    required DateTime toExclusive,
+  }) async {
+    await SchemaCapabilities.resolve(_client);
+    if (!SchemaCapabilities.creditCards) return const <CardTransaction>[];
+    try {
+      final List<Map<String, dynamic>> rows =
+          await fetchAllPages(postgrestPages(() => _client
+              .from(_transactions)
+              .select(_transactionSelect)
+              .eq('user_id', userId)
+              .eq('kind', CardTransactionKind.payment.wire)
+              .gte('txn_date', AppDateUtils.toDateString(from))
+              .lt('txn_date', AppDateUtils.toDateString(toExclusive))
+              .order('id')));
+      return rows.map(CardTransaction.fromMap).toList();
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// Marks a card purchase as the one an EMI plan converted, or (null
+  /// [planId]) takes the mark off again — only ever on the user's say
+  /// (migration 022).
+  Future<void> setEmiConversion({
+    required String userId,
+    required String expenseId,
+    required String? planId,
+  }) =>
+      _expenses.setEmiConversion(userId: userId, expenseId: expenseId, planId: planId);
+
   /// Re-probes the schema, so the feature appears as soon as 004 is applied.
   Future<void> refreshCapabilities() =>
       SchemaCapabilities.resolve(_client, force: true);

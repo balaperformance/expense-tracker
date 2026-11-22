@@ -726,20 +726,263 @@ List<LedgerEntry> findExpenseDebits(
       .toList();
 }
 
+/// How far apart two records of the same bill payment can be: the day it was
+/// paid and the day the bank or the card posted it.
+const int paymentDuplicateDays = 10;
+
+/// Payments of [cardId] for exactly [amount] within [windowDays] of [date] —
+/// from an account (a ledger debit linked to the card) or on the card alone
+/// (cash, not tracked, or a card statement imported before the bank one).
+/// Recording the same bill again would lower the outstanding twice. Closest
+/// first. The web's `findRecordedPayments`.
+List<CardEntry> findRecordedPayments(
+  Iterable<CardEntry> entries, {
+  required String cardId,
+  required double amount,
+  required DateTime date,
+  int windowDays = paymentDuplicateDays,
+}) {
+  final int wanted = toCents(amount);
+  final List<CardEntry> hits = entries
+      .where((CardEntry e) =>
+          e.kind == CardEntryKind.payment &&
+          e.cardId == cardId &&
+          toCents(e.amount) == wanted &&
+          _daysBetween(e.date, date).abs() <= windowDays)
+      .toList()
+    ..sort((CardEntry a, CardEntry b) {
+      final int byDistance = _daysBetween(a.date, date)
+          .abs()
+          .compareTo(_daysBetween(b.date, date).abs());
+      return byDistance != 0 ? byDistance : a.key.compareTo(b.key);
+    });
+  return hits;
+}
+
+// ---------------------------------------------------------------------------
+// Bill payments, for the record (never spending)
+// ---------------------------------------------------------------------------
+
+/// The card accounting rules this app applies from this date on (the billing
+/// cycle of 20 Oct – 20 Nov 2026): a card statement's EMI interest, GST and
+/// processing fees are imported as expenses, so the whole instalment is
+/// spending. Nothing dated earlier is rewritten or re-imported differently.
+/// The web's `CARD_RULES_FROM`.
+final DateTime cardRulesFrom = DateTime(2026, 10, 20);
+
+/// Whether a row dated [date] is under the card accounting rules.
+bool underCardRules(DateTime date) =>
+    !DateTime(date.year, date.month, date.day).isBefore(cardRulesFrom);
+
+enum BillPaymentStatus { full, partial, advance }
+
+extension BillPaymentStatusLabel on BillPaymentStatus {
+  String get label => switch (this) {
+        BillPaymentStatus.full => 'Paid in full',
+        BillPaymentStatus.partial => 'Partially paid',
+        BillPaymentStatus.advance => 'Advance payment',
+      };
+}
+
+const String possibleDuplicateLabel = 'Possible duplicate';
+
+/// Where a card-side payment's money came from: no tracked account.
+const String untrackedPaymentSource = 'Cash / not tracked';
+
+/// Whether a bill payment was drawn from an account or recorded on the card alone.
+enum BillPaymentSource { bank, card }
+
+/// One bill payment, for the record: it lowered the card outstanding (and,
+/// from an account, the bank balance) and is never spending.
+class CardBillPaymentRow {
+  const CardBillPaymentRow({
+    required this.id,
+    required this.source,
+    required this.entryId,
+    required this.date,
+    required this.amount,
+    required this.cardId,
+    required this.cardLabel,
+    required this.accountId,
+    required this.accountLabel,
+    required this.status,
+    required this.duplicateOfId,
+  });
+
+  /// The card entry's key (`account:…` or `card:…`).
+  final String id;
+  final BillPaymentSource source;
+
+  /// The row's id in its own table (account_transactions or
+  /// credit_card_transactions).
+  final String entryId;
+  final DateTime date;
+  final double amount;
+  final String cardId;
+  final String cardLabel;
+  final String? accountId;
+  final String accountLabel;
+  final BillPaymentStatus status;
+
+  /// The other record of the same payment: a bank-side and a card-side one
+  /// for the same card and amount within [paymentDuplicateDays].
+  final String? duplicateOfId;
+
+  bool get possibleDuplicate => duplicateOfId != null;
+}
+
+/// Every bill payment in [from]–[to] (inclusive; null for no bound), newest
+/// first — informational only. The web's `cardBillPayments`.
+///
+/// status — against the latest statement generated before the payment: the
+/// card's payments from that statement's date up to and including this one
+/// covering the statement's amount is full, less is partial; with nothing due
+/// on that statement (or none yet) it is an advance.
+List<CardBillPaymentRow> cardBillPayments({
+  required Iterable<CardEntry> entries,
+  required Iterable<CreditCard> cards,
+  required Iterable<BankAccount> accounts,
+  DateTime? from,
+  DateTime? to,
+}) {
+  final List<CardEntry> all = entries.toList();
+  final List<BankAccount> accountList = accounts.toList();
+  final List<CardBillPaymentRow> rows = <CardBillPaymentRow>[];
+  for (final CreditCard card in cards) {
+    final List<CardEntry> own =
+        orderEntries(all.where((CardEntry e) => e.cardId == card.id));
+    final List<CardEntry> payments =
+        own.where((CardEntry e) => e.kind == CardEntryKind.payment).toList();
+    for (final CardEntry payment in payments) {
+      if (from != null && payment.date.isBefore(from)) continue;
+      if (to != null && payment.date.isAfter(to)) continue;
+      // The statement it pays: the cycle before the one the payment falls in.
+      final BillingCycle cycle = cardCycleContaining(
+          card, _addDays(cardCycleContaining(card, payment.date).start, -1));
+      final double bill = outstandingOf(
+        card.openingOutstanding,
+        own.where((CardEntry e) => !e.billingDate.isAfter(cycle.end)),
+      );
+      BillPaymentStatus status = BillPaymentStatus.advance;
+      if (toCents(bill) > 0) {
+        final int index = own.indexOf(payment);
+        int paidSoFar = 0;
+        for (final CardEntry e in own.take(index + 1)) {
+          if (e.kind == CardEntryKind.payment && e.date.isAfter(cycle.end)) {
+            paidSoFar += toCents(e.amount);
+          }
+        }
+        status = paidSoFar >= toCents(bill)
+            ? BillPaymentStatus.full
+            : BillPaymentStatus.partial;
+      }
+      CardEntry? other;
+      for (final CardEntry p in payments) {
+        if (p.key != payment.key &&
+            p.source != payment.source &&
+            toCents(p.amount) == toCents(payment.amount) &&
+            _daysBetween(p.date, payment.date).abs() <= paymentDuplicateDays) {
+          other = p;
+          break;
+        }
+      }
+      BankAccount? account;
+      for (final BankAccount a in accountList) {
+        if (a.id == payment.accountId) account = a;
+      }
+      final bool fromBank = payment.source == CardEntrySource.account;
+      rows.add(CardBillPaymentRow(
+        id: payment.key,
+        source: fromBank ? BillPaymentSource.bank : BillPaymentSource.card,
+        entryId: payment.id,
+        date: payment.date,
+        amount: payment.amount,
+        cardId: card.id,
+        cardLabel: card.displayLabel,
+        accountId: payment.accountId,
+        accountLabel: fromBank
+            ? (account?.displayLabel ?? 'Bank account')
+            : untrackedPaymentSource,
+        status: status,
+        duplicateOfId: other?.key,
+      ));
+    }
+  }
+  rows.sort((CardBillPaymentRow a, CardBillPaymentRow b) {
+    final int byDate = b.date.compareTo(a.date);
+    return byDate != 0 ? byDate : b.id.compareTo(a.id);
+  });
+  return rows;
+}
+
+/// The total of [rows] — what went to the cards, never part of spending.
+double billPaymentsTotal(Iterable<CardBillPaymentRow> rows) =>
+    _fromCents(rows.fold<int>(0, (int s, CardBillPaymentRow r) => s + toCents(r.amount)));
+
 // ---------------------------------------------------------------------------
 // Bank SMS
 // ---------------------------------------------------------------------------
 
+/// Wording that says a debit pays a credit-card bill — the bank's own
+/// narration ("CC PAYMENT", "credit card bill"), an alert ("paid towards your
+/// credit card") or a third-party bill rail (CRED, BillDesk, BBPS, PayZapp…).
+/// Such a debit is never spending: the card purchases already are. Ported
+/// from the web's `BILL_PAYMENT_WORDING`.
+const String _cardWords = r'(credit ?cards?|cc)';
 final RegExp _billPaymentWording = RegExp(
-  r'\b(credit ?card|cc)\b[^.]*\b(payment|pymt|bill|dues?|repayment)\b'
-  r'|\bcard ?bill\b'
-  r'|\btowards\b[^.]*\b(credit ?card|cc)\b',
+  <String>[
+    '\\b$_cardWords\\b[^.]*\\b(payments?|pymt|pmt|bill|bills|dues?|repayment|pay)\\b',
+    r'\bcard ?bills?\b',
+    r'\bcc ?bill\b',
+    '\\btowards\\b[^.]*\\b$_cardWords\\b',
+    // Third-party bill rails: always a card bill when they say so, or by name for CRED.
+    r'\bcred(\s?club)?\b',
+    r'\bcred\.club\b',
+    '\\b(billdesk|bbps|bharat ?bill ?pay|payzapp|amazon ?pay|phonepe|paytm|mobikwik|gpay|google ?pay)\\b[^.]*\\b$_cardWords\\b',
+    '\\b$_cardWords\\b[^.]*\\b(billdesk|bbps|bharat ?bill ?pay)\\b',
+  ].join('|'),
   caseSensitive: false,
 );
 
-/// A bank alert that reads like paying a card bill rather than spending.
-/// Such a debit is not an expense — the card purchases already are.
-bool looksLikeCardBillPayment(String text) => _billPaymentWording.hasMatch(text);
+/// Credits and rewards that mention the card but pay nothing.
+final RegExp _notABill = RegExp(
+  r'\b(cash ?back|reward|refund|reversal|reversed|surcharge waiver|emi conversion)\b',
+  caseSensitive: false,
+);
+
+/// A bank narration, alert or note that reads like paying a card bill rather
+/// than spending. Such a debit is not an expense — the card purchases already
+/// are — so imports record it as the card's bill payment and forms warn.
+bool looksLikeCardBillPayment(String text) =>
+    !_notABill.hasMatch(text) && _billPaymentWording.hasMatch(text);
+
+const List<(String, String)> _billRails = <(String, String)>[
+  (r'\bcred(\s?club|\.club)?\b', 'CRED'),
+  (r'\bbilldesk\b', 'BillDesk'),
+  (r'\b(bbps|bharat ?bill ?pay)\b', 'BBPS'),
+  (r'\bpayzapp\b', 'PayZapp'),
+  (r'\bamazon ?pay\b', 'Amazon Pay'),
+  (r'\bphonepe\b', 'PhonePe'),
+  (r'\bpaytm\b', 'Paytm'),
+  (r'\bmobikwik\b', 'MobiKwik'),
+  (r'\b(gpay|google ?pay)\b', 'Google Pay'),
+];
+
+/// The third-party service a card bill was paid through ("CRED"), or null
+/// for the bank's own.
+String? cardBillRail(String text) {
+  for (final (String pattern, String name) in _billRails) {
+    if (RegExp(pattern, caseSensitive: false).hasMatch(text)) return name;
+  }
+  return null;
+}
+
+/// A category whose name says it is for card bills ("Credit card bill",
+/// "Card payment").
+bool isCardBillCategoryName(String? name) => RegExp(
+      r'\b(credit ?card|card)\b.*\b(bill|payment|dues?|repayment)\b|\bcc ?bill\b',
+      caseSensitive: false,
+    ).hasMatch(name ?? '');
 
 String? _lastDigits(String? raw) {
   final String digits = (raw ?? '').replaceAll(RegExp(r'\D'), '');

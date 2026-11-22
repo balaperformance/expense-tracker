@@ -454,11 +454,14 @@ class _ActionCard extends StatelessWidget {
     final PendingAction action = message.pendingAction!;
     final PendingActionState state = message.actionState;
 
-    final (IconData icon, Color tone) = action.isTransfer
-        ? (Icons.swap_horiz_rounded, ToneColors.transfer(context))
-        : action.isIncome
-            ? (Icons.add_circle_outline_rounded, ToneColors.income(context))
-            : (Icons.remove_circle_outline_rounded, ToneColors.expense(context));
+    final (IconData icon, Color tone) = action.isCardBillPayment
+        ? (Icons.credit_card_rounded, ToneColors.transfer(context))
+        : action.isTransfer
+            ? (Icons.swap_horiz_rounded, ToneColors.transfer(context))
+            : action.isIncome
+                ? (Icons.add_circle_outline_rounded, ToneColors.income(context))
+                : (Icons.remove_circle_outline_rounded, ToneColors.expense(context));
+    final String? detail = action.detailLine;
 
     return SurfaceCard(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -478,6 +481,10 @@ class _ActionCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(action.summary, style: theme.textTheme.titleMedium),
+          if (detail != null) ...<Widget>[
+            const SizedBox(height: AppSpacing.xs),
+            Text(detail, style: theme.textTheme.bodySmall),
+          ],
           if (message.actionError != null) ...<Widget>[
             const SizedBox(height: AppSpacing.sm),
             InlineError(message: message.actionError!),

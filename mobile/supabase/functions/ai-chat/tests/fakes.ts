@@ -3,12 +3,15 @@ import type {
   AccountRow,
   BudgetRow,
   Capabilities,
+  CardPaymentRow,
+  CardRow,
   CategoryRow,
   DbPort,
   ExpenseRow,
   IncomeRow,
   LedgerRow,
   LedgerTotalRow,
+  NewCardPayment,
   NewExpense,
   NewIncome,
   NewLedgerRow,
@@ -31,6 +34,9 @@ export const PM_UPI = "22222222-0000-4000-8000-000000000002";
 export const ACC_HDFC = "33333333-0000-4000-8000-000000000001";
 export const ACC_SBI = "33333333-0000-4000-8000-000000000002";
 export const ACC_B = "33333333-0000-4000-8000-00000000000b";
+export const CARD_HDFC = "44444444-0000-4000-8000-000000000001";
+export const CARD_AXIS = "44444444-0000-4000-8000-000000000002";
+export const CARD_B = "44444444-0000-4000-8000-00000000000b";
 
 type Owned<T> = T & { owner: string };
 
@@ -46,6 +52,7 @@ export class FakeDb implements DbPort {
     expenseBankLink: true,
     incomeBankLink: true,
     transfers: true,
+    creditCards: true,
   };
   currencyByUser = new Map<string, string>([[USER_A, "INR"], [USER_B, "USD"]]);
 
@@ -64,6 +71,16 @@ export class FakeDb implements DbPort {
     { owner: USER_A, id: ACC_SBI, bank_name: "SBI", nickname: "Savings", last4: null, opening_balance: 500, is_active: true },
     { owner: USER_B, id: ACC_B, bank_name: "ICICI", nickname: "Secret", last4: "9999", opening_balance: 1_000_000, is_active: true },
   ];
+  cards: Owned<CardRow>[] = [
+    { owner: USER_A, id: CARD_HDFC, card_name: "Regalia", issuer: "HDFC Bank", last4: "1234", is_active: true },
+    { owner: USER_A, id: CARD_AXIS, card_name: "Ace", issuer: "Axis Bank", last4: "5678", is_active: true },
+    { owner: USER_B, id: CARD_B, card_name: "B card", issuer: "ICICI", last4: "9999", is_active: true },
+  ];
+  /** Bill payments of each card: bank debits with credit_card_id, and card-side payments. */
+  cardPayments: Array<Owned<CardPaymentRow> & { card_id: string }> = [];
+  /** What spending_excluded_expense_ids returns for each user. */
+  excludedExpenseIds = new Map<string, string[]>();
+  recordedCardPayments: NewCardPayment[] = [];
   expenses: Owned<ExpenseRow>[] = [];
   income: Owned<IncomeRow>[] = [];
   ledger: Owned<LedgerRow>[] = [];
@@ -205,6 +222,54 @@ export class FakeDb implements DbPort {
         .filter((i) => ids.includes(i.id))
         .filter((i) => (from ? i.income_date >= from : true) && (toExclusive ? i.income_date < toExclusive : true)),
     );
+  }
+  spendingExcludedExpenseIds(userId: string): Promise<string[]> {
+    this.record("spendingExcludedExpenseIds", userId);
+    return Promise.resolve([...(this.excludedExpenseIds.get(userId) ?? [])]);
+  }
+  listCards(userId: string): Promise<CardRow[]> {
+    this.record("listCards", userId);
+    return Promise.resolve(this.mine(this.cards, userId));
+  }
+  cardPaymentsBetween(userId: string, cardId: string, from: string, to: string): Promise<CardPaymentRow[]> {
+    this.record("cardPaymentsBetween", userId);
+    return Promise.resolve(
+      this.mine(this.cardPayments, userId)
+        .filter((p) => p.card_id === cardId && p.txn_date >= from && p.txn_date <= to)
+        .map(({ card_id: _card, ...row }) => row),
+    );
+  }
+  recordCardPayment(userId: string, payment: NewCardPayment): Promise<{ id: string }> {
+    this.record("recordCardPayment", userId);
+    this.recordedCardPayments.push(payment);
+    const id = `pay-${this.recordedCardPayments.length}`;
+    // As record_card_payment does: one debit on the account, and the
+    // card-side copy it replaces is gone.
+    if (payment.replaces) {
+      this.cardPayments = this.cardPayments.filter((p) => !(p.id === payment.replaces && p.owner === userId));
+    }
+    this.cardPayments.push({
+      owner: userId,
+      id,
+      card_id: payment.card_id,
+      source: "bank",
+      account_id: payment.account_id,
+      amount: payment.amount,
+      txn_date: payment.txn_date,
+    });
+    this.ledger.push({
+      owner: userId,
+      id: `led-${this.ledger.length + 1}`,
+      account_id: payment.account_id,
+      direction: "debit",
+      amount: payment.amount,
+      txn_date: payment.txn_date,
+      description: payment.description,
+      transfer_group_id: null,
+      counterparty_account_id: null,
+      created_at: "2026-11-20T00:00:00Z",
+    });
+    return Promise.resolve({ id });
   }
   insertExpense(userId: string, row: NewExpense): Promise<{ id: string }> {
     this.record("insertExpense", userId);

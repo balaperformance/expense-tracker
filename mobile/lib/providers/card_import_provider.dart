@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../core/errors/app_exception.dart';
 import '../core/utils/date_utils.dart';
+import '../core/utils/formatters.dart';
+import '../core/utils/money.dart';
 import '../models/bank_account.dart';
 import '../models/card_statement.dart';
 import '../models/credit_card.dart';
@@ -670,6 +672,93 @@ class CardImportProvider extends AsyncProvider {
     await _settle(rows);
   }
 
+  /// The bank debits read around the statement, as ledger entries.
+  List<LedgerEntry> get _contextDebits => <LedgerEntry>[
+        for (final Object? raw in (_ctx?['debits'] as List<Object?>?) ?? const <Object?>[])
+          if (raw is Map)
+            LedgerEntry.fromMap(<String, dynamic>{
+              'id': raw['id'],
+              'user_id': raw['userId'],
+              'account_id': raw['accountId'],
+              'direction': raw['direction'],
+              'amount': raw['amount'],
+              'txn_date': raw['txnDate'],
+              'description': raw['description'],
+              'expense_id': raw['expenseId'],
+              'income_id': raw['incomeId'],
+              'transfer_group_id': raw['transferGroupId'],
+              'credit_card_id': raw['creditCardId'],
+            }),
+      ];
+
+  /// The bank debit [entryId] read around the statement, if it was.
+  LedgerEntry? contextDebit(String? entryId) {
+    if (entryId == null) return null;
+    for (final LedgerEntry e in _contextDebits) {
+      if (e.id == entryId) return e;
+    }
+    return null;
+  }
+
+  /// How far before its conversion credit a purchase converted to EMI can
+  /// be — the engine's `CONVERSION_DAYS`.
+  static const int conversionDays = 90;
+
+  /// What an EMI conversion credit may have converted: purchases of exactly
+  /// its amount on or before it, closest first — this session's own rows
+  /// (the engine pre-links one) and purchases already on the card in no plan
+  /// (the engine suggests one; it is only marked when the user picks it).
+  List<({String? expenseId, String? itemId, String label})> conversionCandidates(
+    Map<String, Object?> row,
+  ) {
+    final num? amount = row['amount'] as num?;
+    final String? date = row['date'] as String?;
+    if (amount == null || date == null) {
+      return const <({String? expenseId, String? itemId, String label})>[];
+    }
+    final int cents = toCents(amount.toDouble());
+    final DateTime on = AppDateUtils.parseDate(date);
+    final DateTime earliest = DateTime(on.year, on.month, on.day - conversionDays);
+    bool inWindow(DateTime d) => !d.isAfter(on) && !d.isBefore(earliest);
+    String money(num v) => Formatters.currency(v.toDouble(), currencyCode: _currency, compact: true);
+    final List<({String? expenseId, String? itemId, String label, DateTime when})> out =
+        <({String? expenseId, String? itemId, String label, DateTime when})>[];
+    for (final Map<String, Object?> other in items) {
+      if (other['id'] == row['id'] || other['kind'] != 'purchase') continue;
+      final num? a = other['amount'] as num?;
+      final String? d = other['date'] as String?;
+      if (a == null || d == null || toCents(a.toDouble()) != cents) continue;
+      final DateTime when = AppDateUtils.parseDate(d);
+      if (!inWindow(when)) continue;
+      out.add((
+        expenseId: null,
+        itemId: other['id']! as String,
+        label: '${(other['title'] as String?) ?? 'Purchase'} · ${Formatters.dayMonth(when)} · ${money(a)}',
+        when: when,
+      ));
+    }
+    for (final Object? raw in (_ctx?['entries'] as List<Object?>?) ?? const <Object?>[]) {
+      if (raw is! Map) continue;
+      if (raw['source'] != 'expense' || raw['kind'] != 'purchase' || raw['emiPlanId'] != null) continue;
+      final num? a = raw['amount'] as num?;
+      final String? d = raw['date'] as String?;
+      if (a == null || d == null || toCents(a.toDouble()) != cents) continue;
+      final DateTime when = AppDateUtils.parseDate(d);
+      if (!inWindow(when)) continue;
+      out.add((
+        expenseId: raw['id']! as String,
+        itemId: null,
+        label: '${(raw['description'] as String?) ?? 'Purchase'} · ${Formatters.dayMonth(when)} · ${money(a)}',
+        when: when,
+      ));
+    }
+    return <({String? expenseId, String? itemId, String label})>[
+      for (final ({String? expenseId, String? itemId, String label, DateTime when}) c
+          in (out..sort((a, b) => b.when.compareTo(a.when))))
+        (expenseId: c.expenseId, itemId: c.itemId, label: c.label),
+    ];
+  }
+
   /// Bank debits that could be this payment, closest first.
   Future<List<LedgerEntry>> paymentCandidates(Map<String, Object?> row) async {
     final List<Object?> debits =
@@ -912,10 +1001,37 @@ class CardImportProvider extends AsyncProvider {
         );
         return (null, true);
       case 'linkPayment':
+        // Through link_card_payment once migration 022 exists.
         await _ledger.linkToCard(
           userId: userId,
           entryId: op['entryId']! as String,
           cardId: card.id,
+        );
+        return (null, true);
+      case 'convertPayment':
+        // The bill's bank debit was recorded as an expense; the user said it
+        // is this payment. The card_payment treatment removes that expense
+        // and makes the same debit the card's payment, in one transaction:
+        // the bill stops counting as spending and is paid once.
+        await _ledger.applyBankTreatment(
+          entryId: op['entryId']! as String,
+          treatment: <String, Object?>{
+            'type': 'card_payment',
+            'credit_card_id': card.id,
+          },
+        );
+        return (null, true);
+      case 'markConversion':
+        // A purchase already on the card is the one this plan converted
+        // (confirmed in review): it stays on the card, but the plan's
+        // instalments are the spending instead (migration 022).
+        if (planId == null) {
+          throw const AppException('Choose the EMI plan this purchase was converted to.');
+        }
+        await _expenses.setEmiConversion(
+          userId: userId,
+          expenseId: op['expenseId']! as String,
+          planId: planId,
         );
         return (null, true);
       default:

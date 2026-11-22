@@ -4,12 +4,15 @@ import type {
   AccountRow,
   BudgetRow,
   Capabilities,
+  CardPaymentRow,
+  CardRow,
   CategoryRow,
   DbPort,
   ExpenseRow,
   IncomeRow,
   LedgerRow,
   LedgerTotalRow,
+  NewCardPayment,
   NewExpense,
   NewIncome,
   NewLedgerRow,
@@ -46,18 +49,30 @@ export class SupabaseDb implements DbPort {
     if (cached && Date.now() - cached.at < SupabaseDb.capabilityTtlMs) {
       return cached.value;
     }
-    const [merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, personalExpenses, personalIncome] =
-      await Promise.all([
-        this.probe("expenses", "merchant"),
-        this.probe("bank_accounts", "id"),
-        this.probe("expenses", "bank_account_id"),
-        this.probe("income", "bank_account_id"),
-        this.probe("account_transactions", "counterparty_account_id"),
-        this.probe("expenses", "is_personal"),
-        this.probe("income", "is_personal"),
-      ]);
+    const [
+      merchant,
+      bankAccounts,
+      expenseBankLink,
+      incomeBankLink,
+      transfers,
+      personalExpenses,
+      personalIncome,
+      cardTable,
+      cardOnExpense,
+    ] = await Promise.all([
+      this.probe("expenses", "merchant"),
+      this.probe("bank_accounts", "id"),
+      this.probe("expenses", "bank_account_id"),
+      this.probe("income", "bank_account_id"),
+      this.probe("account_transactions", "counterparty_account_id"),
+      this.probe("expenses", "is_personal"),
+      this.probe("income", "is_personal"),
+      this.probe("credit_cards", "id"),
+      this.probe("expenses", "credit_card_id"),
+    ]);
     const personal = personalExpenses && personalIncome;
-    const value = { merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, personal };
+    const creditCards = cardTable && cardOnExpense;
+    const value = { merchant, bankAccounts, expenseBankLink, incomeBankLink, transfers, personal, creditCards };
     SupabaseDb.capabilityCache = { at: Date.now(), value };
     return value;
   }
@@ -379,6 +394,171 @@ export class SupabaseDb implements DbPort {
     return out;
   }
 
+  async spendingExcludedExpenseIds(userId: string): Promise<string[]> {
+    const { data, error } = await this.client.rpc("spending_excluded_expense_ids", { p_user: userId });
+    if (!error) return excludedIdsOf(data);
+    if (!FUNCTION_MISSING.has(error.code ?? "")) throw new DbError(error.code ?? null);
+    return this.excludedBefore022(userId);
+  }
+
+  /**
+   * Before migration 022: what the apps excluded then — expenses paid for
+   * someone (receivables.expense_id) and every expense of an EMI someone else
+   * pays back. A table or column not there yet simply adds nothing.
+   */
+  private async excludedBefore022(userId: string): Promise<string[]> {
+    const ids = new Set<string>();
+    const claims = await this.pages((from, to) =>
+      this.client
+        .from("receivables")
+        .select("id, expense_id")
+        .eq("user_id", userId)
+        .not("expense_id", "is", null)
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
+    for (const row of claims ?? []) if (row.expense_id) ids.add(String(row.expense_id));
+
+    const plans = await this.pages((from, to) =>
+      this.client
+        .from("emi_plans")
+        .select("id")
+        .eq("user_id", userId)
+        .not("person", "is", null)
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
+    const planIds = (plans ?? []).map((row) => String(row.id));
+    for (let i = 0; i < planIds.length; i += SupabaseDb.idChunk) {
+      const chunk = planIds.slice(i, i + SupabaseDb.idChunk);
+      const instalments = await this.pages((from, to) =>
+        this.client
+          .from("expenses")
+          .select("id")
+          .eq("user_id", userId)
+          .in("emi_plan_id", chunk)
+          .order("id", { ascending: true })
+          .range(from, to)
+      );
+      for (const row of instalments ?? []) ids.add(String(row.id));
+    }
+    return [...ids];
+  }
+
+  async listCards(userId: string): Promise<CardRow[]> {
+    const data = await this.pages((from, to) =>
+      this.client
+        .from("credit_cards")
+        .select("id, card_name, issuer, last4, is_active")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to)
+    );
+    return (data ?? []).map((row) => ({
+      id: String(row.id),
+      card_name: String(row.card_name ?? "").trim() || "Card",
+      issuer: String(row.issuer ?? "").trim(),
+      last4: (row.last4 as string | null) ?? null,
+      is_active: row.is_active !== false,
+    }));
+  }
+
+  async cardPaymentsBetween(
+    userId: string,
+    cardId: string,
+    fromInclusive: string,
+    toInclusive: string,
+  ): Promise<CardPaymentRow[]> {
+    const [bank, card] = await Promise.all([
+      this.pages((from, to) =>
+        this.client
+          .from("account_transactions")
+          .select("id, account_id, amount, txn_date")
+          .eq("user_id", userId)
+          .eq("credit_card_id", cardId)
+          .eq("direction", "debit")
+          .gte("txn_date", fromInclusive)
+          .lte("txn_date", toInclusive)
+          .order("txn_date", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+      this.pages((from, to) =>
+        this.client
+          .from("credit_card_transactions")
+          .select("id, amount, txn_date")
+          .eq("user_id", userId)
+          .eq("card_id", cardId)
+          .eq("kind", "payment")
+          .gte("txn_date", fromInclusive)
+          .lte("txn_date", toInclusive)
+          .order("txn_date", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to)
+      ),
+    ]);
+    return [
+      ...(bank ?? []).map((row) => ({
+        id: String(row.id),
+        source: "bank" as const,
+        account_id: String(row.account_id),
+        amount: Number(row.amount ?? 0),
+        txn_date: String(row.txn_date),
+      })),
+      ...(card ?? []).map((row) => ({
+        id: String(row.id),
+        source: "card" as const,
+        account_id: null,
+        amount: Number(row.amount ?? 0),
+        txn_date: String(row.txn_date),
+      })),
+    ];
+  }
+
+  async recordCardPayment(userId: string, payment: NewCardPayment): Promise<{ id: string }> {
+    const { data, error } = await this.client.rpc("record_card_payment", {
+      p_account: payment.account_id,
+      p_card: payment.card_id,
+      p_amount: payment.amount,
+      p_date: payment.txn_date,
+      p_description: payment.description,
+      p_replaces: payment.replaces,
+    });
+    if (!error) return { id: String(data) };
+    if (!FUNCTION_MISSING.has(error.code ?? "")) throw new DbError(error.code ?? null);
+
+    // Before migration 022: the same single debit, written directly. A
+    // card-side copy is removed right after, with the checks the database
+    // function makes (same card, a payment, the same amount).
+    const inserted = await this.client
+      .from("account_transactions")
+      .insert({
+        user_id: userId,
+        account_id: payment.account_id,
+        direction: "debit",
+        amount: payment.amount,
+        txn_date: payment.txn_date,
+        description: payment.description ?? "Credit card bill payment",
+        credit_card_id: payment.card_id,
+      })
+      .select("id")
+      .single();
+    if (inserted.error) throw new DbError(inserted.error.code ?? null);
+    if (payment.replaces) {
+      const removed = await this.client
+        .from("credit_card_transactions")
+        .delete()
+        .eq("id", payment.replaces)
+        .eq("user_id", userId)
+        .eq("card_id", payment.card_id)
+        .eq("kind", "payment")
+        .eq("amount", payment.amount);
+      if (removed.error) throw new DbError(removed.error.code ?? null);
+    }
+    return { id: String((inserted.data as { id: unknown }).id) };
+  }
+
   async insertExpense(userId: string, row: NewExpense): Promise<{ id: string }> {
     const caps = await this.capabilities();
     // user_id comes from the verified JWT via the parameter, never from the
@@ -392,7 +572,10 @@ export class SupabaseDb implements DbPort {
       description: row.description,
     };
     if (caps.merchant) payload.merchant = row.merchant;
-    if (caps.expenseBankLink) payload.bank_account_id = row.bank_account_id;
+    // One funding source: a card purchase never touches a bank balance.
+    const cardId = caps.creditCards ? row.credit_card_id ?? null : null;
+    if (caps.expenseBankLink) payload.bank_account_id = cardId ? null : row.bank_account_id;
+    if (cardId) payload.credit_card_id = cardId;
 
     const { data, error } = await this.client
       .from("expenses")
@@ -429,6 +612,24 @@ export class SupabaseDb implements DbPort {
     const { error } = await this.client.from("account_transactions").insert(payload);
     if (error) throw new DbError(error.code ?? null);
   }
+}
+
+/** PostgREST's "no such function" (schema cache) and Postgres's undefined_function. */
+const FUNCTION_MISSING: ReadonlySet<string> = new Set(["PGRST202", "42883"]);
+
+/**
+ * A `returns setof uuid` result: PostgREST sends the scalars as an array of
+ * strings (some versions wrap each in an object named after the function).
+ */
+function excludedIdsOf(data: unknown): string[] {
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((item) => {
+      if (typeof item === "string") return item;
+      const value = (item as Record<string, unknown> | null)?.spending_excluded_expense_ids;
+      return typeof value === "string" ? value : "";
+    })
+    .filter((id) => id.length > 0);
 }
 
 /** Leaves out rows kept for someone else (migration 019): they are never the user's money. */

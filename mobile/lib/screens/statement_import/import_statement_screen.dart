@@ -1275,14 +1275,14 @@ class _ImportRowTile extends StatelessWidget {
                           runSpacing: AppSpacing.xxs,
                           children: <Widget>[
                             AppButton(
-                              label: 'Duplicate',
+                              label: row.cardPaymentDuplicate ? 'Same payment' : 'Duplicate',
                               icon: Icons.content_copy_rounded,
                               size: AppButtonSize.small,
                               variant: AppButtonVariant.secondary,
                               onPressed: enabled ? () => onDecide('duplicate') : null,
                             ),
                             AppButton(
-                              label: 'Not a duplicate',
+                              label: row.cardPaymentDuplicate ? 'Different' : 'Not a duplicate',
                               icon: Icons.check_rounded,
                               size: AppButtonSize.small,
                               variant: AppButtonVariant.ghost,

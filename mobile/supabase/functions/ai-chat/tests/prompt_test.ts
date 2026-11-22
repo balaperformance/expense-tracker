@@ -43,3 +43,11 @@ Deno.test("prompt: tags are named with their #, and tag questions must go to the
   assertStringIncludes(buildSystemPrompt({ ...base, tagNames: many }), "and 10 more");
 });
 
+
+Deno.test("prompt: names the cards and says a bill payment is never an expense", () => {
+  const prompt = buildSystemPrompt({ ...base, cardLabels: ["Regalia •••• 1234"] });
+  assertStringIncludes(prompt, `The user's credit cards: "Regalia •••• 1234".`);
+  assertStringIncludes(prompt, "record_card_bill_payment");
+  assertStringIncludes(prompt, "NOT an expense");
+  assertStringIncludes(buildSystemPrompt(base), "The user's credit cards: none.");
+});

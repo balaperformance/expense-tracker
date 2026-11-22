@@ -210,7 +210,12 @@ const Map<String, String> emiComponentLabels = <String, String>{
   'interest': 'Interest',
   'tax': 'GST',
   'fee': 'Fee',
+  'conversion': 'Converted purchase',
 };
+
+/// The original purchase of a plan, or the issuer's credit that reversed it
+/// (migration 022): on the card, but never part of a monthly instalment.
+bool isEmiConversion(CardEntry entry) => entry.emiComponent == 'conversion';
 
 /// The component an entry is, for an entry that belongs to a plan.
 String componentOf(CardEntry entry) =>
@@ -297,7 +302,7 @@ List<EmiInstallment> installmentsOf(
   final Map<DateTime, (BillingCycle, List<CardEntry>)> byCycle =
       <DateTime, (BillingCycle, List<CardEntry>)>{};
   for (final CardEntry entry in entries) {
-    if (entry.emiPlanId != plan.id) continue;
+    if (entry.emiPlanId != plan.id || isEmiConversion(entry)) continue;
     final BillingCycle cycle = cardCycleOf(card, entry);
     final (BillingCycle, List<CardEntry>) group =
         byCycle[cycle.end] ??= (cycle, <CardEntry>[]);
@@ -340,7 +345,7 @@ class InstallmentLine extends StatementLine {
 /// placed where the last component was. Everything else is a line of its own.
 /// Rows are newest first, as [buildCardStatement] returns them.
 List<StatementLine> statementLines(List<CardStatementRow> rows, CreditCard card) {
-  String? keyOf(CardStatementRow row) => row.entry.emiPlanId == null
+  String? keyOf(CardStatementRow row) => row.entry.emiPlanId == null || isEmiConversion(row.entry)
       ? null
       : '${row.entry.emiPlanId}#${AppDateUtils.toDateString(cardCycleOf(card, row.entry).end)}';
   final Map<String, List<CardStatementRow>> groups = <String, List<CardStatementRow>>{};
@@ -425,6 +430,7 @@ class EmiPlanSummary {
     required this.principalLeft,
     required this.endsOn,
     required this.repayment,
+    this.convertedPurchase,
   });
 
   final EmiPlan plan;
@@ -445,6 +451,17 @@ class EmiPlanSummary {
 
   /// Null for the user's own EMI.
   final EmiRepayment? repayment;
+
+  /// The purchase the plan converted (migration 022): on the card, but its
+  /// instalments are the spending instead. Null when not linked.
+  final CardEntry? convertedPurchase;
+}
+
+/// "Converted from Laptop · 12 Oct" — the purchase a plan replaced.
+String? emiConvertedFromText(EmiPlanSummary summary, String Function(DateTime) dayMonth) {
+  final CardEntry? purchase = summary.convertedPurchase;
+  if (purchase == null) return null;
+  return 'Converted from ${purchase.title} · ${dayMonth(purchase.date)}';
 }
 
 /// What a plan's claim is owed: its billed components, by the plan's rule.
@@ -501,7 +518,17 @@ EmiPlanSummary summariseEmiPlan({
         ? DateTime(start.year, start.month + tenure - 1, 1)
         : null,
     repayment: repayment,
+    convertedPurchase: _convertedPurchaseOf(plan, entries),
   );
+}
+
+CardEntry? _convertedPurchaseOf(EmiPlan plan, Iterable<CardEntry> entries) {
+  for (final CardEntry e in entries) {
+    if (e.emiPlanId == plan.id && isEmiConversion(e) && e.kind == CardEntryKind.purchase) {
+      return e;
+    }
+  }
+  return null;
 }
 
 /// "3 of 12 months billed", "5 months billed".

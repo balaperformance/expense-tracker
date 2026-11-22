@@ -382,7 +382,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
         groups.add(_DayGroup(expense.expenseDate));
       }
       groups.last.expenses.add(expense);
-      if (expense.isPersonal && !paidFor.containsKey(expense.id)) {
+      if (expense.isPersonal && !expense.isConvertedToEmi && !paidFor.containsKey(expense.id)) {
         groups.last.total += expense.amount;
       }
     }

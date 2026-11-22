@@ -213,12 +213,28 @@ class ExpenseRepository {
     }
   }
 
-  /// Ids of expenses paid on someone else's behalf (migration 005): owed
-  /// back, so not the user's own spending habits.
+  /// Ids of the expenses that are not the user's own spending: paid on
+  /// someone else's behalf (migration 005), every instalment of an EMI
+  /// someone else pays back (016), and purchases converted to EMI (022),
+  /// whose instalments are the spending instead.
+  ///
+  /// With migration 022 this is the database's
+  /// `spending_excluded_expense_ids` — the same list the web app, the push
+  /// notifications and the assistant read, so every total agrees. A list as
+  /// long as one response can hold is read again here, page by page, by the
+  /// same three rules.
   Future<Set<String>> fetchPaidForExpenseIds({required String userId}) async {
     try {
       await _resolveCapabilities();
       if (!SchemaCapabilities.treatments) return <String>{};
+      if (SchemaCapabilities.cardAccounting) {
+        final Object? data = await _client.rpc<Object?>(
+          'spending_excluded_expense_ids',
+          params: <String, dynamic>{'p_user': userId},
+        );
+        final Set<String> ids = excludedIdsFromRpc(data);
+        if (ids.length < _rpcPageCap) return ids;
+      }
       final List<Map<String, dynamic>> rows =
           await fetchAllPages(postgrestPages(() => _client
               .from('receivables')
@@ -231,7 +247,67 @@ class ExpenseRepository {
           .whereType<String>()
           .toSet();
       if (SchemaCapabilities.emi) ids.addAll(await _emiPlanExpenseIds(userId));
+      if (SchemaCapabilities.cardAccounting) {
+        ids.addAll(await _convertedPurchaseIds(userId));
+      }
       return ids;
+    } catch (error) {
+      throw ErrorMapper.map(error);
+    }
+  }
+
+  /// One PostgREST response at most: a list this long may have been cut.
+  static const int _rpcPageCap = 1000;
+
+  /// The ids in a `setof uuid` function's response: plain values, or rows
+  /// named after the function.
+  static Set<String> excludedIdsFromRpc(Object? data) {
+    if (data is! List) return <String>{};
+    return data
+        .map((Object? v) => v is Map ? v.values.first : v)
+        .whereType<String>()
+        .toSet();
+  }
+
+  /// Purchases converted to EMI (migration 022).
+  Future<List<String>> _convertedPurchaseIds(String userId) async {
+    final List<Map<String, dynamic>> rows =
+        await fetchAllPages(postgrestPages(() => _client
+            .from(_table)
+            .select('id')
+            .eq('user_id', userId)
+            .eq('emi_component', 'conversion')
+            .order('id')));
+    return rows.map((Map<String, dynamic> r) => r['id'] as String).toList();
+  }
+
+  /// Marks [expenseId] — a purchase on a card — as the original purchase of
+  /// the EMI plan [planId] (migration 022): it stays on the card, but the
+  /// plan's instalments are the spending instead. With a null [planId] the
+  /// mark is taken off again. Only ever done on the user's say.
+  Future<void> setEmiConversion({
+    required String userId,
+    required String expenseId,
+    required String? planId,
+  }) async {
+    if (!SchemaCapabilities.cardAccounting) {
+      throw const AppException(
+        'Converting a purchase to EMI needs the 022 migration. Run '
+        'ui/supabase/022_card_accounting.sql, then try again.',
+      );
+    }
+    try {
+      final PostgrestFilterBuilder<dynamic> query = _client
+          .from(_table)
+          .update(<String, dynamic>{
+            'emi_plan_id': planId,
+            'emi_component': planId == null ? null : 'conversion',
+          })
+          .eq('id', expenseId)
+          .eq('user_id', userId)
+          .not('credit_card_id', 'is', null);
+      // Un-marking only ever touches a converted purchase.
+      await (planId == null ? query.eq('emi_component', 'conversion') : query);
     } catch (error) {
       throw ErrorMapper.map(error);
     }

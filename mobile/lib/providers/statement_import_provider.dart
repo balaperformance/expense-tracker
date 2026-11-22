@@ -13,6 +13,7 @@ import '../models/payment_method.dart';
 import '../models/receivable.dart';
 import '../models/tag.dart';
 import '../models/tag_rules.dart';
+import '../repositories/credit_card_repository.dart';
 import '../repositories/expense_repository.dart';
 import '../repositories/income_repository.dart';
 import '../repositories/ledger_repository.dart';
@@ -25,6 +26,7 @@ import 'async_state.dart';
 typedef _Recorded = ({
   List<Map<String, Object?>> existing,
   List<Map<String, Object?>> recorded,
+  List<Map<String, Object?>> cardPayments,
 });
 
 /// A credit card's statement is read like an account's: its rows carry the
@@ -188,6 +190,17 @@ class ImportRow {
   String? get duplicateBadge => flags['duplicateBadge'] as String?;
   String? get duplicateText => flags['duplicateText'] as String?;
   bool get isDuplicate => json['duplicate'] != null;
+
+  /// The narration says it pays a credit card bill (CRED, BillDesk, "CC
+  /// PAYMENT"…) but not which card: it waits for the user to pick one, so
+  /// the card's outstanding drops — never spending.
+  bool get cardBill => json['cardBill'] == true;
+
+  /// Possibly a bill payment already recorded on the card alone (migration
+  /// 022): "Same payment" imports it as the card's payment in place of that
+  /// record, "Different" imports it on its own.
+  bool get cardPaymentDuplicate =>
+      json['duplicate'] is Map && (json['duplicate']! as Map)['type'] == 'cardPayment';
 
   /// Possibly the same as something already recorded — an expense added by
   /// hand, or a same-amount entry a day or two away. The user is asked.
@@ -479,17 +492,23 @@ class StatementImportProvider extends AsyncProvider {
     required IncomeRepository income,
     required LedgerRepository ledger,
     required TagRepository tags,
+    CreditCardRepository? cards,
   })  : _engine = engine,
         _expenses = expenses,
         _income = income,
         _ledger = ledger,
-        _tags = tags;
+        _tags = tags,
+        _cardRepository = cards;
 
   final StatementEngine _engine;
   final ExpenseRepository _expenses;
   final IncomeRepository _income;
   final LedgerRepository _ledger;
   final TagRepository _tags;
+
+  /// Bill payments recorded on a card alone, which a card bill debit on the
+  /// statement may be the other record of (migration 022).
+  final CreditCardRepository? _cardRepository;
 
   /// How far around a statement's dates recorded rows are read — the
   /// engine's `checkDays`: an expense added by hand may be dated up to a
@@ -688,6 +707,7 @@ class StatementImportProvider extends AsyncProvider {
 
       List<Map<String, Object?>> existing = <Map<String, Object?>>[];
       List<Map<String, Object?>> recorded = <Map<String, Object?>>[];
+      List<Map<String, Object?>> cardPayments = <Map<String, Object?>>[];
       try {
         // Every account the session's rows are on: a Paytm statement spans several.
         final _Recorded found = await _recordedFor(
@@ -699,6 +719,7 @@ class StatementImportProvider extends AsyncProvider {
         );
         existing = found.existing;
         recorded = found.recorded;
+        cardPayments = found.cardPayments;
       } catch (_) {
         // Still reviewable — overlaps between these files are caught — but
         // importing waits until the check against recorded rows succeeds.
@@ -709,6 +730,7 @@ class StatementImportProvider extends AsyncProvider {
         'transactions': transactions,
         'existing': existing,
         'recorded': recorded,
+        'cardPayments': cardPayments,
         'categories': _categories.map(EngineJson.category).toList(),
       }))! as List<Object?>;
       _statements.add(statement);
@@ -757,7 +779,11 @@ class StatementImportProvider extends AsyncProvider {
           .toList(),
     });
     if (range is! Map<String, Object?>) {
-      return (existing: <Map<String, Object?>>[], recorded: <Map<String, Object?>>[]);
+      return (
+        existing: <Map<String, Object?>>[],
+        recorded: <Map<String, Object?>>[],
+        cardPayments: <Map<String, Object?>>[],
+      );
     }
     final DateTime from = AppDateUtils.parseDate(range['from']! as String);
     final DateTime to = AppDateUtils.parseDate(range['to']! as String);
@@ -765,8 +791,30 @@ class StatementImportProvider extends AsyncProvider {
         await Future.wait(<Future<List<Map<String, Object?>>>>[
       _existingBetween(from, to, <String>{_account!.id, ...accountIds}),
       _recordedBetween(from, to),
+      _cardPaymentsBetween(from, to),
     ]);
-    return (existing: found[0], recorded: found[1]);
+    return (existing: found[0], recorded: found[1], cardPayments: found[2]);
+  }
+
+  /// How far a card-side record of a bill payment may be from its bank
+  /// debit — the engine's `CARD_PAYMENT_DAYS`.
+  static const int cardPaymentDays = 10;
+
+  /// Bill payments recorded on a card alone around [from]-[to]: a card bill
+  /// debit on the statement within 10 days of one, for the same amount, is
+  /// asked about. The same payment replaces it, so the card outstanding
+  /// drops once (migration 022). Nothing before that migration.
+  Future<List<Map<String, Object?>>> _cardPaymentsBetween(DateTime from, DateTime to) async {
+    final CreditCardRepository? cards = _cardRepository;
+    if (cards == null || !SchemaCapabilities.cardAccounting) {
+      return <Map<String, Object?>>[];
+    }
+    final List<CardTransaction> payments = await cards.fetchCardSidePayments(
+      userId: _userId!,
+      from: DateTime(from.year, from.month, from.day - cardPaymentDays),
+      toExclusive: DateTime(to.year, to.month, to.day + cardPaymentDays + 1),
+    );
+    return payments.map(EngineJson.cardSidePayment).toList();
   }
 
   /// Every expense and income dated around [from]–[to], on any account or
@@ -969,6 +1017,7 @@ class StatementImportProvider extends AsyncProvider {
         'items': _items,
         'existing': found.existing,
         'recorded': found.recorded,
+        'cardPayments': found.cardPayments,
       }))! as List<Object?>;
       _items = next.cast<Map<String, Object?>>();
       await _refreshView();
@@ -1277,6 +1326,9 @@ class StatementImportProvider extends AsyncProvider {
             date: date,
             description: description ?? 'Card bill payment',
             details: details,
+            // The user said a payment recorded on the card alone is this
+            // one: it is replaced in the same transaction.
+            replaces: op['replacesCardTxnId'] as String?,
           );
         } else {
           await _ledger.recordMovement(

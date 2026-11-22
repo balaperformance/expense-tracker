@@ -191,6 +191,15 @@ class EngineJson {
 
   /// A recorded ledger row, as the duplicate check sees it. Its reference and
   /// UPI ID (migration 007) let a payment be recognised whatever its date.
+  /// A bill payment recorded on a card alone: the engine's `CardSidePayment`.
+  static Map<String, Object?> cardSidePayment(CardTransaction t) => <String, Object?>{
+        'id': t.id,
+        'cardId': t.cardId,
+        'amount': t.amount,
+        'date': AppDateUtils.toDateString(t.txnDate),
+        'description': t.description,
+      };
+
   static Map<String, Object?> existing(LedgerEntry e) => <String, Object?>{
         'accountId': e.accountId,
         'date': AppDateUtils.toDateString(e.txnDate),

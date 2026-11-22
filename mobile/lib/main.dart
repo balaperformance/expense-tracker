@@ -186,6 +186,7 @@ class ExpenseTrackerApp extends StatelessWidget {
             income: incomeRepository,
             ledger: ledgerRepository,
             tags: TagRepository(client),
+            cards: creditCardRepository,
           ),
         ),
         // A statement compared with what the app recorded — the web app's

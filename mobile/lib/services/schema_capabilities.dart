@@ -54,6 +54,7 @@ class SchemaCapabilities {
   static bool _emiBank = false;
   static bool _tagDelete = false;
   static bool _balanceAdjustments = false;
+  static bool _cardAccounting = false;
 
   static bool get resolved => _resolved;
 
@@ -143,6 +144,13 @@ class SchemaCapabilities {
   /// figure, which then counts as its reference balance from that date on.
   static bool get balanceAdjustments => _balanceAdjustments;
 
+  /// The card accounting functions of migration 022: bill payments through
+  /// `record_card_payment` / `link_card_payment` / `merge_card_payment` (a
+  /// card-side copy of the same bill is absorbed only when the user says so),
+  /// EMI conversions, and `spending_excluded_expense_ids` — the one list of
+  /// expenses that are not the user's spending. Builds on 004, 016 and 021.
+  static bool get cardAccounting => _cardAccounting;
+
   /// True only when everything Phase 2 needs to record a debit is present.
   ///
   /// The expense link is required: without it an expense cannot say which
@@ -171,6 +179,7 @@ class SchemaCapabilities {
       if (!_personal) 'personal and non-personal entries (019)',
       if (!_emiBank || !_tagDelete) 'bank account EMIs and deleting hashtags (020)',
       if (!_balanceAdjustments) 'balance adjustments (021)',
+      if (!_cardAccounting) 'credit card accounting (022)',
     ];
     return missing.join(', ');
   }
@@ -244,6 +253,10 @@ class SchemaCapabilities {
                   'id, account_id, adjusted_on, adjusted_at, target_balance, '
                       'previous_balance, remarks'),
               _probe(client, 'account_transactions', 'balance_adjustment_id'),
+              // 32: credit card accounting (022). The nil user owns nothing,
+              // so the call reads no rows.
+              _probeFunction(client, 'spending_excluded_expense_ids',
+                  params: const <String, dynamic>{'p_user': _nilUuid}),
             ]));
 
     _merchant = results[0];
@@ -270,6 +283,8 @@ class SchemaCapabilities {
     _tagDelete = _tags && results[28];
     // One migration adds the table and the ledger column.
     _balanceAdjustments = _bankAccounts && results[30] && results[31];
+    // One migration adds every function; it needs cards, EMI plans and 021.
+    _cardAccounting = _creditCards && _emi && _balanceAdjustments && results[32];
     _resolved = true;
   }
 
@@ -299,12 +314,19 @@ class SchemaCapabilities {
     }
   }
 
-  /// Returns whether the function [name] (called without arguments) exists.
-  /// Only a missing function counts as absent; any other failure is rethrown,
-  /// as in [_probe].
-  static Future<bool> _probeFunction(SupabaseClient client, String name) async {
+  /// A uuid no row has, for probing a function that takes a user.
+  static const String _nilUuid = '00000000-0000-0000-0000-000000000000';
+
+  /// Returns whether the function [name] (called with [params], none by
+  /// default) exists. Only a missing function counts as absent; any other
+  /// failure is rethrown, as in [_probe].
+  static Future<bool> _probeFunction(
+    SupabaseClient client,
+    String name, {
+    Map<String, dynamic>? params,
+  }) async {
     try {
-      await client.rpc<Object?>(name);
+      await client.rpc<Object?>(name, params: params);
       return true;
     } on PostgrestException catch (error) {
       if (error.code == _undefinedFunction ||
@@ -337,6 +359,7 @@ class SchemaCapabilities {
     bool? emiBank,
     bool? tagDelete,
     bool? balanceAdjustments,
+    bool? cardAccounting,
   }) {
     _merchant = merchant ?? _merchant;
     _bankAccounts = bankAccounts ?? _bankAccounts;
@@ -357,6 +380,7 @@ class SchemaCapabilities {
     _emiBank = emiBank ?? _emiBank;
     _tagDelete = tagDelete ?? _tagDelete;
     _balanceAdjustments = balanceAdjustments ?? _balanceAdjustments;
+    _cardAccounting = cardAccounting ?? _cardAccounting;
     _resolved = true;
   }
 
@@ -381,5 +405,6 @@ class SchemaCapabilities {
     _emiBank = false;
     _tagDelete = false;
     _balanceAdjustments = false;
+    _cardAccounting = false;
   }
 }
